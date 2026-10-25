@@ -1,0 +1,92 @@
+---
+---
+
+<div class="quant-card p-5">
+  <div class="flex items-center justify-between mb-4 border-b border-slate-800 pb-3">
+    <div>
+      <div class="flex items-center gap-2">
+        <h3 class="font-bold text-white text-base">Reciprocal Order Book Visualizer</h3>
+        <span class="rounded bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-400 border border-indigo-500/30">
+          RECIPROCAL LAW APPLIED
+        </span>
+      </div>
+      <p class="text-xs text-slate-400 mt-0.5">Synthesizes YES asks from NO bids: <span class="font-mono text-slate-300">Ask = 100 - Bid</span></p>
+    </div>
+    <div class="text-right">
+      <span class="text-xs text-slate-400 block">Market</span>
+      <span class="font-mono text-sm font-semibold text-emerald-400">KC-CHIEFS-WIN</span>
+    </div>
+  </div>
+
+  <!-- Book Ladder: YES on Left, Synthesized Asks on Right -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <!-- YES SIDE -->
+    <div class="bg-slate-900/60 rounded-lg p-3 border border-slate-800/80">
+      <div class="flex items-center justify-between text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 border-b border-slate-800 pb-1">
+        <span>YES Bids (Resting)</span>
+        <span>Contracts</span>
+      </div>
+      <div class="space-y-1 font-mono text-xs" id="yes-bids-container">
+        <div class="flex justify-between items-center px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 border-l-2 border-emerald-500">
+          <span class="font-bold">72¢ (Best Bid)</span>
+          <span>150</span>
+        </div>
+        <div class="flex justify-between items-center px-2 py-1 text-slate-300">
+          <span>71¢</span>
+          <span>300</span>
+        </div>
+        <div class="flex justify-between items-center px-2 py-1 text-slate-400">
+          <span>70¢</span>
+          <span>500</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- SYNTHESIZED YES ASKS (From NO Bids) -->
+    <div class="bg-slate-900/60 rounded-lg p-3 border border-slate-800/80">
+      <div class="flex items-center justify-between text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 border-b border-slate-800 pb-1">
+        <span>Synthesized YES Asks (100 - NO Bid)</span>
+        <span>Contracts</span>
+      </div>
+      <div class="space-y-1 font-mono text-xs" id="yes-asks-container">
+        <div class="flex justify-between items-center px-2 py-1 rounded bg-rose-500/10 text-rose-400 border-l-2 border-rose-500">
+          <span class="font-bold">75¢ (from 25¢ NO Bid)</span>
+          <span>200</span>
+        </div>
+        <div class="flex justify-between items-center px-2 py-1 text-slate-300">
+          <span>76¢ (from 24¢ NO Bid)</span>
+          <span>400</span>
+        </div>
+        <div class="flex justify-between items-center px-2 py-1 text-slate-400">
+          <span>78¢ (from 22¢ NO Bid)</span>
+          <span>100</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Spread, Midpoint, Fee Protection Indicator -->
+  <div class="mt-4 pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-4 text-xs">
+    <div class="flex items-center gap-4">
+      <div>
+        <span class="text-slate-400">Spread:</span>
+        <span class="font-mono font-bold text-amber-400 ml-1">3¢</span>
+      </div>
+      <div>
+        <span class="text-slate-400">Midpoint:</span>
+        <span class="font-mono font-bold text-white ml-1">73.5¢</span>
+      </div>
+      <div>
+        <span class="text-slate-400">Microprice:</span>
+        <span class="font-mono font-bold text-cyan-400 ml-1">73.2¢</span>
+      </div>
+    </div>
+
+    <!-- Maker First Badge -->
+    <div class="flex items-center gap-2">
+      <span class="rounded bg-emerald-500/20 text-emerald-400 px-2.5 py-1 text-[11px] font-semibold border border-emerald-500/30">
+        🛡️ Maker-First Active: Limit Bid at 70¢ = $0.00 Fee (Saved $1.75 Taker Fee)
+      </span>
+    </div>
+  </div>
+</div>

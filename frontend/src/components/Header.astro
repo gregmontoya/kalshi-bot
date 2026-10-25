@@ -1,0 +1,55 @@
+---
+---
+
+<header class="sticky top-0 z-40 w-full border-b border-slate-800 bg-[#0B0F17]/90 backdrop-blur-md px-6 py-4">
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <!-- Brand & Status -->
+    <div class="flex items-center gap-3">
+      <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-lg">
+        KQ
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-xl font-bold tracking-tight text-white">Kalshi Quant Multi-Strategy Engine</h1>
+          <span id="badge-mode" class="rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-xs font-semibold text-emerald-400 border border-emerald-500/30">
+            PAPER MODE
+          </span>
+          <span id="badge-status" class="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/10 px-2 py-0.5 text-xs font-medium text-cyan-400 border border-cyan-500/20">
+            <span class="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+            ACTIVE
+          </span>
+        </div>
+        <p class="text-xs text-slate-400">Maker-First Execution • Reciprocal Order Books • Sharp Vegas De-Vigged</p>
+      </div>
+    </div>
+
+    <!-- Live Quant Stats -->
+    <div class="flex flex-wrap items-center gap-6 text-sm">
+      <div>
+        <span class="text-xs text-slate-400 block">Portfolio Cash</span>
+        <span id="stat-cash" class="font-mono font-bold text-white text-base">$10,000.00</span>
+      </div>
+      <div>
+        <span class="text-xs text-slate-400 block">Maker Fees Saved</span>
+        <span id="stat-fees-saved" class="font-mono font-semibold text-emerald-400 text-base">+$48.50</span>
+      </div>
+      <div>
+        <span class="text-xs text-slate-400 block">Active Baskets</span>
+        <span id="stat-baskets-count" class="font-mono font-semibold text-cyan-400 text-base">1 (3 Legs)</span>
+      </div>
+
+      <!-- Action Controls -->
+      <div class="flex items-center gap-2">
+        <button id="btn-scan" class="rounded-md bg-slate-800 hover:bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 border border-slate-700 transition">
+          ⚡ Scan Now
+        </button>
+        <button id="btn-green-out-all" class="rounded-md bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition">
+          💰 Green Out All
+        </button>
+        <button id="btn-toggle-pause" class="rounded-md bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 border border-amber-500/30 px-3 py-1.5 text-xs font-medium transition">
+          ⏸️ Pause
+        </button>
+      </div>
+    </div>
+  </div>
+</header>

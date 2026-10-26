@@ -360,13 +360,13 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             if t in resting_buy_tickers or resting_sell_counts.get(t, 0) > 0:
                                 continue
                             close_str = m.get("close_time") or m.get("expiration_time") or "2099"
-                            candidates.append((close_str, t))
+                            candidates.append((close_str, t, m.get("title", t)))
                     except Exception:
                         pass
 
                 candidates.sort(key=lambda x: x[0])
 
-                for _, t in candidates[:30]:
+                for _, t, title in candidates[:30]:
                     ob = await client.get_orderbook(t)
                     if ob.best_yes_bid and ob.best_yes_ask:
                         spread = ob.best_yes_ask - ob.best_yes_bid
@@ -411,10 +411,22 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                     )
                                     resting_buy_tickers.add(t)
                                     total_cents -= count_int * bid_cents
+                                    stake_dlr = (count_int * bid_cents) / 100.0
+                                    exit_cents = 99 if is_tail_lock_zone else 96
+                                    payout_dlr = (count_int * exit_cents) / 100.0
+                                    profit_dlr = payout_dlr - stake_dlr
+                                    zone_label = "95%+ Tail Lock" if is_tail_lock_zone else "74-88% Live Leader"
                                     await send_phone_alert(
                                         client,
-                                        "🎯 New Educated Play Placed",
-                                        f"Bid {count_int}x {t} @ {bid_cents}c | {reason} | Equity: ${equity_cents/100:.2f}",
+                                        f"🎯 NEW PLAY: {title}",
+                                        (
+                                            f"Play: {title} ({t})\n"
+                                            f"Strategy: {zone_label}\n"
+                                            f"Action: Resting Maker Buy {count_int}x @ {bid_cents}c (${stake_dlr:.2f} stake, $0 fee)\n"
+                                            f"Target Exit: {exit_cents}c (${payout_dlr:.2f} payout | +${profit_dlr:.2f} profit)\n"
+                                            f"Why Bot Took It: {reason}\n"
+                                            f"Account Equity: ${equity_cents/100:.2f}"
+                                        ),
                                     )
                                     if total_cents < 250:
                                         break

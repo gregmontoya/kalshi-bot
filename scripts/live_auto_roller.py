@@ -727,6 +727,15 @@ class PreTradeEducator:
                             prog_pct = (found_stat / target_val) * 100.0
                             if prog_pct < 65.0:
                                 return False, f"VETO [ESPN Boxscore]: {title} only at {found_stat:.0f}/{target_val:.0f} ({prog_pct:.0f}% < 65% live progress min)"
+                            # Blowout / Garbage-Time Bench Shield: Veto Q3/Q4 player props in 22+ pt blowouts unless >=90% banked!
+                            if len(competitors) >= 2 and live_period >= 3 and prog_pct < 90.0:
+                                gm_margin = abs(float(competitors[0].get("score", 0) or 0) - float(competitors[1].get("score", 0) or 0))
+                                max_blowout = 22.0 if series in nba_prop_Set else 21.0
+                                if gm_margin >= max_blowout:
+                                    return False, (
+                                        f"VETO [Blowout Bench Risk]: Game margin is {gm_margin:.0f} pts in P{live_period} "
+                                        f"— starters risk getting benched in garbage time!"
+                                    )
                             lock_tag = " | PROP-LOCK" if prog_pct >= 80.0 else ""
                             return True, f"ESPN Boxscore Verified ({found_stat:.0f}/{target_val:.0f} = {prog_pct:.0f}% banked{lock_tag} | MIN={mins_played} | PF={fouls_val})"
 
@@ -1197,8 +1206,16 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 exp_dlr = float(pos.get("market_exposure_dollars", "0") or 0)
                 avg_entry_cents = int(round((exp_dlr / pos_fp) * 100)) if exp_dlr > 0 else 80
                 max_orig_cnt = int(tracked_open_positions.get(ticker, {}).get("max_count", whole_pos) or whole_pos)
-                stage1_banked = (max_orig_cnt >= 6 and whole_pos <= int(max_orig_cnt * 0.60)) or (peaked >= avg_entry_cents + 8)
-                # Dynamic Stop Floor: 48c pre-Stage-1, ratchets up to (entry - 4c) once Stage-1 (+6c) is banked so trade CANNOT lose!
+                is_soccer_ml = any(
+                    ticker.startswith(sp)
+                    for sp in ("KXLALIGAGAME", "KXUCLGAME", "KXEPLGAME", "KXSERIEAGAME", "KXBUNDESLIGAGAME", "KXMLSGAME", "KXLIGAMXGAME")
+                )
+                stage1_banked = (
+                    (max_orig_cnt >= 6 and whole_pos <= int(max_orig_cnt * 0.60))
+                    or (peaked >= avg_entry_cents + 8)
+                    or (is_soccer_ml and peaked >= avg_entry_cents + 3)
+                )
+                # Dynamic Stop Floor: 48c pre-Stage-1, ratchets up to (entry - 4c) once Stage-1 (+6c) or Soccer +3c is reached!
                 stop_floor_c = max(48, avg_entry_cents - 4) if stage1_banked else 48
                 thesis_broken_guillotine = (0 < cur_bid <= stop_floor_c) and (cur_ask <= stop_floor_c + 5)
                 if thesis_broken_guillotine:
@@ -1499,8 +1516,11 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 eff_mins = min(eff_mins, 20.0)
                             elif len(t.split("-")) >= 4:
                                 eff_mins = min(eff_mins, 30.0)
-                            # Velocity Priority Score: Tightest spread (1c first) + fastest-settling period/prop first
-                            vel_score = (spread_c * 25.0) + eff_mins
+                            # "One-Way Ratchet" Bonus: Prefer Over Totals & Player Props (where stats can ONLY go up, never backwards!)
+                            is_one_way_ratchet = ("TOTAL" in series) or ("BTTS" in series) or ("CORNERS" in series) or (len(t.split("-")) >= 4)
+                            ratchet_bonus = -12.0 if is_one_way_ratchet else 0.0
+                            # Velocity Priority Score: Tightest spread (1c first) + One-Way Ratchet bonus + fastest-settling period/prop
+                            vel_score = (spread_c * 25.0) + eff_mins + ratchet_bonus
                             candidates.append((vel_score, mins_to_exp, t, clean_title, shard_key))
                     except Exception:
                         pass

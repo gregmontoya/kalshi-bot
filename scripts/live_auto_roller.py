@@ -126,9 +126,9 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     )
                     continue
 
-                # Check Guillotine (<48c) or Trailing Drop Stop (peaked >=82c, dropped <=64c)
+                # Check Guillotine (<58c) or Trailing Drop Stop (dropped >=12c from peak)
                 peaked = peak_bids.get(ticker, cur_bid)
-                if (0 < cur_bid <= 48) or (peaked >= 82 and 0 < cur_bid <= 64):
+                if (0 < cur_bid <= 58) or (peaked >= 75 and 0 < cur_bid <= (peaked - 12)):
                     logger.warning(
                         f"DROP STOP TRIGGERED on {ticker} (cur_bid={cur_bid}c, peak={peaked}c). Exiting position!"
                     )
@@ -216,7 +216,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 for _, t in candidates[:25]:
                     ob = await client.get_orderbook(t)
                     if ob.best_yes_bid and ob.best_yes_ask:
-                        if 64 <= ob.best_yes_ask <= 78 and (ob.best_yes_ask - ob.best_yes_bid) <= 4:
+                        # High-Safety Leader Zone: 74c-88c with ultra-tight <=2c liquid spread
+                        if 74 <= ob.best_yes_ask <= 88 and (ob.best_yes_ask - ob.best_yes_bid) <= 2:
                             bid_cents = ob.best_yes_ask - 1
                             price_str = f"{bid_cents / 100:.4f}"
                             # Dynamic bankroll sizing: ~25% of total equity per play

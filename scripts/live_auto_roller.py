@@ -779,13 +779,21 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 cnt = float(pos.get("position_fp", "0") or 0)
                 exp = float(pos.get("market_exposure_dollars", "0") or 0)
                 if cnt >= 1.0:
-                    tracked_open_positions[t] = {"count": int(cnt), "stake": exp}
+                    prev_tr = tracked_open_positions.get(t, {})
+                    max_c = max(int(cnt), int(prev_tr.get("max_count", 0) or 0))
+                    max_s = max(exp, float(prev_tr.get("max_stake", 0.0) or 0.0))
+                    tracked_open_positions[t] = {
+                        "count": int(cnt),
+                        "stake": exp,
+                        "max_count": max_c,
+                        "max_stake": max_s,
+                    }
                     educator.save_memory()
                 elif cnt == 0.0 and t in tracked_open_positions:
                     prev = tracked_open_positions.pop(t)
                     educator.save_memory()
-                    stake_dlr = prev["stake"]
-                    cnt_int = prev["count"]
+                    stake_dlr = prev.get("max_stake") or prev["stake"]
+                    cnt_int = prev.get("max_count") or prev["count"]
                     realized_pnl = float(pos.get("realized_pnl_dollars", "0") or 0)
                     profit_dlr = realized_pnl if realized_pnl > 0 else max(0.01, round((cnt_int * 0.94) - stake_dlr, 2))
                     payout_dlr = round(stake_dlr + profit_dlr, 2)
@@ -868,9 +876,12 @@ async def run_autonomous_loop(duration_seconds: int = 0):
 
                 peaked = peak_bids.get(ticker, cur_bid)
                 exp_dlr = float(pos.get("market_exposure_dollars", "0") or 0)
-                avg_entry_cents = int(round((exp_dlr / pos_fp) * 100)) if exp_dlr > 0 else 75
-                # True GEMINI.md <48c Guillotine (Never panic-sell on 2%-15% normal mid-game swings! Only cut if thesis breaks <=48c)
-                thesis_broken_guillotine = (0 < cur_bid <= 48) and (cur_ask <= 54)
+                avg_entry_cents = int(round((exp_dlr / pos_fp) * 100)) if exp_dlr > 0 else 80
+                max_orig_cnt = int(tracked_open_positions.get(ticker, {}).get("max_count", whole_pos) or whole_pos)
+                stage1_banked = (max_orig_cnt >= 6 and whole_pos <= int(max_orig_cnt * 0.60)) or (peaked >= avg_entry_cents + 8)
+                # Dynamic Stop Floor: 48c pre-Stage-1, ratchets up to (entry - 4c) once Stage-1 (+6c) is banked so trade CANNOT lose!
+                stop_floor_c = max(48, avg_entry_cents - 4) if stage1_banked else 48
+                thesis_broken_guillotine = (0 < cur_bid <= stop_floor_c) and (cur_ask <= stop_floor_c + 5)
                 if thesis_broken_guillotine:
                     logger.warning(
                         f"THESIS-BROKEN <48c GUILLOTINE TRIGGERED on {ticker} (cur_bid={cur_bid}c, ask={cur_ask}c). Salvaging stake!"
@@ -994,24 +1005,20 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 whole_covered = int(resting_sell_counts.get(ticker, 0.0))
                 uncovered = whole_pos - whole_covered
                 if uncovered >= 1:
-                    if avg_entry_cents >= 90:
-                        fast_tp = max(cur_bid + 1, min(97, avg_entry_cents + 3))
-                        wave_tp = max(fast_tp + 1, min(98, avg_entry_cents + 5))
+                    # "No More $1 Crumbs" Rule: Minimum +6c Stage-1 Fast-Flip & +11c Stage-2 Wave-Rider ($4.50-$8.50+ per win!)
+                    undercut_ask = max(cur_bid + 1, cur_ask - 1)
+                    if undercut_ask >= avg_entry_cents + 6:
+                        fast_tp = min(avg_entry_cents + 7, undercut_ask)
                     else:
-                        # Strategy B: Undercut current ask by 1c if profitable (>= entry + 3c), putting us #1 in queue!
-                        undercut_ask = max(cur_bid + 1, cur_ask - 1)
-                        if undercut_ask >= avg_entry_cents + 3:
-                            fast_tp = min(avg_entry_cents + 4, undercut_ask)
-                        else:
-                            fast_tp = max(cur_bid + 1, avg_entry_cents + 4)
-                        wave_tp = max(fast_tp + 2, min(95, avg_entry_cents + 8))
+                        fast_tp = max(cur_bid + 1, min(93, avg_entry_cents + 6))
+                    wave_tp = max(fast_tp + 3, min(96, avg_entry_cents + 11))
 
                     if uncovered >= 4:
                         fast_cnt = uncovered // 2
                         wave_cnt = uncovered - fast_cnt
-                        legs = [(fast_cnt, fast_tp, "Stage-1 Fast-Flip (Front-of-Queue)"), (wave_cnt, wave_tp, "Stage-2 Wave-Rider")]
+                        legs = [(fast_cnt, fast_tp, "Stage-1 Fast-Flip (+6c Target)"), (wave_cnt, wave_tp, "Stage-2 Wave-Rider (+11c Target)")]
                     else:
-                        legs = [(uncovered, fast_tp, "Fast-Flip Harvest")]
+                        legs = [(uncovered, fast_tp, "Fast-Flip Harvest (+6c Target)")]
 
                     for leg_cnt, leg_cents, leg_label in legs:
                         count_str = f"{leg_cnt}.00"
@@ -1156,7 +1163,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             spread_c = ask_c - bid_c
                             if spread_c <= 0 or spread_c > 3:
                                 continue
-                            if not (80 <= ask_c <= 96):
+                            # "Meat of the Move" Sweet Spot (76c-87c): Ban 88c-96c penny-picking where upside is only $1!
+                            if not (76 <= ask_c <= 87):
                                 continue
 
                             clean_title = m.get("yes_sub_title") or m.get("title", t)
@@ -1184,18 +1192,15 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     ob = await client.get_orderbook(t)
                     if ob.best_yes_bid and ob.best_yes_ask:
                         spread = ob.best_yes_ask - ob.best_yes_bid
-                        is_leader_zone = (80 <= ob.best_yes_ask <= 91 and spread <= 3)
-                        is_tail_lock_zone = (92 <= ob.best_yes_ask <= 96 and spread <= 3)
+                        is_leader_zone = (76 <= ob.best_yes_ask <= 87 and spread <= 3)
+                        is_tail_lock_zone = False
 
-                        if is_leader_zone or is_tail_lock_zone:
+                        if is_leader_zone:
                             approved, reason, conf_mult = await educator.evaluate_opportunity(
                                 client, t, ob, title=title, min_book_depth_dlr=tier["min_depth_dlr"]
                             )
-                            # For 93c-97c Tail Locks, require strong positive whale bid wall (Imbalance >= 1.5x)
-                            if is_tail_lock_zone and conf_mult < 1.0:
-                                continue
                             logger.info(
-                                f"PreTradeEducator [{'93%+ TAIL LOCK' if is_tail_lock_zone else '80-89% DOMINANT LEADER'} | {t} ({mins_left:.0f}m left)]: {reason}"
+                                f"PreTradeEducator [76-87c MEAT-OF-MOVE LEADER | {t} ({mins_left:.0f}m left)]: {reason}"
                             )
                             if not approved:
                                 continue

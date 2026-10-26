@@ -967,9 +967,9 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             bid_c = int(round(bid_f * 100))
                             ask_c = int(round(ask_f * 100))
                             spread_c = ask_c - bid_c
-                            if spread_c <= 0 or spread_c > 2:
+                            if spread_c <= 0 or spread_c > 3:
                                 continue
-                            if not ((80 <= ask_c <= 89) or (93 <= ask_c <= 97)):
+                            if not (80 <= ask_c <= 96):
                                 continue
 
                             clean_title = m.get("yes_sub_title") or m.get("title", t)
@@ -988,8 +988,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     ob = await client.get_orderbook(t)
                     if ob.best_yes_bid and ob.best_yes_ask:
                         spread = ob.best_yes_ask - ob.best_yes_bid
-                        is_leader_zone = (80 <= ob.best_yes_ask <= 89 and spread <= 2)
-                        is_tail_lock_zone = (93 <= ob.best_yes_ask <= 97 and spread <= 2)
+                        is_leader_zone = (80 <= ob.best_yes_ask <= 91 and spread <= 3)
+                        is_tail_lock_zone = (92 <= ob.best_yes_ask <= 96 and spread <= 3)
 
                         if is_leader_zone or is_tail_lock_zone:
                             approved, reason, conf_mult = await educator.evaluate_opportunity(

@@ -110,12 +110,17 @@ WATCH_SERIES = [
     "KXHIGHAUS",
     "KXHIGHDEN",
     "KXHIGHPHIL",
-    # 4. Sports Game Winners (Moneylines & Tennis/Esports)
+    # 4. Sports Game Winners (Moneylines, College Football/Basketball, UCL, MLS, Tennis/Esports)
     "KXNBAGAME",
     "KXNFLGAME",
+    "KXNCAAFGAME",
+    "KXNCAAMBGAME",
+    "KXNCAAWBGAME",
     "KXNHLGAME",
     "KXWTAMATCH",
     "KXATPMATCH",
+    "KXUCLGAME",
+    "KXMLSGAME",
     "KXLIGAMXGAME",
     "KXLALIGAGAME",
     "KXLIGUE1GAME",
@@ -130,6 +135,7 @@ WATCH_SERIES = [
     # 5. Sports Over / Unders (Totals, 1H Totals, Team Totals, BTTS, Corners)
     "KXNBATOTAL",
     "KXNFLTOTAL",
+    "KXNCAAFTOTAL",
     "KXNHLTOTAL",
     "KXLIGAMXBTTS",
     "KXLALIGA1HTOTAL",
@@ -139,6 +145,7 @@ WATCH_SERIES = [
     # 6. Sports Point Spreads
     "KXNBASPREAD",
     "KXNFLSPREAD",
+    "KXNCAAFSPREAD",
     "KXNHLSPREAD",
     # 7. Sports Player Props (Points, Rebounds, Assists, TDs, Yards, Soccer Score/Assist)
     "KXNBAPTS",
@@ -289,24 +296,29 @@ class PreTradeEducator:
 
         # C. Live Sports & Tennis Scoreboard Verification via ESPN API (Fail-Closed!)
         espn_map = {
-            "KXWTAMATCH": "tennis/wta",
-            "KXATPMATCH": "tennis/atp",
-            "KXNBAGAME": "basketball/nba",
-            "KXNFLGAME": "football/nfl",
-            "KXNHLGAME": "hockey/nhl",
-            "KXLIGAMXGAME": "soccer/mex.1",
-            "KXLALIGAGAME": "soccer/esp.1",
-            "KXEPLGAME": "soccer/eng.1",
-            "KXSERIEAGAME": "soccer/ita.1",
-            "KXBUNDESLIGAGAME": "soccer/ger.1",
-            "KXLIGUE1GAME": "soccer/fra.1",
+            "KXWTAMATCH": "tennis/wta/scoreboard",
+            "KXATPMATCH": "tennis/atp/scoreboard",
+            "KXNBAGAME": "basketball/nba/scoreboard",
+            "KXNFLGAME": "football/nfl/scoreboard",
+            "KXNCAAFGAME": "football/college-football/scoreboard?groups=80&limit=200",
+            "KXNCAAMBGAME": "basketball/mens-college-basketball/scoreboard?groups=50&limit=200",
+            "KXNCAAWBGAME": "basketball/womens-college-basketball/scoreboard?groups=50&limit=200",
+            "KXNHLGAME": "hockey/nhl/scoreboard",
+            "KXUCLGAME": "soccer/uefa.champions/scoreboard",
+            "KXMLSGAME": "soccer/usa.1/scoreboard",
+            "KXLIGAMXGAME": "soccer/mex.1/scoreboard",
+            "KXLALIGAGAME": "soccer/esp.1/scoreboard",
+            "KXEPLGAME": "soccer/eng.1/scoreboard",
+            "KXSERIEAGAME": "soccer/ita.1/scoreboard",
+            "KXBUNDESLIGAGAME": "soccer/ger.1/scoreboard",
+            "KXLIGUE1GAME": "soccer/fra.1/scoreboard",
         }
         if series in espn_map:
             sport_path = espn_map[series]
             target_name = title.replace(" wins", "").strip().lower()
             last_word = target_name.split()[-1] if target_name else ""
             try:
-                r = await hc.get(f"https://site.api.espn.com/apis/site/v2/sports/{sport_path}/scoreboard", timeout=3.5)
+                r = await hc.get(f"https://site.api.espn.com/apis/site/v2/sports/{sport_path}", timeout=3.5)
                 events = r.json().get("events", [])
                 for ev in events:
                     comps = list(ev.get("competitions", []))

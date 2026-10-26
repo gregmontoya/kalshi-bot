@@ -947,38 +947,53 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     except Exception as e:
                         logger.warning(f"Green-Out split failed on {ticker}: {e}")
 
-                # Ensure High-Velocity Dynamic Harvest Sell (+6c quick-hit Maker flip for 80c-88c, +5c for 89c+)
+                # Ensure Strategy A (50/50 Fast-Flip + Wave-Rider Split) & Strategy B (Front-of-Queue Ask Undercut)
                 whole_covered = int(resting_sell_counts.get(ticker, 0.0))
                 uncovered = whole_pos - whole_covered
                 if uncovered >= 1:
-                    count_str = f"{uncovered}.00"
-                    if avg_entry_cents >= 89:
-                        target_tp_cents = min(97, avg_entry_cents + 5)
+                    if avg_entry_cents >= 90:
+                        fast_tp = max(cur_bid + 1, min(97, avg_entry_cents + 3))
+                        wave_tp = max(fast_tp + 1, min(98, avg_entry_cents + 5))
                     else:
-                        target_tp_cents = max(86, min(91, avg_entry_cents + 6))
-                    target_tp_cents = max(target_tp_cents, cur_bid + 1)
-                    tp_price = f"{target_tp_cents / 100:.4f}"
-                    logger.info(
-                        f"Auto-queuing Fast-Velocity Harvest Sell for {ticker}: {count_str} @ {tp_price}"
-                    )
-                    try:
-                        await client.request(
-                            "POST",
-                            "/portfolio/events/orders",
-                            json_data={
-                                "ticker": ticker,
-                                "side": "ask",
-                                "count": count_str,
-                                "price": tp_price,
-                                "time_in_force": "good_till_canceled",
-                                "self_trade_prevention_type": "maker",
-                                "post_only": True,
-                                "client_order_id": str(uuid.uuid4()),
-                            },
-                            authenticated=True,
+                        # Strategy B: Undercut current ask by 1c if profitable (>= entry + 3c), putting us #1 in queue!
+                        undercut_ask = max(cur_bid + 1, cur_ask - 1)
+                        if undercut_ask >= avg_entry_cents + 3:
+                            fast_tp = min(avg_entry_cents + 4, undercut_ask)
+                        else:
+                            fast_tp = max(cur_bid + 1, avg_entry_cents + 4)
+                        wave_tp = max(fast_tp + 2, min(95, avg_entry_cents + 8))
+
+                    if uncovered >= 4:
+                        fast_cnt = uncovered // 2
+                        wave_cnt = uncovered - fast_cnt
+                        legs = [(fast_cnt, fast_tp, "Stage-1 Fast-Flip (Front-of-Queue)"), (wave_cnt, wave_tp, "Stage-2 Wave-Rider")]
+                    else:
+                        legs = [(uncovered, fast_tp, "Fast-Flip Harvest")]
+
+                    for leg_cnt, leg_cents, leg_label in legs:
+                        count_str = f"{leg_cnt}.00"
+                        tp_price = f"{leg_cents / 100:.4f}"
+                        logger.info(
+                            f"Auto-queuing {leg_label} Sell for {ticker}: {count_str} @ {tp_price}"
                         )
-                    except Exception as e:
-                        logger.warning(f"Could not place harvest sell for {ticker}: {e}")
+                        try:
+                            await client.request(
+                                "POST",
+                                "/portfolio/events/orders",
+                                json_data={
+                                    "ticker": ticker,
+                                    "side": "ask",
+                                    "count": count_str,
+                                    "price": tp_price,
+                                    "time_in_force": "good_till_canceled",
+                                    "self_trade_prevention_type": "maker",
+                                    "post_only": True,
+                                    "client_order_id": str(uuid.uuid4()),
+                                },
+                                authenticated=True,
+                            )
+                        except Exception as e:
+                            logger.warning(f"Could not place {leg_label} sell for {ticker}: {e}")
 
             # 2. Dynamic 4-Tier Bankroll Scaling into SOONEST Worldwide Games (80c-89c Leaders & 93c-97c Tail Locks)
             tier = get_scaling_tier(equity_cents)

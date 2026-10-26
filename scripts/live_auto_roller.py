@@ -170,8 +170,8 @@ class PreTradeEducator:
         # 1. Whale Order Book Imbalance Check (Top 5 levels near touch)
         top_yes_bids = sorted(ob.yes_bids, key=lambda x: x.price, reverse=True)[:5]
         top_no_bids = sorted(ob.no_bids, key=lambda x: x.price, reverse=True)[:5]
-        yes_depth = sum(float(level.count) * (level.price / 100.0) for level in top_yes_bids)
-        no_depth = sum(float(level.count) * (level.price / 100.0) for level in top_no_bids)
+        yes_depth = sum(float(level.quantity) * (level.price / 100.0) for level in top_yes_bids)
+        no_depth = sum(float(level.quantity) * (level.price / 100.0) for level in top_no_bids)
         imbalance_ratio = (yes_depth + 1.0) / (no_depth + 1.0)
 
         if yes_depth < 100.0:

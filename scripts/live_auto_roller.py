@@ -39,9 +39,25 @@ IMESSAGE_TARGET = os.environ.get("IMESSAGE_TARGET", "+19493107304")
 
 
 async def send_phone_alert(client: KalshiClient, title: str, message: str) -> None:
-    """Sends instant push notification to phone via ntfy.sh, Telegram, and macOS iMessage."""
+    """Sends instant push notification to phone via macOS iMessage, ntfy.sh, and Telegram."""
     logger.info(f"📱 PHONE ALERT: {title} — {message}")
-    # 1. Cloud-native push via ntfy.sh (works 24/7 on GitHub Actions & local)
+    # 1. Direct macOS iMessage text to +19493107304 (First priority!)
+    if IMESSAGE_TARGET and sys.platform == "darwin":
+        try:
+            import subprocess
+            safe_msg = f"{title}\n{message}".replace('"', "'")
+            script = (
+                'tell application "Messages"\n'
+                '  set targetService to 1st account whose service type = iMessage\n'
+                f'  set targetBuddy to participant "{IMESSAGE_TARGET}" of targetService\n'
+                f'  send "{safe_msg}" to targetBuddy\n'
+                'end tell'
+            )
+            subprocess.Popen(["osascript", "-e", script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+    # 2. Cloud-native push via ntfy.sh (works 24/7 on GitHub Actions & local)
     try:
         hc = await client.get_client()
         await hc.post(
@@ -52,9 +68,9 @@ async def send_phone_alert(client: KalshiClient, title: str, message: str) -> No
     except Exception:
         pass
 
-    # 2. Optional Telegram Bot push
-    tg_token = os.environ.get("TELEGRAM_BOT_TOKEN") or settings.TELEGRAM_BOT_TOKEN
-    tg_chat = os.environ.get("TELEGRAM_CHAT_ID") or settings.TELEGRAM_CHAT_ID
+    # 3. Optional Telegram Bot push
+    tg_token = os.environ.get("TELEGRAM_BOT_TOKEN") or getattr(settings, "TELEGRAM_BOT_TOKEN", None)
+    tg_chat = os.environ.get("TELEGRAM_CHAT_ID") or getattr(settings, "TELEGRAM_CHAT_ID", None)
     if tg_token and tg_chat:
         try:
             hc = await client.get_client()
@@ -64,19 +80,6 @@ async def send_phone_alert(client: KalshiClient, title: str, message: str) -> No
             )
         except Exception:
             pass
-
-    # 3. Direct macOS iMessage text to +19493107304
-    if IMESSAGE_TARGET and sys.platform == "darwin":
-        import subprocess
-        safe_msg = f"{title}\n{message}".replace('"', "'")
-        script = (
-            'tell application "Messages"\n'
-            '  set targetService to 1st account whose service type = iMessage\n'
-            f'  set targetBuddy to participant "{IMESSAGE_TARGET}" of targetService\n'
-            f'  send "{safe_msg}" to targetBuddy\n'
-            'end tell'
-        )
-        subprocess.Popen(["osascript", "-e", script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 from datetime import datetime, timezone
@@ -240,8 +243,8 @@ class PreTradeEducator:
                     self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
                     self.save_memory()
                     return False, f"VETO: Falling knife on trade tape ({momentum_delta}c drop over last 10 trades)", 0.0
-        except Exception:
-            pass
+        except Exception as e:
+            return False, f"VETO: Trade tape unavailable ({e})", 0.0
 
         # 3. Self-Learning Series Confidence Multiplier
         series = ticker.split("-")[0] if "-" in ticker else ticker
@@ -277,6 +280,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
     start_ts = time.time()
     peak_bids: dict[str, int] = {}
     tracked_open_positions: dict[str, dict] = {}
+    stopped_out_events: set[str] = {"KXLIGAMXGAME-26OCT25TIJSLA"}
 
     while True:
         try:
@@ -339,6 +343,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
 
                 ob = await client.get_orderbook(ticker)
                 cur_bid = ob.best_yes_bid or 0
+                cur_ask = ob.best_yes_ask or 99
+                cur_spread = cur_ask - cur_bid
                 if cur_bid > peak_bids.get(ticker, 0):
                     peak_bids[ticker] = cur_bid
 
@@ -349,14 +355,17 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 profit_lock_triggered = (peaked >= avg_entry_cents + 8 or peaked >= 86) and (
                     0 < cur_bid <= avg_entry_cents + 2
                 )
-                if (
+                # Anti-Spoof Filter (Law 6): Only fire stop-loss when spread is liquid (<=6c) OR true market ask also dropped
+                real_market_drop = (cur_spread <= 6) or (cur_ask <= peaked - 8) or (cur_ask <= 65)
+                if real_market_drop and (
                     (0 < cur_bid <= 58)
                     or (peaked >= 75 and 0 < cur_bid <= (peaked - 12))
                     or profit_lock_triggered
                 ):
                     logger.warning(
-                        f"DROP STOP TRIGGERED on {ticker} (cur_bid={cur_bid}c, peak={peaked}c). Exiting position!"
+                        f"DROP STOP TRIGGERED on {ticker} (cur_bid={cur_bid}c, ask={cur_ask}c, peak={peaked}c). Exiting position!"
                     )
+                    stopped_out_events.add("-".join(ticker.split("-")[:2]))
                     to_cancel = [
                         {
                             "order_id": so["order_id"],
@@ -400,12 +409,13 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     )
                     continue
 
-                # Ensure 96c Harvest Sell (or 99c for 94c+ Tail Locks) is queued for uncovered contracts
+                # Ensure Smart Dynamic Harvest Sell (90c-96c for Leaders, 99c for 94c+ Tail Locks) is queued
                 covered = resting_sell_counts.get(ticker, 0.0)
                 uncovered = int(round(pos_fp - covered))
                 if uncovered >= 1:
                     count_str = f"{uncovered}.00"
-                    tp_price = "0.9900" if cur_bid >= 93 else "0.9600"
+                    target_tp_cents = 99 if avg_entry_cents >= 92 else min(96, max(90, avg_entry_cents + 15))
+                    tp_price = f"{target_tp_cents / 100:.4f}"
                     logger.info(
                         f"Auto-queuing Harvest Sell for {ticker}: {count_str} @ {tp_price}"
                     )
@@ -426,7 +436,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             authenticated=True,
                         )
                     except Exception as e:
-                        logger.warning(f"Could not place 96c sell for {ticker}: {e}")
+                        logger.warning(f"Could not place harvest sell for {ticker}: {e}")
 
             # 2. Dynamic Bankroll Scaling into SOONEST Worldwide Games (74c-88c High-Safety Leader Zone)
             logger.info(
@@ -441,7 +451,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     if idx in shard_cents:
                         shard_cents[idx] = int(float(b_item.get("balance", "0") or 0) * 100)
 
-                active_events = {
+                active_events = set(stopped_out_events) | {
                     "-".join(tk.split("-")[:2])
                     for tk in (list(resting_buy_tickers) + list(resting_sell_counts.keys()) + list(tracked_open_positions.keys()))
                 }

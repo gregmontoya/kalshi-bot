@@ -433,18 +433,13 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 f"Heartbeat | Cash: ${total_cents/100:.2f} | Portfolio: ${port_cents/100:.2f} | Total Equity: ${equity_cents/100:.2f}"
             )
 
-            if total_cents >= 200 and len(resting_buy_tickers) < 6:
+            if total_cents >= 150 and len(resting_buy_tickers) < 6:
                 now_utc = datetime.now(timezone.utc)
-                shard_cents = {0: total_cents, 3: total_cents}
+                shard_cents = {0: 0, 1: 0, 2: 0, 3: 0}
                 for b_item in bal.get("balance_breakdown", []):
                     idx = b_item.get("exchange_index")
-                    if idx in (0, 3):
+                    if idx in shard_cents:
                         shard_cents[idx] = int(float(b_item.get("balance", "0") or 0) * 100)
-
-                SHARD_0_PREFIXES = (
-                    "KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB",
-                    "KXINX", "KXNASDAQ", "KXWTI", "KXHIGH", "KXNFL", "KXNHL",
-                )
 
                 active_events = {
                     "-".join(tk.split("-")[:2])
@@ -452,10 +447,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 }
                 candidates = []
                 for series in WATCH_SERIES:
-                    is_shard_0 = series.startswith(SHARD_0_PREFIXES)
-                    avail_shard_c = shard_cents[0] if is_shard_0 else shard_cents[3]
-                    if avail_shard_c < 200:
-                        continue
                     try:
                         res = await client.request(
                             "GET",
@@ -463,6 +454,10 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             params={"series_ticker": series, "status": "open", "limit": 200},
                         )
                         for m in res.get("markets", []):
+                            shard_key = int(m.get("exchange_index", 0) or 0)
+                            if shard_cents.get(shard_key, 0) < 150:
+                                continue
+
                             t = m.get("ticker", "")
                             event_prefix = "-".join(t.split("-")[:2])
                             if t in resting_buy_tickers or resting_sell_counts.get(t, 0) > 0 or event_prefix in active_events:
@@ -491,17 +486,16 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             if not ((74 <= ask_c <= 88) or (94 <= ask_c <= 97)):
                                 continue
 
-                            candidates.append((mins_to_exp, t, m.get("title", t), is_shard_0))
+                            candidates.append((mins_to_exp, t, m.get("title", t), shard_key))
                     except Exception:
                         pass
 
                 # Sort by soonest finishing / most imminent markets first
                 candidates.sort(key=lambda x: abs(x[0]))
 
-                for mins_left, t, title, is_shard_0 in candidates[:25]:
+                for mins_left, t, title, shard_key in candidates[:25]:
                     event_prefix = "-".join(t.split("-")[:2])
-                    shard_key = 0 if is_shard_0 else 3
-                    if event_prefix in active_events or shard_cents[shard_key] < 200:
+                    if event_prefix in active_events or shard_cents.get(shard_key, 0) < 150:
                         continue
                     ob = await client.get_orderbook(t)
                     if ob.best_yes_bid and ob.best_yes_ask:
@@ -524,7 +518,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             price_str = f"{bid_cents / 100:.4f}"
                             # A+ Whale Conviction Sizing: 45% of equity on 94c+ Tail Locks or >=1.3x educator confidence; 25% on standard leaders
                             base_alloc_pct = 0.45 if (is_tail_lock_zone or conf_mult >= 1.30) else 0.25
-                            target_stake_cents = max(200, int(equity_cents * base_alloc_pct * conf_mult))
+                            target_stake_cents = max(150, int(equity_cents * base_alloc_pct * conf_mult))
                             alloc_cents = min(shard_cents[shard_key], target_stake_cents)
                             count_int = int(alloc_cents // bid_cents)
                             if count_int >= 2:

@@ -769,12 +769,13 @@ class PreTradeEducator:
                         my_pts = _comp_window_pts(competitors[c_idx])
                         opp_pts = _comp_window_pts(competitors[1 - c_idx])
                         margin = my_pts - opp_pts
-                        if margin <= 0 or margin < (strike_val - 2.5):
+                        # Require team to ALREADY be covering the spread by at least +3.5 points (2+ possessions above the spread line!)
+                        if margin <= 0 or margin < (strike_val + 3.5):
                             return False, (
-                                f"VETO [ESPN {period_tag} Spread]: {tm_prefix} margin is {margin:+.0f} ({my_pts:.0f}-{opp_pts:.0f}) "
-                                f"vs -{strike_val:.1f} spread in P{live_period} {clock_disp}"
+                                f"VETO [ESPN {period_tag} Spread Cushion]: {tm_prefix} margin is {margin:+.0f} ({my_pts:.0f}-{opp_pts:.0f}) "
+                                f"vs -{strike_val:.1f} spread (requires +{strike_val + 3.5:.1f} min lead) in P{live_period} {clock_disp}"
                             )
-                        lock_tag = " | PROP-LOCK" if margin >= (strike_val + 2.5) else ""
+                        lock_tag = " | PROP-LOCK" if margin >= (strike_val + 5.5) else ""
                         return True, f"ESPN {period_tag} Spread Verified ({tm_prefix} {my_pts:.0f}-{opp_pts:.0f}, margin {margin:+.0f} vs -{strike_val:.1f}{lock_tag} | P{live_period} {clock_disp})"
 
                 if req_periods is not None and "TOTAL" not in series and "SPREAD" not in series and len(competitors) >= 2:
@@ -799,9 +800,9 @@ class PreTradeEducator:
                                 clk_min = 0.0
                             if clk_min < 38.0:
                                 return False, f"VETO [Soccer 1H 1-Goal Risk]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} at {clock_disp} (<38' or <2 goal cushion)"
-                        elif series.startswith(("KXNBA", "KXNFL")) and margin < 4:
-                            return False, f"VETO [ESPN {period_tag} Cushion]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} (+{margin:.0f} < +4 pt two-possession min)"
-                        lock_tag = " | PROP-LOCK" if margin >= 6 or (is_soccer and margin >= 2) else ""
+                        elif series.startswith(("KXNBA", "KXNFL")) and margin < 6:
+                            return False, f"VETO [ESPN {period_tag} Cushion]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} (+{margin:.0f} < +6 pt multi-possession min)"
+                        lock_tag = " | PROP-LOCK" if margin >= 8 or (is_soccer and margin >= 2) else ""
                         return True, f"ESPN {period_tag} Leader Verified ({suffix} leading {my_pts:.0f}-{opp_pts:.0f}{lock_tag} | P{live_period} {clock_disp})"
 
                 # 3. Deep Player Prop Box Score Check via ESPN Summary API (/summary?event={id})
@@ -1080,10 +1081,12 @@ class PreTradeEducator:
         no_depth = sum(float(level.quantity) * (level.price / 100.0) for level in top_no_bids)
         imbalance_ratio = (yes_depth + 1.0) / (no_depth + 1.0)
 
-        if yes_depth < min_book_depth_dlr:
+        is_quarter_mkt = any(q in series for q in ("1Q", "2Q", "3Q", "4Q", "1P", "2P", "3P"))
+        eff_min_depth = min(min_book_depth_dlr, 90.0) if is_quarter_mkt else min_book_depth_dlr
+        if yes_depth < eff_min_depth:
             self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
             self.save_memory()
-            return False, f"VETO: Thin bid liquidity (${yes_depth:.0f} < ${min_book_depth_dlr:.0f} tier exit depth)", 0.0
+            return False, f"VETO: Thin bid liquidity (${yes_depth:.0f} < ${eff_min_depth:.0f} tier exit depth)", 0.0
 
         if imbalance_ratio < req_imbalance:
             self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
@@ -1091,6 +1094,7 @@ class PreTradeEducator:
             return False, f"VETO: Weak whale buying pressure (Imbalance={imbalance_ratio:.2f}x < {req_imbalance:.2f}x min for {series})", 0.0
 
         # 2. Recent Trade Tape Recency & Momentum Check (Must be actively trading NOW & strictly flat/rising)
+        # Note: Fast 12-minute Quarter markets (1Q-4Q / 1P-3P) settle to $1.00 in minutes via institutional MM quotes!
         momentum_delta = 0
         last_trade_mins_ago = 999.0
         try:
@@ -1099,26 +1103,29 @@ class PreTradeEducator:
             )
             trades = trades_resp.get("trades", [])
             if not trades:
-                self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
-                self.save_memory()
-                return False, "VETO: Zero recent trades on tape (inactive market)", 0.0
-
-            now_utc = datetime.now(timezone.utc)
-            last_ts = datetime.fromisoformat(trades[0]["created_time"].replace("Z", "+00:00"))
-            last_trade_mins_ago = max(0.0, (now_utc - last_ts).total_seconds() / 60.0)
-            if last_trade_mins_ago > 10.0:
-                self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
-                self.save_memory()
-                return False, f"VETO: Stale market (last trade {last_trade_mins_ago:.1f}m ago > 10m max)", 0.0
-
-            if len(trades) >= 3:
-                newest_price = float(trades[0].get("yes_price_dollars") or (trades[0].get("yes_price", 0) / 100.0))
-                oldest_price = float(trades[-1].get("yes_price_dollars") or (trades[-1].get("yes_price", 0) / 100.0))
-                momentum_delta = int(round((newest_price - oldest_price) * 100))
-                if momentum_delta < 0:
+                if not is_quarter_mkt:
                     self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
                     self.save_memory()
-                    return False, f"VETO: Negative tape drift ({momentum_delta}c over last 10 trades — only buying rising/flat leaders)", 0.0
+                    return False, "VETO: Zero recent trades on tape (inactive market)", 0.0
+                last_trade_mins_ago = 0.0
+            else:
+                now_utc = datetime.now(timezone.utc)
+                last_ts = datetime.fromisoformat(trades[0]["created_time"].replace("Z", "+00:00"))
+                last_trade_mins_ago = max(0.0, (now_utc - last_ts).total_seconds() / 60.0)
+                max_stale_m = 45.0 if is_quarter_mkt else 10.0
+                if last_trade_mins_ago > max_stale_m:
+                    self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+                    self.save_memory()
+                    return False, f"VETO: Stale market (last trade {last_trade_mins_ago:.1f}m ago > {max_stale_m:.0f}m max)", 0.0
+
+                if len(trades) >= 3:
+                    newest_price = float(trades[0].get("yes_price_dollars") or (trades[0].get("yes_price", 0) / 100.0))
+                    oldest_price = float(trades[-1].get("yes_price_dollars") or (trades[-1].get("yes_price", 0) / 100.0))
+                    momentum_delta = int(round((newest_price - oldest_price) * 100))
+                    if momentum_delta < 0:
+                        self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+                        self.save_memory()
+                        return False, f"VETO: Negative tape drift ({momentum_delta}c over last 10 trades — only buying rising/flat leaders)", 0.0
         except Exception as e:
             return False, f"VETO: Trade tape unavailable ({e})", 0.0
 
@@ -1466,13 +1473,26 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     ticker.startswith(sp)
                     for sp in ("KXLALIGAGAME", "KXUCLGAME", "KXEPLGAME", "KXSERIEAGAME", "KXBUNDESLIGAGAME", "KXMLSGAME", "KXLIGAMXGAME")
                 )
+                is_fast_period = any(
+                    p in ticker for p in ("1Q", "2Q", "3Q", "4Q", "1H", "2H", "1P", "2P", "3P")
+                )
                 stage1_banked = (
                     (max_orig_cnt >= 6 and whole_pos <= int(max_orig_cnt * 0.60))
-                    or (peaked >= avg_entry_cents + 8)
+                    or (peaked >= avg_entry_cents + 6)
                     or (is_soccer_ml and peaked >= avg_entry_cents + 3)
                 )
-                # Dynamic Stop Floor: 48c pre-Stage-1, ratchets up to (entry - 4c) once Stage-1 (+6c) or Soccer +3c is reached!
-                stop_floor_c = max(48, avg_entry_cents - 4) if stage1_banked else 48
+                micro_ratchet_armed = (peaked >= avg_entry_cents + 4)
+                # 3-Tier Dynamic Stop Floor:
+                # - Base Floor: 54c on fast Quarter/Half contracts (prevents final-minute cliff drops), 48c on Full Games
+                # - Micro-Ratchet (+4c peak): raises floor to (entry - 7c) across all sports
+                # - Stage-1 Banked (+6c / 50% sold): locks floor at (entry - 3c) for a 100% Zero-Loss Breakeven Shield!
+                base_floor_c = 54 if is_fast_period else 48
+                if stage1_banked:
+                    stop_floor_c = max(base_floor_c, avg_entry_cents - 3)
+                elif micro_ratchet_armed:
+                    stop_floor_c = max(base_floor_c, avg_entry_cents - 7)
+                else:
+                    stop_floor_c = base_floor_c
                 thesis_broken_guillotine = (0 < cur_bid <= stop_floor_c) and (cur_ask <= stop_floor_c + 5)
                 if thesis_broken_guillotine:
                     logger.warning(
@@ -1670,7 +1690,15 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     except Exception:
                         pass
 
-            if total_cents >= min_stake_c and len(resting_buy_tickers) < tier["max_concurrent"]:
+            # Anti-Cluster Stagger Shield: Never allow more than 2 unshielded (pre-Stage-1) plays at the exact same time!
+            # Once a play hits Stage-1 (+6c) and locks its Breakeven Shield, it becomes a 0%-risk runner and unlocks the next slot!
+            unshielded_open_count = sum(
+                1
+                for tk_o, tr_o in tracked_open_positions.items()
+                if not tr_o.get("stage1_alerted", False)
+            ) + len(resting_buy_tickers)
+
+            if total_cents >= min_stake_c and len(resting_buy_tickers) < tier["max_concurrent"] and unshielded_open_count < 2:
                 shard_cents = {0: 0, 1: 0, 2: 0, 3: 0}
                 for b_item in bal.get("balance_breakdown", []):
                     idx = b_item.get("exchange_index")
@@ -1806,12 +1834,16 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             clean_title = m.get("yes_sub_title") or m.get("title", t)
                             # Fast-Settlement Velocity Cap: Quarters/Periods resolve in ~10m, Halves in ~20m, Player Props mid-game!
                             eff_mins = max(0.0, mins_to_exp)
-                            if any(q in series for q in ("1Q", "2Q", "3Q", "4Q", "1P", "2P", "3P")):
-                                eff_mins = min(eff_mins, 10.0)
+                            is_q_series = any(q in series for q in ("1Q", "2Q", "3Q", "4Q", "1P", "2P", "3P"))
+                            if is_q_series:
+                                eff_mins = min(eff_mins, 8.0)
                             elif any(h in series for h in ("1H", "2H")):
                                 eff_mins = min(eff_mins, 20.0)
                             elif len(t.split("-")) >= 4:
                                 eff_mins = min(eff_mins, 30.0)
+                            # "Hot Quarter King" Priority (-30.0 bonus): ALWAYS attack the hot 12-min Quarter (1Q-4Q / 1P-3P)
+                            # BEFORE Halftime or Full-Game lines so we cash out at $1.00 in 5-8 minutes without sweating the next quarter!
+                            quarter_king_bonus = -30.0 if is_q_series else 0.0
                             # "One-Way Ratchet" Bonus: Prefer Over Totals & Player Props (where stats can ONLY go up, never backwards!)
                             is_one_way_ratchet = ("TOTAL" in series) or ("BTTS" in series) or ("CORNERS" in series) or (len(t.split("-")) >= 4)
                             ratchet_bonus = -12.0 if is_one_way_ratchet else 0.0
@@ -1821,8 +1853,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             import re as _re
                             _m_strike = _re.search(r"(\d+(?:\.\d+)?)$", t.split("-")[-1])
                             alt_line_safety_tiebreaker = float(_m_strike.group(1)) * 0.04 if _m_strike else 0.0
-                            # Velocity Priority Score: Tightest spread (1c first) + One-Way Ratchet bonus + fastest-settling period/prop + safest Alt-Line strike
-                            vel_score = (spread_c * 25.0) + eff_mins + ratchet_bonus + alt_line_safety_tiebreaker
+                            # Velocity Priority Score: Hot Quarter First + Tightest spread + One-Way Ratchet + safest Alt-Line strike
+                            vel_score = (spread_c * 25.0) + eff_mins + quarter_king_bonus + ratchet_bonus + alt_line_safety_tiebreaker
                             candidates.append((vel_score, mins_to_exp, t, clean_title, shard_key))
                     except Exception:
                         pass
@@ -1837,6 +1869,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     if (
                         event_prefix in active_events
                         or total_cents < min_stake_c
+                        or unshielded_open_count >= 2
                         or (is_crypto_t and active_crypto_count >= 1)
                         or (is_index_t and active_index_count >= 1)
                     ):
@@ -1933,6 +1966,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                     )
                                     resting_buy_tickers.add(t)
                                     active_events.add(event_prefix)
+                                    unshielded_open_count += 1
                                     if is_crypto_t:
                                         active_crypto_count += 1
                                     if is_index_t:

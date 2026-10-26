@@ -727,6 +727,16 @@ class PreTradeEducator:
                             prog_pct = (found_stat / target_val) * 100.0
                             if prog_pct < 65.0:
                                 return False, f"VETO [ESPN Boxscore]: {title} only at {found_stat:.0f}/{target_val:.0f} ({prog_pct:.0f}% < 65% live progress min)"
+                            # Late-Clock Crunch Veto: Never buy a prop in the final 2 mins of Q4 if still <82% of target!
+                            try:
+                                clk_m = float(str(clock_disp).split(":")[0]) if ":" in str(clock_disp) else 5.0
+                            except Exception:
+                                clk_m = 5.0
+                            if live_period >= 4 and clk_m < 2.0 and prog_pct < 82.0:
+                                return False, (
+                                    f"VETO [Late Clock Crunch]: Only {clock_disp} left in P{live_period} and {title} is at "
+                                    f"{found_stat:.0f}/{target_val:.0f} ({prog_pct:.0f}% < 82% min for final 2m)"
+                                )
                             # Blowout / Garbage-Time Bench Shield: Veto Q3/Q4 player props in 22+ pt blowouts unless >=90% banked!
                             if len(competitors) >= 2 and live_period >= 3 and prog_pct < 90.0:
                                 gm_margin = abs(float(competitors[0].get("score", 0) or 0) - float(competitors[1].get("score", 0) or 0))
@@ -737,6 +747,8 @@ class PreTradeEducator:
                                         f"— starters risk getting benched in garbage time!"
                                     )
                             lock_tag = " | PROP-LOCK" if prog_pct >= 80.0 else ""
+                            if str(clock_disp).strip() in ("0:00", "0.0", ""):
+                                lock_tag += " | CLOCK-FROZEN"
                             return True, f"ESPN Boxscore Verified ({found_stat:.0f}/{target_val:.0f} = {prog_pct:.0f}% banked{lock_tag} | MIN={mins_played} | PF={fouls_val})"
 
                 return True, f"ESPN Matchup Live ({event_slug} active in P{live_period} {clock_disp})"
@@ -977,6 +989,8 @@ class PreTradeEducator:
             conf_mult *= 1.12
         if "LATE-CLOCK" in ext_reason or "PROP-LOCK" in ext_reason:
             conf_mult *= 1.12  # Late-game clock drain or >=80% banked player prop boost
+        if "CLOCK-FROZEN" in ext_reason:
+            conf_mult *= 1.08  # GEMINI.md Law 6: Commercial/Halftime/Quarter-break zero stadium-snipe edge
 
         self.save_memory()
         reason = (
@@ -1015,13 +1029,16 @@ def get_scaling_tier(equity_cents: int) -> dict:
             "min_depth_dlr": 250.0,
         }
     elif eq_dlr < 750.0:
+        # Continuous Micro-Compounding inside Tier 3: scales min_contracts & max_stake smoothly with every +$25 gained!
+        dyn_min_contracts = min(75, max(30, int(eq_dlr * 0.11)))
+        dyn_max_stake_c = min(18000, max(9500, int(equity_cents * 0.36)))
         return {
             "name": "TIER 3 ($500 Pro Mode)",
-            "base_pct": 0.24,
-            "boost_pct": 0.32,
+            "base_pct": 0.25,
+            "boost_pct": 0.33,
             "min_stake_cents": 3500,
-            "max_stake_cents": 12000,
-            "min_contracts": 30,
+            "max_stake_cents": dyn_max_stake_c,
+            "min_contracts": dyn_min_contracts,
             "max_concurrent": 5,
             "min_depth_dlr": 300.0,
         }
@@ -1110,11 +1127,27 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     prev_tr = tracked_open_positions.get(t, {})
                     max_c = max(int(cnt), int(prev_tr.get("max_count", 0) or 0))
                     max_s = max(exp, float(prev_tr.get("max_stake", 0.0) or 0.0))
+                    stage1_alerted = bool(prev_tr.get("stage1_alerted", False))
+                    if max_c >= 6 and int(cnt) <= int(max_c * 0.65) and not stage1_alerted:
+                        stage1_alerted = True
+                        sold_c = max_c - int(cnt)
+                        realized_so_far = float(pos.get("realized_pnl_dollars", "0") or 0)
+                        await send_phone_alert(
+                            client,
+                            "💵 STAGE-1 PROFIT BANKED (+Breakeven Shield Locked!)",
+                            (
+                                f"Play: {t}\n"
+                                f"Action: Sold {sold_c}x Stage-1 Take-Profit (Remaining runner: {int(cnt)}x)\n"
+                                f"Status: Risk-Free Breakeven Shield active on runner!\n"
+                                f"Current Account Equity: ${equity_cents/100:.2f}"
+                            ),
+                        )
                     tracked_open_positions[t] = {
                         "count": int(cnt),
                         "stake": exp,
                         "max_count": max_c,
                         "max_stake": max_s,
+                        "stage1_alerted": stage1_alerted,
                     }
                     educator.save_memory()
                 elif cnt == 0.0 and t in tracked_open_positions:

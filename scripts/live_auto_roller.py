@@ -1029,9 +1029,9 @@ def get_scaling_tier(equity_cents: int) -> dict:
             "min_depth_dlr": 250.0,
         }
     elif eq_dlr < 750.0:
-        # Continuous Micro-Compounding inside Tier 3: scales min_contracts & max_stake smoothly with every +$25 gained!
-        dyn_min_contracts = min(75, max(30, int(eq_dlr * 0.11)))
-        dyn_max_stake_c = min(18000, max(9500, int(equity_cents * 0.36)))
+        # Continuous Micro-Compounding inside Tier 3 ($200-$750): scales smoothly with every +$25 gained!
+        dyn_min_contracts = min(80, max(30, int(eq_dlr * 0.11)))
+        dyn_max_stake_c = min(22000, max(9500, int(equity_cents * 0.36)))
         return {
             "name": "TIER 3 ($500 Pro Mode)",
             "base_pct": 0.25,
@@ -1041,30 +1041,37 @@ def get_scaling_tier(equity_cents: int) -> dict:
             "min_contracts": dyn_min_contracts,
             "max_concurrent": 5,
             "min_depth_dlr": 300.0,
+            "iceberg_slice": 110,
         }
-    elif eq_dlr < 2500.0:
+    elif eq_dlr < 2000.0:
+        # TIER 4 ($750-$2,000 Pro/Whale Scaling): deploys $150-$440 per play across up to 7 concurrent winners!
+        dyn_min_contracts = min(160, max(75, int(eq_dlr * 0.09)))
+        dyn_max_stake_c = min(45000, max(22000, int(equity_cents * 0.26)))
         return {
-            "name": "TIER 4 (Institutional)",
-            "base_pct": 0.12,
-            "boost_pct": 0.15,
+            "name": "TIER 4 ($1k-$2k Pro Whale Mode)",
+            "base_pct": 0.20,
+            "boost_pct": 0.26,
             "min_stake_cents": 7500,
-            "max_stake_cents": 20000,
-            "min_contracts": 85,
-            "max_concurrent": 8,
-            "min_depth_dlr": 600.0,
-            "iceberg_slice": 75,
+            "max_stake_cents": dyn_max_stake_c,
+            "min_contracts": dyn_min_contracts,
+            "max_concurrent": 7,
+            "min_depth_dlr": 500.0,
+            "iceberg_slice": 150,
         }
     else:
+        # TIER 5 ($2,000+ Institutional Mode): deploys $300-$700+ per play via 2-Tranche Maker Ladders across 9 concurrent plays!
+        dyn_min_contracts = min(250, max(120, int(eq_dlr * 0.07)))
+        dyn_max_stake_c = min(75000, max(38000, int(equity_cents * 0.22)))
         return {
-            "name": "TIER 5 ($2.5k+ Whale Iceberg Mode)",
-            "base_pct": 0.10,
-            "boost_pct": 0.12,
+            "name": "TIER 5 ($2k+ Institutional Ladder Mode)",
+            "base_pct": 0.16,
+            "boost_pct": 0.22,
             "min_stake_cents": 12000,
-            "max_stake_cents": 35000,
-            "min_contracts": 100,
-            "max_concurrent": 10,
-            "min_depth_dlr": 900.0,
-            "iceberg_slice": 75,
+            "max_stake_cents": dyn_max_stake_c,
+            "min_contracts": dyn_min_contracts,
+            "max_concurrent": 9,
+            "min_depth_dlr": 800.0,
+            "iceberg_slice": 200,
         }
 
 
@@ -1152,6 +1159,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     educator.save_memory()
                 elif cnt == 0.0 and t in tracked_open_positions:
                     prev = tracked_open_positions.pop(t)
+                    stopped_out_events.add(_entity_key(t) if "_entity_key" in locals() else "-".join(t.split("-")[:2]))
+                    educator.memory.setdefault("harvested_tickers", []).append(t)
                     educator.save_memory()
                     stake_dlr = prev.get("max_stake") or prev["stake"]
                     cnt_int = prev.get("max_count") or prev["count"]
@@ -1469,9 +1478,10 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     pts = tk.split("-")
                     return "-".join(pts[:3]) if len(pts) >= 4 else "-".join(pts[:2])
 
+                harvested_set = set(educator.memory.get("harvested_tickers", []))
                 active_events = set(stopped_out_events) | {
                     _entity_key(tk) for tk in active_all_tickers
-                }
+                } | {_entity_key(tk) for tk in harvested_set}
                 active_crypto_count = sum(
                     1
                     for tk in active_all_tickers
@@ -1638,9 +1648,10 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             alloc_cents = min(shard_cents.get(shard_key, 0), target_stake_cents)
                             count_int = int(alloc_cents // bid_cents)
                             if count_int >= tier["min_contracts"]:
-                                # Multi-Slice Iceberg Order Splitting (Drips 75 contracts per slice on large Tier 3/4/5 orders!)
-                                max_slice = tier.get("iceberg_slice", 75)
+                                # Institutional 2-Tranche Maker Ladder (For $1k-$2k+ orders > max_slice, splits 60% @ bid_cents + 40% @ bid_cents-1c!)
+                                max_slice = tier.get("iceberg_slice", 110)
                                 slice_count = min(count_int, max_slice) if count_int > max_slice else count_int
+                                rem_ladder_count = max(0, min(count_int - slice_count, max_slice)) if count_int > max_slice else 0
                                 logger.info(
                                     f"Auto-deploying [{tier['name']}] Maker Bid on {t}: {slice_count} contracts (Target={count_int}) @ {price_str} (${(slice_count*bid_cents)/100:.2f})"
                                 )
@@ -1668,6 +1679,25 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                         active_index_count += 1
                                     shard_cents[shard_key] -= slice_count * bid_cents
                                     total_cents -= slice_count * bid_cents
+                                    if rem_ladder_count >= 15 and shard_cents.get(shard_key, 0) >= rem_ladder_count * max(1, bid_cents - 1):
+                                        ladder_p_str = f"{max(1, bid_cents - 1) / 100:.4f}"
+                                        await client.request(
+                                            "POST",
+                                            "/portfolio/events/orders",
+                                            json_data={
+                                                "ticker": t,
+                                                "side": "bid",
+                                                "count": f"{rem_ladder_count}.00",
+                                                "price": ladder_p_str,
+                                                "time_in_force": "good_till_canceled",
+                                                "self_trade_prevention_type": "maker",
+                                                "post_only": True,
+                                                "client_order_id": str(uuid.uuid4()),
+                                            },
+                                            authenticated=True,
+                                        )
+                                        shard_cents[shard_key] -= rem_ladder_count * max(1, bid_cents - 1)
+                                        total_cents -= rem_ladder_count * max(1, bid_cents - 1)
                                 except Exception:
                                     pass
 

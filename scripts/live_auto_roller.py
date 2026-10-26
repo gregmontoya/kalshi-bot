@@ -214,9 +214,10 @@ class PreTradeEducator:
                 strike = float(ticker.split("-T")[-1])
                 r = await hc.get(f"https://api.coinbase.com/v2/prices/{pair}/spot", timeout=3.0)
                 spot = float(r.json()["data"]["amount"])
-                cushion_pct = ((spot - strike) / strike) * 100.0
+                is_below = "below" in title.lower()
+                cushion_pct = (((strike - spot) if is_below else (spot - strike)) / strike) * 100.0
                 if cushion_pct < 0.25:
-                    return False, f"VETO [Coinbase API]: {pair} spot (${spot:,.2f}) too close/below strike (${strike:,.2f}, {cushion_pct:+.2f}%)"
+                    return False, f"VETO [Coinbase API]: {pair} spot (${spot:,.2f}) too close/wrong side of strike (${strike:,.2f}, {cushion_pct:+.2f}%)"
 
                 # Check 15-minute Coinbase Exchange candlestick trend (3x 5m candles)
                 trend_str = ""
@@ -227,14 +228,15 @@ class PreTradeEducator:
                         newest_close = float(candles[0][4])
                         oldest_open = float(candles[2][3])
                         trend_15m = ((newest_close - oldest_open) / oldest_open) * 100.0
-                        if trend_15m < -0.20:
-                            return False, f"VETO [Crypto 15m Trend]: {pair} dropping {trend_15m:+.2f}% over last 15m toward strike"
+                        effective_trend = -trend_15m if is_below else trend_15m
+                        if effective_trend < -0.20:
+                            return False, f"VETO [Crypto 15m Trend]: {pair} moving {trend_15m:+.2f}% over last 15m toward strike"
                         trend_str = f" | 15mTrend={trend_15m:+.2f}%"
                 except Exception:
                     pass
                 return True, f"Coinbase Spot=${spot:,.2f} ({cushion_pct:+.2f}% > strike{trend_str})"
-            except Exception:
-                return True, "Crypto API pass"
+            except Exception as e:
+                return False, f"VETO [Coinbase API Error]: Could not verify live crypto spot ({e})"
 
         # B. Live City Weather High-Temp Verification via Open-Meteo API
         weather_coords = {
@@ -253,11 +255,13 @@ class PreTradeEducator:
                 url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=temperature_2m_max&temperature_unit=fahrenheit&timezone=auto&forecast_days=1"
                 r = await hc.get(url, timeout=3.0)
                 forecast_max = float(r.json()["daily"]["temperature_2m_max"][0])
-                if forecast_max < strike_temp + 1.5:
-                    return False, f"VETO [Open-Meteo API]: Forecast max ({forecast_max:.1f}F) < strike+1.5F ({strike_temp:.1f}F)"
-                return True, f"Open-Meteo Max={forecast_max:.1f}F (> {strike_temp:.0f}F)"
-            except Exception:
-                return True, "Weather API pass"
+                is_below = "below" in title.lower()
+                diff_f = (strike_temp - forecast_max) if is_below else (forecast_max - strike_temp)
+                if diff_f < 1.5:
+                    return False, f"VETO [Open-Meteo API]: Forecast max ({forecast_max:.1f}F) within 1.5F/wrong side of strike ({strike_temp:.1f}F)"
+                return True, f"Open-Meteo Max={forecast_max:.1f}F (diff {diff_f:+.1f}F vs {strike_temp:.0f}F)"
+            except Exception as e:
+                return False, f"VETO [Open-Meteo API Error]: Could not verify weather forecast ({e})"
 
         # B2. Live Wall Street Indices & Crude Oil Verification via Yahoo Finance API
         yahoo_map = {
@@ -275,14 +279,15 @@ class PreTradeEducator:
                     timeout=3.0,
                 )
                 spot_val = float(r.json()["chart"]["result"][0]["meta"]["regularMarketPrice"])
-                cushion_pct = ((spot_val - strike_val) / strike_val) * 100.0
+                is_below = "below" in title.lower()
+                cushion_pct = (((strike_val - spot_val) if is_below else (spot_val - strike_val)) / strike_val) * 100.0
                 if cushion_pct < 0.15:
-                    return False, f"VETO [Wall St Feed]: Index/Oil (${spot_val:,.2f}) too close/below strike (${strike_val:,.2f}, {cushion_pct:+.2f}%)"
+                    return False, f"VETO [Wall St Feed]: Index/Oil (${spot_val:,.2f}) too close/wrong side of strike (${strike_val:,.2f}, {cushion_pct:+.2f}%)"
                 return True, f"WallSt Spot={spot_val:,.2f} ({cushion_pct:+.2f}% > strike)"
-            except Exception:
-                return True, "WallSt API pass"
+            except Exception as e:
+                return False, f"VETO [Wall St API Error]: Could not verify live index/commodity feed ({e})"
 
-        # C. Live Sports & Tennis Scoreboard Verification via ESPN API
+        # C. Live Sports & Tennis Scoreboard Verification via ESPN API (Fail-Closed!)
         espn_map = {
             "KXWTAMATCH": "tennis/wta",
             "KXATPMATCH": "tennis/atp",
@@ -313,22 +318,41 @@ class PreTradeEducator:
                             continue
                         names = []
                         scores = []
+                        sets_won = []
+                        cur_set_games = []
                         for c in competitors:
                             n = (c.get("athlete", {}).get("displayName") or c.get("team", {}).get("displayName") or "").lower()
                             names.append(n)
                             ls = c.get("linescores", [])
-                            if ls:
+                            if series in ("KXWTAMATCH", "KXATPMATCH") and ls:
                                 scores.append(sum(float(x.get("value", 0) or 0) for x in ls))
-                            else:
+                                sets_won.append(sum(1 for x in ls if x.get("winner") is True))
+                                cur_set_games.append(float(ls[-1].get("value", 0) or 0))
+                            elif c.get("score") is not None:
                                 scores.append(float(c.get("score", 0) or 0))
+                                sets_won.append(0)
+                                cur_set_games.append(0.0)
+                            elif ls:
+                                scores.append(sum(float(x.get("value", 0) or 0) for x in ls))
+                                sets_won.append(0)
+                                cur_set_games.append(0.0)
+                            else:
+                                scores.append(0.0)
+                                sets_won.append(0)
+                                cur_set_games.append(0.0)
                         if last_word and any(last_word in n for n in names):
                             state = comp.get("status", {}).get("type", {}).get("state", "")
-                            if state == "pre":
-                                return False, f"VETO [ESPN API]: Match '{title}' is still PRE-GAME (not live in-play yet)"
+                            if state != "in":
+                                return False, f"VETO [ESPN API]: Match '{title}' is not live in-play (state='{state}')"
                             idx = 0 if last_word in names[0] else 1
                             opp_idx = 1 - idx
-                            if state == "in" and scores[idx] <= scores[opp_idx]:
+                            if scores[idx] <= scores[opp_idx]:
                                 return False, f"VETO [ESPN API]: '{title}' is NOT LEADING on live scoreboard ({scores[idx]:.0f} vs {scores[opp_idx]:.0f})"
+                            if series in ("KXWTAMATCH", "KXATPMATCH"):
+                                if sets_won[idx] < sets_won[opp_idx]:
+                                    return False, f"VETO [ESPN Tennis]: '{title}' is trailing in sets ({sets_won[idx]}-{sets_won[opp_idx]})"
+                                if sets_won[idx] == sets_won[opp_idx] and cur_set_games[idx] <= cur_set_games[opp_idx]:
+                                    return False, f"VETO [ESPN Tennis]: '{title}' not leading current set ({cur_set_games[idx]:.0f}-{cur_set_games[opp_idx]:.0f})"
 
                             # Check Vegas Opening vs Closing Line Movement & Live Win Probability
                             vegas_note = ""
@@ -362,8 +386,9 @@ class PreTradeEducator:
                                 pass
 
                             return True, f"ESPN Live Verified ({state.upper()}: {scores[idx]:.0f}-{scores[opp_idx]:.0f}{vegas_note})"
-            except Exception:
-                pass
+                return False, f"VETO [ESPN API]: '{title}' not found as active in-play leader on live ESPN scoreboard"
+            except Exception as e:
+                return False, f"VETO [ESPN API Error]: Scoreboard verification failed ({e})"
 
         return True, "External API Verified"
 
@@ -465,10 +490,11 @@ async def run_autonomous_loop(duration_seconds: int = 0):
     peak_bids: dict[str, int] = {}
     tracked_open_positions: dict[str, dict] = educator.memory.setdefault("tracked_open_positions", {})
     stopped_out_events: set[str] = {"KXLIGAMXGAME-26OCT25TIJSLA"}
-    buy_order_cycles: dict[str, int] = {}
+    series_shard_cache: dict[str, int] = {}
 
     while True:
         try:
+            now_utc = datetime.now(timezone.utc)
             positions = await client.get_positions()
             educator.update_from_positions(positions)
             bal = await client.get_balance()
@@ -522,9 +548,17 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     )
                 elif o.get("action") == "buy":
                     oid = o.get("order_id", "")
-                    buy_order_cycles[oid] = buy_order_cycles.get(oid, 0) + 1
-                    # Auto-cancel resting buy orders unfilled after 3 cycles (~60s) to prevent stale adverse selection!
-                    if buy_order_cycles[oid] > 3:
+                    resting_buy_tickers.add(t)
+                    age_sec = 0.0
+                    c_str = o.get("created_time", "")
+                    if c_str:
+                        try:
+                            c_dt = datetime.fromisoformat(c_str.replace("Z", "+00:00"))
+                            age_sec = (now_utc - c_dt).total_seconds()
+                        except Exception:
+                            age_sec = 999.0
+                    # Auto-cancel resting buy orders unfilled after 75s (true UTC age) to prevent stale adverse selection!
+                    if age_sec > 75.0:
                         stale_buys_to_cancel.append(
                             {
                                 "order_id": oid,
@@ -533,12 +567,9 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 "subaccount": o.get("subaccount_number", 0),
                             }
                         )
-                        buy_order_cycles.pop(oid, None)
-                    else:
-                        resting_buy_tickers.add(t)
 
             if stale_buys_to_cancel:
-                logger.info(f"Auto-canceling {len(stale_buys_to_cancel)} unfilled resting buy order(s) (>60s old) to free cash.")
+                logger.info(f"Auto-canceling {len(stale_buys_to_cancel)} unfilled resting buy order(s) (>75s UTC age) to free cash.")
                 try:
                     await client.request(
                         "DELETE",
@@ -549,11 +580,12 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 except Exception:
                     pass
 
-            # 1. Manage Open Positions: Trailing Stop / Guillotine (<58c or -12c drop) + 96c Harvest Queue
+            # 1. Manage Open Positions: True GEMINI.md <48c Guillotine + 90c-99c Harvest Queue
             for pos in positions:
                 ticker = pos.get("ticker", "")
                 pos_fp = float(pos.get("position_fp", "0") or 0)
-                if pos_fp < 1.0:
+                whole_pos = int(pos_fp)
+                if whole_pos < 1:
                     continue
 
                 ob = await client.get_orderbook(ticker)
@@ -595,7 +627,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         json_data={
                             "ticker": ticker,
                             "side": "ask",
-                            "count": f"{int(pos_fp)}.00",
+                            "count": f"{whole_pos}.00",
                             "price": f"{max(1, cur_bid) / 100:.4f}",
                             "time_in_force": "immediate_or_cancel",
                             "self_trade_prevention_type": "maker",
@@ -604,21 +636,22 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         authenticated=True,
                     )
                     tracked_open_positions.pop(ticker, None)
+                    educator.save_memory()
                     await send_phone_alert(
                         client,
-                        "🛑 Stop-Loss Triggered",
+                        "🛑 Stop-Loss Triggered (<48c Guillotine)",
                         (
                             f"Play: {ticker}\n"
-                            f"Action: Exited {int(pos_fp)}x @ {cur_bid}c (Peak: {peaked}c, trailing drop stop triggered) "
-                            f"to protect bankroll and re-deploy into next live winner.\n"
+                            f"Action: Exited {whole_pos}x @ {cur_bid}c (Peak: {peaked}c, <48c thesis-broken guillotine triggered) "
+                            f"to salvage stake.\n"
                             f"New Account Equity: ${equity_cents/100:.2f}"
                         ),
                     )
                     continue
 
-                # Ensure Smart Dynamic Harvest Sell (90c-96c for Leaders, 99c for 94c+ Tail Locks) is queued
-                covered = resting_sell_counts.get(ticker, 0.0)
-                uncovered = int(round(pos_fp - covered))
+                # Ensure Smart Dynamic Harvest Sell (90c-96c for Leaders, 99c for 92c+ Tail Locks) is queued
+                whole_covered = int(resting_sell_counts.get(ticker, 0.0))
+                uncovered = whole_pos - whole_covered
                 if uncovered >= 1:
                     count_str = f"{uncovered}.00"
                     target_tp_cents = 99 if avg_entry_cents >= 92 else min(96, max(90, avg_entry_cents + 15))
@@ -645,13 +678,12 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     except Exception as e:
                         logger.warning(f"Could not place harvest sell for {ticker}: {e}")
 
-            # 2. Dynamic Bankroll Scaling into SOONEST Worldwide Games (74c-88c High-Safety Leader Zone)
+            # 2. Dynamic Bankroll Scaling into SOONEST Worldwide Games (80c-89c Leaders & 93c-97c Tail Locks)
             logger.info(
                 f"Heartbeat | Cash: ${total_cents/100:.2f} | Portfolio: ${port_cents/100:.2f} | Total Equity: ${equity_cents/100:.2f}"
             )
 
             if total_cents >= 650 and len(resting_buy_tickers) < 4:
-                now_utc = datetime.now(timezone.utc)
                 shard_cents = {0: 0, 1: 0, 2: 0, 3: 0}
                 for b_item in bal.get("balance_breakdown", []):
                     idx = b_item.get("exchange_index")
@@ -664,6 +696,9 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 }
                 candidates = []
                 for series in WATCH_SERIES:
+                    known_shard = series_shard_cache.get(series)
+                    if known_shard is not None and shard_cents.get(known_shard, 0) < 650:
+                        continue
                     try:
                         res = await client.request(
                             "GET",
@@ -671,7 +706,10 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             params={"series_ticker": series, "status": "open", "limit": 200},
                         )
                         await asyncio.sleep(0.06)
-                        for m in res.get("markets", []):
+                        markets_list = res.get("markets", [])
+                        if markets_list and series not in series_shard_cache:
+                            series_shard_cache[series] = int(markets_list[0].get("exchange_index", 0) or 0)
+                        for m in markets_list:
                             shard_key = int(m.get("exchange_index", 0) or 0)
                             if shard_cents.get(shard_key, 0) < 650:
                                 continue

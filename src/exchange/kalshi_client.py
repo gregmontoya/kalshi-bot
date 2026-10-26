@@ -179,32 +179,29 @@ class KalshiClient:
         """
         cid = client_order_id or str(uuid.uuid4())
         no_price = 100 - yes_price
+        effective_price_cents = yes_price if side == OrderSide.YES else no_price
 
         payload: dict[str, Any] = {
             "ticker": ticker,
-            "action": action.value,
-            "side": side.value,
-            "count": count,
-            "type": order_type.value,
+            "side": "bid" if action == OrderAction.BUY else "ask",
+            "count": f"{int(count)}.00",
+            "price": f"{effective_price_cents / 100:.4f}",
+            "time_in_force": "good_till_canceled" if order_type == OrderType.LIMIT else "immediate_or_cancel",
+            "self_trade_prevention_type": "maker",
             "client_order_id": cid,
             "cancel_on_pause": settings.DEFAULT_CANCEL_ON_PAUSE,
         }
 
-        if post_only:
+        if post_only and order_type == OrderType.LIMIT:
             payload["post_only"] = True
 
         if action == OrderAction.SELL:
             # Non-negotiable safety floor to prevent naked shorting
             payload["sell_position_floor"] = settings.DEFAULT_SELL_POSITION_FLOOR
 
-        if side == OrderSide.YES:
-            payload["yes_price"] = yes_price
-        else:
-            payload["no_price"] = no_price
-
         response = await self.request(
             method="POST",
-            path="/portfolio/orders",
+            path="/portfolio/events/orders",
             json_data=payload,
             authenticated=True,
         )
@@ -228,6 +225,20 @@ class KalshiClient:
             basket_id=basket_id,
         )
 
-    async def cancel_order(self, order_id: str) -> dict[str, Any]:
-        """Cancels a resting order."""
-        return await self.request("DELETE", f"/portfolio/orders/{order_id}", authenticated=True)
+    async def cancel_order(self, order_id: str, ticker: str = "", exchange_index: int = 0) -> dict[str, Any]:
+        """Cancels a resting order via Kalshi v2 batched endpoint."""
+        return await self.request(
+            "DELETE",
+            "/portfolio/events/orders/batched",
+            json_data={
+                "orders": [
+                    {
+                        "order_id": order_id,
+                        "market_ticker": ticker,
+                        "exchange_index": exchange_index,
+                        "subaccount": 0,
+                    }
+                ]
+            },
+            authenticated=True,
+        )

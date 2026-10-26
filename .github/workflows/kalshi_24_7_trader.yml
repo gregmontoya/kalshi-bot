@@ -8,7 +8,7 @@ on:
 
 concurrency:
   group: kalshi-live-roller
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   trade-loop:

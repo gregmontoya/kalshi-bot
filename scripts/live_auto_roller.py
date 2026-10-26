@@ -23,6 +23,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
 from src.config import settings
 from src.core.auth import KalshiAuthSigner
 from src.exchange.kalshi_client import KalshiClient
@@ -260,6 +263,98 @@ class PreTradeEducator:
     def __init__(self):
         MEMORY_PATH.parent.mkdir(parents=True, exist_ok=True)
         self.memory = self._load_memory()
+        self.odds_api_cache: dict[str, tuple[float, list]] = {}
+        self.odds_api_key = (
+            os.environ.get("ODDS_API_KEY")
+            or os.environ.get("THE_ODDS_API_KEY")
+            or ""
+        )
+
+    async def verify_pinnacle_sharp_odds(
+        self, client: KalshiClient, series: str, ticker: str, title: str
+    ) -> str:
+        """
+        Queries The Odds API v4 (Pinnacle, FanDuel, DraftKings, BetMGM) with a 12-minute quota-saving cache
+        ONLY after a play has already passed all 4 primary gates. Applies Multiplicative De-Vigging (Law 4).
+        """
+        if not self.odds_api_key:
+            return ""
+        sport_key = None
+        if series.startswith("KXNBA"):
+            sport_key = "basketball_nba"
+        elif series.startswith("KXNFL"):
+            sport_key = "americanfootball_nfl"
+        elif series.startswith("KXNCAAF"):
+            sport_key = "americanfootball_ncaaf"
+        elif series.startswith("KXNCAAMB"):
+            sport_key = "basketball_ncaab"
+        elif series.startswith("KXNHL"):
+            sport_key = "icehockey_nhl"
+        elif series.startswith("KXEPL"):
+            sport_key = "soccer_epl"
+        elif series.startswith("KXUCL"):
+            sport_key = "soccer_uefa_champs_league"
+        elif series.startswith("KXLALIGA"):
+            sport_key = "soccer_spain_la_liga"
+        if not sport_key:
+            return ""
+
+        now_ts = time.time()
+        cached_ts, games = self.odds_api_cache.get(sport_key, (0.0, []))
+        if (now_ts - cached_ts) > 720.0 or not games:
+            try:
+                hc = await client.get_client()
+                r = await hc.get(
+                    f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds",
+                    params={
+                        "apiKey": self.odds_api_key,
+                        "regions": "us,eu",
+                        "markets": "h2h",
+                        "bookmakers": "pinnacle,fanduel,draftkings,betmgm",
+                    },
+                    timeout=3.5,
+                )
+                if r.status_code == 200 and isinstance(r.json(), list):
+                    games = r.json()
+                    self.odds_api_cache[sport_key] = (now_ts, games)
+            except Exception:
+                return ""
+
+        target_clean = title.replace(" wins", "").strip().lower()
+        last_w = target_clean.split()[-1] if target_clean else ""
+        if not last_w or len(last_w) < 3:
+            return ""
+
+        for g in games:
+            h_tm = (g.get("home_team") or "").lower()
+            a_tm = (g.get("away_team") or "").lower()
+            if last_w in h_tm or last_w in a_tm:
+                bks = g.get("bookmakers", [])
+                # Prioritize Pinnacle first, then FanDuel / DraftKings / BetMGM
+                bks_sorted = sorted(
+                    bks,
+                    key=lambda b: {"pinnacle": 0, "fanduel": 1, "draftkings": 2, "betmgm": 3}.get(b.get("key", ""), 9),
+                )
+                for bk in bks_sorted:
+                    bk_key = bk.get("key", "").upper()
+                    for mkt in bk.get("markets", []):
+                        if mkt.get("key") == "h2h":
+                            outcomes = mkt.get("outcomes", [])
+                            if len(outcomes) >= 2:
+                                raw_probs = {}
+                                for o in outcomes:
+                                    nm = (o.get("name") or "").lower()
+                                    pr = float(o.get("price") or 0.0)
+                                    if pr > 1.0:
+                                        raw_probs[nm] = 1.0 / pr
+                                tot_raw = sum(raw_probs.values())
+                                if tot_raw > 0:
+                                    for nm, rp in raw_probs.items():
+                                        if last_w in nm:
+                                            devig_pct = (rp / tot_raw) * 100.0
+                                            tag_boost = " | PINNACLE-SHARP" if devig_pct >= 72.0 else ""
+                                            return f" | {bk_key}_DeVig={devig_pct:.1f}%{tag_boost}"
+        return ""
 
     def _load_memory(self) -> dict:
         if MEMORY_PATH.exists():
@@ -1034,6 +1129,11 @@ class PreTradeEducator:
             self.save_memory()
             return False, ext_reason, 0.0
 
+        # 3B. Live Pinnacle / Sharp Book Multiplicative De-Vig Check (The Odds API v4)
+        pin_note = await self.verify_pinnacle_sharp_odds(client, series, ticker, title)
+        if pin_note:
+            ext_reason += pin_note
+
         # 4. Self-Learning Series Confidence Multiplier + A+ Whale Wall Boost
         conf_mult = 1.0
         if series_pnl > 0:
@@ -1046,8 +1146,8 @@ class PreTradeEducator:
             conf_mult *= 1.12
         if "LATE-CLOCK" in ext_reason or "PROP-LOCK" in ext_reason:
             conf_mult *= 1.12  # Late-game clock drain or >=80% banked player prop boost
-        if "CLOCK-FROZEN" in ext_reason or "VEGAS-STEAM" in ext_reason:
-            conf_mult *= 1.08  # Commercial/Halftime zero-snipe edge or sharp Vegas line steam boost
+        if "CLOCK-FROZEN" in ext_reason or "VEGAS-STEAM" in ext_reason or "PINNACLE-SHARP" in ext_reason:
+            conf_mult *= 1.08  # Commercial/Halftime zero-snipe edge or Pinnacle/Vegas sharp boost
 
         self.save_memory()
         reason = (
@@ -1194,6 +1294,38 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 {"working_base_cap_dlr": 5000.0, "withdrawable_above_5k_dlr": 0.0, "last_milestone_alerted_dlr": 0.0},
             )
             vault_obj["withdrawable_above_5k_dlr"] = withdrawable_vault_dlr
+            # Milestone Upgrade Reminders (#2 Kalshi Free Advanced API Tier @ $750+ & #3 OpticOdds/Unabated @ $5,000+)
+            upg_rem = educator.memory.setdefault(
+                "upgrade_reminders",
+                {
+                    "kalshi_advanced_api_tier_alerted": False,
+                    "opticodds_5k_plateau_alerted": False,
+                },
+            )
+            if eq_dlr_now >= 750.0 and not upg_rem.get("kalshi_advanced_api_tier_alerted"):
+                upg_rem["kalshi_advanced_api_tier_alerted"] = True
+                educator.save_memory()
+                await send_phone_alert(
+                    client,
+                    "🥈 MILESTONE REMINDER #2: Unlock Free Kalshi Advanced API Tier!",
+                    (
+                        f"Equity hit ${eq_dlr_now:,.2f} with consistent Maker volume!\n"
+                        "Action: Email/message Kalshi API Support to request the FREE 'Advanced / Market Maker API Tier' "
+                        "(30-100+ req/sec) so we can drop scan speed from 5s down to 1.5s!"
+                    ),
+                )
+            if eq_dlr_now >= 5000.0 and not upg_rem.get("opticodds_5k_plateau_alerted"):
+                upg_rem["opticodds_5k_plateau_alerted"] = True
+                educator.save_memory()
+                await send_phone_alert(
+                    client,
+                    "🥉 MILESTONE REMINDER #3 ($5,000 HIT!): Unlock OpticOdds / Unabated Feed!",
+                    (
+                        f"WE HIT THE $5,000 SWEET-SPOT PLATEAU (${eq_dlr_now:,.2f})!\n"
+                        "1. Unlock Antigravity's $250 Trophy Pod!\n"
+                        "2. Optional Institutional Upgrade: Use pure profits to unlock OpticOdds / Unabated sub-second WebSocket feed!"
+                    ),
+                )
             if withdrawable_vault_dlr >= float(vault_obj.get("last_milestone_alerted_dlr", 0.0)) + 1000.0:
                 vault_obj["last_milestone_alerted_dlr"] = float(int(withdrawable_vault_dlr // 1000) * 1000)
                 educator.save_memory()

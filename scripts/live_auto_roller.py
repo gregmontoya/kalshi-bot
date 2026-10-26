@@ -259,6 +259,29 @@ class PreTradeEducator:
             except Exception:
                 return True, "Weather API pass"
 
+        # B2. Live Wall Street Indices & Crude Oil Verification via Yahoo Finance API
+        yahoo_map = {
+            "KXINXU": "%5EGSPC", "KXINX": "%5EGSPC",
+            "KXNASDAQ100U": "%5ENDX", "KXNASDAQ100": "%5ENDX",
+            "KXWTI": "CL=F",
+        }
+        if series in yahoo_map and "-T" in ticker:
+            ysym = yahoo_map[series]
+            try:
+                strike_val = float(ticker.split("-T")[-1])
+                r = await hc.get(
+                    f"https://query1.finance.yahoo.com/v8/finance/chart/{ysym}?interval=5m&range=1d",
+                    headers={"User-Agent": "Mozilla/5.0"},
+                    timeout=3.0,
+                )
+                spot_val = float(r.json()["chart"]["result"][0]["meta"]["regularMarketPrice"])
+                cushion_pct = ((spot_val - strike_val) / strike_val) * 100.0
+                if cushion_pct < 0.15:
+                    return False, f"VETO [Wall St Feed]: Index/Oil (${spot_val:,.2f}) too close/below strike (${strike_val:,.2f}, {cushion_pct:+.2f}%)"
+                return True, f"WallSt Spot={spot_val:,.2f} ({cushion_pct:+.2f}% > strike)"
+            except Exception:
+                return True, "WallSt API pass"
+
         # C. Live Sports & Tennis Scoreboard Verification via ESPN API
         espn_map = {
             "KXWTAMATCH": "tennis/wta",

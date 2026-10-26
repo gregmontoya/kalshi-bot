@@ -535,19 +535,11 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 peaked = peak_bids.get(ticker, cur_bid)
                 exp_dlr = float(pos.get("market_exposure_dollars", "0") or 0)
                 avg_entry_cents = int(round((exp_dlr / pos_fp) * 100)) if exp_dlr > 0 else 75
-                # Profit-Lock Floor: Once position climbs +8c above entry (or >=86c), lock stop-loss at entry + 2c so a winner NEVER turns into a loss!
-                profit_lock_triggered = (peaked >= avg_entry_cents + 8 or peaked >= 86) and (
-                    0 < cur_bid <= avg_entry_cents + 2
-                )
-                # Anti-Spoof Filter (Law 6): Only fire stop-loss when spread is liquid (<=6c) OR true market ask also dropped
-                real_market_drop = (cur_spread <= 6) or (cur_ask <= peaked - 8) or (cur_ask <= 65)
-                if real_market_drop and (
-                    (0 < cur_bid <= 58)
-                    or (peaked >= 75 and 0 < cur_bid <= (peaked - 12))
-                    or profit_lock_triggered
-                ):
+                # True GEMINI.md <48c Guillotine (Never panic-sell on 2%-15% normal mid-game swings! Only cut if thesis breaks <=48c)
+                thesis_broken_guillotine = (0 < cur_bid <= 48) and (cur_ask <= 54)
+                if thesis_broken_guillotine:
                     logger.warning(
-                        f"DROP STOP TRIGGERED on {ticker} (cur_bid={cur_bid}c, ask={cur_ask}c, peak={peaked}c). Exiting position!"
+                        f"THESIS-BROKEN <48c GUILLOTINE TRIGGERED on {ticker} (cur_bid={cur_bid}c, ask={cur_ask}c). Salvaging stake!"
                     )
                     stopped_out_events.add("-".join(ticker.split("-")[:2]))
                     to_cancel = [

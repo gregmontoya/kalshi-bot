@@ -1059,19 +1059,24 @@ def get_scaling_tier(equity_cents: int) -> dict:
             "iceberg_slice": 150,
         }
     else:
-        # TIER 5 ($2,000+ Institutional Mode): deploys $300-$700+ per play via 2-Tranche Maker Ladders across 9 concurrent plays!
-        dyn_min_contracts = min(250, max(120, int(eq_dlr * 0.07)))
-        dyn_max_stake_c = min(75000, max(38000, int(equity_cents * 0.22)))
+        # TIER 5 ($2,000 to $5,000 Sweet-Spot Plateau Mode):
+        # Caps active working sizing at the $5,000 zero-slippage plateau (~$450-$550/trade)
+        # so every dollar above $5,000 ($4,000+/week) sits protected in cash for weekly bank withdrawal!
+        working_eq_dlr = min(eq_dlr, 5000.0)
+        working_eq_cents = min(equity_cents, 500000)
+        dyn_min_contracts = min(220, max(120, int(working_eq_dlr * 0.045)))
+        dyn_max_stake_c = min(55000, max(35000, int(working_eq_cents * 0.11)))
         return {
-            "name": "TIER 5 ($2k+ Institutional Ladder Mode)",
-            "base_pct": 0.16,
-            "boost_pct": 0.22,
+            "name": "TIER 5 ($5k Sweet-Spot Plateau Mode)",
+            "base_pct": 0.10,
+            "boost_pct": 0.12,
             "min_stake_cents": 12000,
             "max_stake_cents": dyn_max_stake_c,
             "min_contracts": dyn_min_contracts,
             "max_concurrent": 9,
-            "min_depth_dlr": 800.0,
+            "min_depth_dlr": 750.0,
             "iceberg_slice": 200,
+            "working_cap_cents": 500000,
         }
 
 
@@ -1124,6 +1129,26 @@ async def run_autonomous_loop(duration_seconds: int = 0):
             port_cents = bal.get("portfolio_value", 0)
             equity_cents = total_cents + port_cents
             educator.record_equity_snapshot(total_cents, port_cents, equity_cents)
+            # Track $5,000 Sweet-Spot Plateau & Weekly Bank-Withdrawal Vault
+            eq_dlr_now = round(equity_cents / 100.0, 2)
+            withdrawable_vault_dlr = round(max(0.0, eq_dlr_now - 5000.0), 2)
+            vault_obj = educator.memory.setdefault(
+                "sweet_spot_plateau_vault",
+                {"working_base_cap_dlr": 5000.0, "withdrawable_above_5k_dlr": 0.0, "last_milestone_alerted_dlr": 0.0},
+            )
+            vault_obj["withdrawable_above_5k_dlr"] = withdrawable_vault_dlr
+            if withdrawable_vault_dlr >= float(vault_obj.get("last_milestone_alerted_dlr", 0.0)) + 1000.0:
+                vault_obj["last_milestone_alerted_dlr"] = float(int(withdrawable_vault_dlr // 1000) * 1000)
+                educator.save_memory()
+                await send_phone_alert(
+                    client,
+                    "🏦 $5K SWEET-SPOT PAYDAY VAULT READY!",
+                    (
+                        f"Total Equity: ${eq_dlr_now:,.2f}\n"
+                        f"Active Working Engine Cap: $5,000.00 (~$500/trade zero-slippage plateau)\n"
+                        f"Protected Cash Ready to Withdraw to Bank: +${withdrawable_vault_dlr:,.2f}!"
+                    ),
+                )
 
             # Detect when any previously held position cashes out (Example 3 Win notification)
             for pos in positions:
@@ -1602,12 +1627,13 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             # Front-of-Queue Spread-Capture Entry Discount: bid (cur_bid + 1) on 2c-3c spreads to save +1c for free!
                             bid_cents = max(ob.best_yes_bid + 1, ob.best_yes_ask - 2) if spread >= 2 else (ob.best_yes_ask - 1)
                             price_str = f"{bid_cents / 100:.4f}"
-                            # 4-Tier Institutional Kelly Sizing (Cap volatile Crypto/Index stake at 20% equity; Boost A+ Live Sports up to 42%!)
+                            # 4-Tier Institutional Kelly Sizing (Cap working equity at $5,000 Sweet-Spot Plateau so >$5k is reserved for bank withdrawal!)
+                            working_equity_cents = min(equity_cents, tier.get("working_cap_cents", equity_cents))
                             if is_crypto_t or is_index_t:
                                 base_alloc_pct = min(0.20, tier["base_pct"])
                             else:
                                 base_alloc_pct = tier["boost_pct"] if (is_tail_lock_zone or conf_mult >= 1.20) else tier["base_pct"]
-                            raw_stake = int(equity_cents * base_alloc_pct * conf_mult)
+                            raw_stake = int(working_equity_cents * base_alloc_pct * conf_mult)
                             target_stake_cents = min(tier["max_stake_cents"], max(min_stake_c, raw_stake), total_cents)
 
                             # Just-In-Time (JIT) Cross-Shard Liquidity Sweeper: pull cash from other shards if needed!

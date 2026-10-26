@@ -61,5 +61,41 @@ class Settings(BaseSettings):
     ESPN_HIDDEN_SCOREBOARD_URL: str = "https://site.api.espn.com/apis/site/v2/sports"
     OPEN_METEO_URL: str = "https://api.open-meteo.com/v1/forecast"
 
+    # Storage & Persistence
+    DUCKDB_PATH: str = Field(default="data/kalshi_quant.duckdb", description="Local DuckDB database file path")
+    FIREBASE_CREDENTIALS_PATH: Optional[str] = Field(default=None, description="Path to Firebase credentials")
+    FIREBASE_FIRESTORE_COLLECTION: str = "kalshi_quant_state"
+    BIGQUERY_PROJECT_ID: Optional[str] = Field(default=None, description="BigQuery Project ID")
+    BIGQUERY_DATASET: str = "kalshi_quant_grades"
+
+    # Strategy Pod 1: maker_momentum_basket
+    POD1_ENABLED: bool = True
+    POD1_ENTRY_PRICE_MIN: int = 68
+    POD1_ENTRY_PRICE_MAX: int = 76
+    POD1_MIN_SHARP_EDGE_CENTS: int = 3
+    POD1_DIP_FILL_OFFSET_CENTS: int = 2
+    POD1_TAKE_PROFIT_MIN: int = 88
+    POD1_TAKE_PROFIT_MAX: int = 92
+    POD1_GUILLOTINE_TRIGGER_PRICE: int = 48
+    POD1_GUILLOTINE_HOLD_SHARP_PROB: float = 0.58
+    POD1_GUILLOTINE_EXIT_SHARP_PROB: float = 0.50
+    POD1_DEFAULT_CONTRACTS_PER_LEG: int = 10
+    POD1_BASKET_SIZE: int = 3
+
+    # Strategy Pod 2: sharp_value_green_out
+    POD2_ENABLED: bool = True
+    POD2_ENTRY_PRICE_MIN: int = 38
+    POD2_ENTRY_PRICE_MAX: int = 58
+    POD2_MIN_SHARP_EDGE_CENTS: int = 5
+    POD2_GREEN_OUT_GAIN_CENTS: int = 16
+    POD2_DEFAULT_CONTRACTS: int = 25
+
+    # Strategy Pod 3: tail_lock_harvester
+    POD3_ENABLED: bool = True
+    POD3_ENTRY_PRICE_MIN: int = 95
+    POD3_ENTRY_PRICE_MAX: int = 97
+    POD3_MIN_WIN_PROBABILITY: float = 0.992
+    POD3_DEFAULT_CONTRACTS: int = 50
+
 
 settings = Settings()

@@ -2,21 +2,18 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from engine.core.models import (
+from src.core.models import (
     Basket,
     BasketLeg,
-    Order,
     OrderAction,
     OrderSide,
-    OrderStatus,
-    OrderType,
     SharpOdds,
 )
-from engine.exchange.simulator import KalshiSimulator
-from engine.pods.maker_momentum_basket import MakerMomentumBasketPod
-from engine.pods.sharp_value_green_out import SharpValueGreenOutPod
-from engine.pods.tail_lock_harvester import TailLockHarvesterPod
-from engine.storage.duckdb_manager import DuckDBManager
+from src.exchange.simulator import KalshiSimulator
+from src.pods.maker_momentum_basket import MakerMomentumBasketPod
+from src.pods.sharp_value_green_out import SharpValueGreenOutPod
+from src.pods.tail_lock_harvester import TailLockHarvesterPod
+from src.storage.duckdb_manager import DuckDBManager
 
 
 @pytest.fixture
@@ -113,10 +110,9 @@ async def test_pod1_guillotine_hold_on_high_sharp_prob(mock_client, memory_duckd
     pod.active_baskets["bkt-test-1"] = basket
 
     # Current bid drops to 45c (<= 48c trigger!)
-    # Sharp odds is 0.72 (>= 0.58 threshold)
+    # Sharp odds is 0.72 (>= 0.58 threshold) -> HOLD!
     await pod._evaluate_guillotine(basket, leg, current_bid=45)
 
-    # Leg should NOT be guillotined! Status remains tp_resting!
     assert leg.guillotine_triggered is False
     assert leg.status == "tp_resting"
 
@@ -149,7 +145,6 @@ async def test_pod1_guillotine_exit_on_low_sharp_prob(mock_client, memory_duckdb
     )
     await pod.start()
 
-    # Pre-seed position in simulator so exit does not violate sell_position_floor
     sim.place_order("NFL-KC", OrderAction.BUY, OrderSide.YES, 10, 70, post_only=True)
     sim.positions["NFL-KC"] = MagicMock(contracts=10, side=OrderSide.YES, avg_price_cents=70.0)
 
@@ -167,10 +162,9 @@ async def test_pod1_guillotine_exit_on_low_sharp_prob(mock_client, memory_duckdb
     basket = Basket(basket_id="bkt-test-2", status="active", legs=[leg])
     pod.active_baskets["bkt-test-2"] = basket
 
-    # Current bid drops to 46c and sharp prob dropped to 0.44 (<0.50)
+    # Current bid drops to 46c and sharp prob dropped to 0.44 (<0.50) -> EXIT!
     await pod._evaluate_guillotine(basket, leg, current_bid=46)
 
-    # Leg MUST be guillotined immediately!
     assert leg.guillotine_triggered is True
     assert leg.status == "guillotined"
     assert leg.exit_price == 46
@@ -188,7 +182,6 @@ async def test_pod2_green_out_execution(mock_client, memory_duckdb, mock_odds):
     )
     await pod.start()
 
-    # Pre-seed position: 25 contracts @ 40c
     sim.positions["NFL-VALUE-1"] = MagicMock(contracts=25, side=OrderSide.YES, avg_price_cents=40.0)
     pod.active_positions["NFL-VALUE-1"] = {
         "ticker": "NFL-VALUE-1",
@@ -204,4 +197,18 @@ async def test_pod2_green_out_execution(mock_client, memory_duckdb, mock_odds):
     await pod._execute_midgame_green_out("NFL-VALUE-1", pod.active_positions["NFL-VALUE-1"], current_bid=56)
 
     assert pod.active_positions["NFL-VALUE-1"]["green_out_order_id"] is not None
-    # 25 contracts * 16c = 400c ($4.00)
+
+
+def test_pod3_tail_lock_mathematical_probability():
+    """Pod 3 mathematical probability check for 4th quarter kneel downs."""
+    # 4th quarter, 40s left, 4 pt lead, possession, 2nd down (2 kneels = 80s burnable), 0 opp timeouts
+    res = TailLockHarvesterPod.calculate_tail_lock_probability(
+        is_fourth_quarter=True,
+        seconds_remaining=40,
+        score_margin=4,
+        has_possession=True,
+        down=2,
+        opp_timeouts_remaining=0,
+    )
+    assert res["qualifies_tail_lock"] is True
+    assert res["calculated_win_prob"] == 1.000

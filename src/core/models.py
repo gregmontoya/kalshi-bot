@@ -1,4 +1,4 @@
-"""Pydantic domain models for Core, Exchange, and Feeds."""
+"""Pydantic domain models for Core, Exchange, Feeds, and Strategy Pods."""
 
 from datetime import datetime, timezone
 from enum import Enum
@@ -179,12 +179,39 @@ class Position(BaseModel):
     basket_id: Optional[str] = None
 
 
+class BasketLeg(BaseModel):
+    ticker: str
+    market_title: str
+    target_entry_price: int
+    actual_entry_price: Optional[int] = None
+    contracts: int
+    status: str = "pending_maker_bid"
+    entry_order_id: Optional[str] = None
+    tp_order_id: Optional[str] = None
+    tp_price: int = 90
+    current_price: Optional[int] = None
+    current_sharp_prob: Optional[float] = None
+    pnl_cents: int = 0
+    guillotine_triggered: bool = False
+    exit_price: Optional[int] = None
+
+
+class Basket(BaseModel):
+    basket_id: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    status: str = "active"
+    legs: list[BasketLeg] = Field(default_factory=list)
+    total_invested_cents: int = 0
+    total_realized_pnl_cents: int = 0
+    total_unrealized_pnl_cents: int = 0
+
+
 class SharpOdds(BaseModel):
     event_id: str
     sport: str
     team_home: str
     team_away: str
-    bookmaker: str  # pinnacle, circa
+    bookmaker: str
     home_raw_odds: float
     away_raw_odds: float
     home_devigged_prob: float

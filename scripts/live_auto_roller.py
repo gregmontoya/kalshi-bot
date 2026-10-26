@@ -207,6 +207,15 @@ class PreTradeEducator:
         cash_dlr = round(cash_cents / 100.0, 2)
         port_dlr = round(port_cents / 100.0, 2)
 
+        hist = self.memory.setdefault("equity_history", [])
+        deposit_delta = 0.0
+        if hist:
+            prev_cash = float(hist[-1].get("cash", cash_dlr))
+            prev_eq = float(hist[-1].get("equity", eq_dlr))
+            # If both cash and total equity jump simultaneously by >= $25, it's an external deposit
+            if (cash_dlr - prev_cash) >= 25.0 and (eq_dlr - prev_eq) >= 20.0:
+                deposit_delta = round(cash_dlr - prev_cash, 2)
+
         daily = self.memory.setdefault("daily_ledger", {})
         day_entry = daily.setdefault(
             day_str,
@@ -217,8 +226,13 @@ class PreTradeEducator:
                 "low_equity": eq_dlr,
                 "net_change_dlr": 0.0,
                 "net_change_pct": 0.0,
+                "deposits_dlr": 0.0,
             },
         )
+        if deposit_delta > 0:
+            day_entry["start_equity"] = round(day_entry.get("start_equity", eq_dlr) + deposit_delta, 2)
+            day_entry["deposits_dlr"] = round(day_entry.get("deposits_dlr", 0.0) + deposit_delta, 2)
+
         day_entry["current_equity"] = eq_dlr
         day_entry["high_equity"] = max(day_entry.get("high_equity", eq_dlr), eq_dlr)
         day_entry["low_equity"] = min(day_entry.get("low_equity", eq_dlr), eq_dlr)
@@ -226,7 +240,6 @@ class PreTradeEducator:
         day_entry["net_change_dlr"] = round(eq_dlr - start_eq, 2)
         day_entry["net_change_pct"] = round(((eq_dlr - start_eq) / max(0.01, start_eq)) * 100.0, 2)
 
-        hist = self.memory.setdefault("equity_history", [])
         if not hist or hist[-1].get("time") != ts_str or abs(hist[-1].get("equity", 0) - eq_dlr) >= 0.05:
             hist.append({"date": day_str, "time": ts_str, "equity": eq_dlr, "cash": cash_dlr, "portfolio": port_dlr})
             if len(hist) > 500:
@@ -683,10 +696,19 @@ async def run_autonomous_loop(duration_seconds: int = 0):
     educator = PreTradeEducator()
     logger.info("Autonomous Worldwide Live Roller + PreTradeEducator started.")
     try:
-        await client._request(
+        await client.request(
             "POST",
             "/portfolio/target_balance_allocation",
-            json_body={"target_allocation": {"0": 4000, "2": 2000, "3": 4000}},
+            json_data={
+                "allocations": [
+                    {"exchange_index": 0, "percent": 40},
+                    {"exchange_index": 1, "percent": 0},
+                    {"exchange_index": 2, "percent": 20},
+                    {"exchange_index": 3, "percent": 40},
+                ],
+                "resting_margin_reservation": "sum",
+            },
+            authenticated=True,
         )
         logger.info("Kalshi 3-Shard Auto-Allocator verified: 40% Shard 0 / 20% Shard 2 (Crypto) / 40% Shard 3.")
     except Exception as e:

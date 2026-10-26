@@ -174,6 +174,11 @@ class PreTradeEducator:
         no_depth = sum(float(level.count) * (level.price / 100.0) for level in top_no_bids)
         imbalance_ratio = (yes_depth + 1.0) / (no_depth + 1.0)
 
+        if yes_depth < 100.0:
+            self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+            self.save_memory()
+            return False, f"VETO: Thin bid liquidity (${yes_depth:.0f} < $100 minimum exit depth)", 0.0
+
         if imbalance_ratio < 0.45:
             self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
             self.save_memory()
@@ -297,7 +302,17 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     peak_bids[ticker] = cur_bid
 
                 peaked = peak_bids.get(ticker, cur_bid)
-                if (0 < cur_bid <= 58) or (peaked >= 75 and 0 < cur_bid <= (peaked - 12)):
+                exp_dlr = float(pos.get("market_exposure_dollars", "0") or 0)
+                avg_entry_cents = int(round((exp_dlr / pos_fp) * 100)) if exp_dlr > 0 else 75
+                # Profit-Lock Floor: Once position climbs +8c above entry (or >=86c), lock stop-loss at entry + 2c so a winner NEVER turns into a loss!
+                profit_lock_triggered = (peaked >= avg_entry_cents + 8 or peaked >= 86) and (
+                    0 < cur_bid <= avg_entry_cents + 2
+                )
+                if (
+                    (0 < cur_bid <= 58)
+                    or (peaked >= 75 and 0 < cur_bid <= (peaked - 12))
+                    or profit_lock_triggered
+                ):
                     logger.warning(
                         f"DROP STOP TRIGGERED on {ticker} (cur_bid={cur_bid}c, peak={peaked}c). Exiting position!"
                     )

@@ -2,12 +2,12 @@ name: Kalshi 24/7 Autonomous Cloud Trader
 
 on:
   schedule:
-    # Runs every 5 minutes, 24/7/365 on GitHub Cloud for $0.00
+    # Safety-net cron every 5 minutes, 24/7/365 on GitHub Cloud
     - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
       force_cloud_burst_seconds:
-        description: 'Optional: Force a short cloud test burst (e.g. 12 seconds) even if Mac is online'
+        description: 'Optional: Force a cloud burst duration in seconds even if Mac was recently online'
         required: false
         default: '0'
 
@@ -18,7 +18,7 @@ concurrency:
 jobs:
   trade-loop:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 35
     steps:
       - name: Check if Local Mac Primary Engine is Awake (Zero-Downtime Cloud Failover)
         id: mac_check
@@ -26,20 +26,20 @@ jobs:
           FORCE_BURST: ${{ github.event.inputs.force_cloud_burst_seconds }}
         run: |
           if [ -n "$FORCE_BURST" ] && [ "$FORCE_BURST" != "0" ]; then
-            echo "🧪 Running Live Cloud Verification Burst (${FORCE_BURST}s)..."
+            echo "🚀 Running Continuous Cloud Autonomous Loop (${FORCE_BURST}s)..."
             echo "should_run=true" >> $GITHUB_OUTPUT
             echo "burst_sec=$FORCE_BURST" >> $GITHUB_OUTPUT
             exit 0
           fi
-          HB=$(curl -s -m 5 "https://ntfy.sh/kalshi-greg-hb-3fc522ce/json?poll=1&since=180s" || true)
+          HB=$(curl -s -m 5 "https://ntfy.sh/kalshi-greg-hb-3fc522ce/json?poll=1&since=150s" || true)
           if echo "$HB" | grep -q "mac-online"; then
             echo "🟢 Local Mac Primary Engine is online and actively trading. Cloud Standby yielding cleanly."
             echo "should_run=false" >> $GITHUB_OUTPUT
             echo "burst_sec=0" >> $GITHUB_OUTPUT
           else
-            echo "⚡ Local Mac is offline/shut down! Activating 24/7 GitHub Cloud Autonomous Trading Engine!"
+            echo "⚡ Local Mac is offline/shut down! Activating Continuous 28-Minute GitHub Cloud Autonomous Trading Engine!"
             echo "should_run=true" >> $GITHUB_OUTPUT
-            echo "burst_sec=265" >> $GITHUB_OUTPUT
+            echo "burst_sec=1680" >> $GITHUB_OUTPUT
           fi
 
       - name: Checkout Engine
@@ -67,3 +67,14 @@ jobs:
           BURST_SEC: ${{ steps.mac_check.outputs.burst_sec }}
         run: |
           python scripts/live_auto_roller.py --duration "$BURST_SEC" || true
+
+      - name: Auto-Chain Next 28-Minute Cloud Loop If Mac Is Still Shut Down
+        if: always() && steps.mac_check.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+        run: |
+          HB=$(curl -s -m 5 "https://ntfy.sh/kalshi-greg-hb-3fc522ce/json?poll=1&since=150s" || true)
+          if ! echo "$HB" | grep -q "mac-online"; then
+            echo "🔄 Mac is still shut down — immediately chaining next 28-minute Cloud Trading Loop!"
+            gh workflow run kalshi_24_7_trader.yml --repo gregmontoya/kalshi-bot || true
+          fi

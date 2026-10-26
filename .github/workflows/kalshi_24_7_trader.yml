@@ -54,7 +54,7 @@ jobs:
 
       - name: Install Fast Core Dependencies
         if: steps.mac_check.outputs.should_run == 'true'
-        run: pip install -q httpx cryptography pydantic pydantic-settings python-dotenv
+        run: pip install -q httpx cryptography pydantic pydantic-settings python-dotenv numpy websockets
 
       - name: Execute 24/7 Cloud Autonomous Trading Burst
         if: steps.mac_check.outputs.should_run == 'true'

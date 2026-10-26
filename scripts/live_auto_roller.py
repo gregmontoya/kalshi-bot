@@ -555,7 +555,8 @@ class PreTradeEducator:
                             prog_pct = (found_stat / target_val) * 100.0
                             if prog_pct < 65.0:
                                 return False, f"VETO [ESPN Boxscore]: {title} only at {found_stat:.0f}/{target_val:.0f} ({prog_pct:.0f}% < 65% live progress min)"
-                            return True, f"ESPN Boxscore Verified ({found_stat:.0f}/{target_val:.0f} = {prog_pct:.0f}% banked | MIN={mins_played} | PF={fouls_val})"
+                            lock_tag = " | PROP-LOCK" if prog_pct >= 80.0 else ""
+                            return True, f"ESPN Boxscore Verified ({found_stat:.0f}/{target_val:.0f} = {prog_pct:.0f}% banked{lock_tag} | MIN={mins_played} | PF={fouls_val})"
 
                 return True, f"ESPN Matchup Live ({event_slug} active in-play)"
             except Exception as e:
@@ -761,8 +762,8 @@ class PreTradeEducator:
             conf_mult *= 1.22  # A+ Whale Wall (>=2.25x) + non-negative tape momentum
         elif imbalance_ratio >= 1.85 and momentum_delta >= 0:
             conf_mult *= 1.12
-        if "LATE-CLOCK" in ext_reason:
-            conf_mult *= 1.10  # Late-game 2nd-half/4th-quarter clock drain boost
+        if "LATE-CLOCK" in ext_reason or "PROP-LOCK" in ext_reason:
+            conf_mult *= 1.12  # Late-game clock drain or >=80% banked player prop boost
 
         self.save_memory()
         reason = (
@@ -950,8 +951,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             age_sec = (now_utc - c_dt).total_seconds()
                         except Exception:
                             age_sec = 999.0
-                    # Auto-cancel resting buy orders unfilled after 75s (true UTC age) to prevent stale adverse selection!
-                    if age_sec > 75.0:
+                    # Auto-cancel resting buy orders unfilled after 40s (true UTC age) for ultra-fast cash reallocation!
+                    if age_sec > 40.0:
                         stale_buys_to_cancel.append(
                             {
                                 "order_id": oid,
@@ -1210,8 +1211,12 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     + list(resting_sell_counts.keys())
                     + list(tracked_open_positions.keys())
                 )
+                def _entity_key(tk: str) -> str:
+                    pts = tk.split("-")
+                    return "-".join(pts[:3]) if len(pts) >= 4 else "-".join(pts[:2])
+
                 active_events = set(stopped_out_events) | {
-                    "-".join(tk.split("-")[:2]) for tk in active_all_tickers
+                    _entity_key(tk) for tk in active_all_tickers
                 }
                 active_crypto_count = sum(
                     1
@@ -1249,7 +1254,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             # Block fragile Soccer Draws (-TIE) and narrow middle range brackets (-B)
                             if t.endswith("-TIE") or "-B" in t:
                                 continue
-                            event_prefix = "-".join(t.split("-")[:2])
+                            event_prefix = _entity_key(t)
                             if t in resting_buy_tickers or resting_sell_counts.get(t, 0) > 0 or event_prefix in active_events:
                                 continue
 
@@ -1292,7 +1297,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 candidates.sort(key=lambda x: x[0])
 
                 for _vel, mins_left, t, title, shard_key in candidates[:25]:
-                    event_prefix = "-".join(t.split("-")[:2])
+                    event_prefix = _entity_key(t)
                     is_crypto_t = t.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB"))
                     is_index_t = t.startswith(("KXINX", "KXNASDAQ", "KXWTI"))
                     if (
@@ -1408,7 +1413,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
             logger.info(f"Completed scheduled cloud burst ({duration_seconds}s).")
             break
 
-        await asyncio.sleep(20)
+        await asyncio.sleep(8)
 
     await client.close()
 

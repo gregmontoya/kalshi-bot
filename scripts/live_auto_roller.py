@@ -217,7 +217,22 @@ class PreTradeEducator:
                 cushion_pct = ((spot - strike) / strike) * 100.0
                 if cushion_pct < 0.25:
                     return False, f"VETO [Coinbase API]: {pair} spot (${spot:,.2f}) too close/below strike (${strike:,.2f}, {cushion_pct:+.2f}%)"
-                return True, f"Coinbase Spot=${spot:,.2f} ({cushion_pct:+.2f}% > strike)"
+
+                # Check 15-minute Coinbase Exchange candlestick trend (3x 5m candles)
+                trend_str = ""
+                try:
+                    rc = await hc.get(f"https://api.exchange.coinbase.com/products/{pair}/candles?granularity=300", timeout=2.5)
+                    candles = rc.json()
+                    if isinstance(candles, list) and len(candles) >= 3:
+                        newest_close = float(candles[0][4])
+                        oldest_open = float(candles[2][3])
+                        trend_15m = ((newest_close - oldest_open) / oldest_open) * 100.0
+                        if trend_15m < -0.20:
+                            return False, f"VETO [Crypto 15m Trend]: {pair} dropping {trend_15m:+.2f}% over last 15m toward strike"
+                        trend_str = f" | 15mTrend={trend_15m:+.2f}%"
+                except Exception:
+                    pass
+                return True, f"Coinbase Spot=${spot:,.2f} ({cushion_pct:+.2f}% > strike{trend_str})"
             except Exception:
                 return True, "Crypto API pass"
 
@@ -291,7 +306,39 @@ class PreTradeEducator:
                             opp_idx = 1 - idx
                             if state == "in" and scores[idx] < scores[opp_idx]:
                                 return False, f"VETO [ESPN API]: '{title}' is TRAILING on live scoreboard ({scores[idx]:.0f} vs {scores[opp_idx]:.0f})"
-                            return True, f"ESPN Live Verified ({state.upper()}: {scores[idx]:.0f}-{scores[opp_idx]:.0f})"
+
+                            # Check Vegas Opening vs Closing Line Movement & Live Win Probability
+                            vegas_note = ""
+                            try:
+                                sit_prob = comp.get("situation", {}).get("lastPlay", {}).get("probability", {})
+                                home_Away = competitors[idx].get("homeAway", "")
+                                wp = sit_prob.get("homeWinPercentage" if home_Away == "home" else "awayWinPercentage")
+                                if wp is not None:
+                                    wp_pct = float(wp) * 100.0
+                                    if wp_pct < 75.0:
+                                        return False, f"VETO [ESPN Live BPI]: Real-time win model is only {wp_pct:.1f}% (<75% min)"
+                                    vegas_note += f" | LiveBPI={wp_pct:.1f}%"
+
+                                odds_list = comp.get("odds", [])
+                                if odds_list and isinstance(odds_list[0], dict):
+                                    ml = odds_list[0].get("moneyline", {})
+                                    side_ml = ml.get("home" if home_Away == "home" else "away", {})
+                                    open_o = side_ml.get("open", {}).get("odds")
+                                    close_o = side_ml.get("close", {}).get("odds")
+                                    if open_o and close_o:
+                                        def _am_prob(s):
+                                            v = float(str(s).replace("+", "").replace("EVEN", "100"))
+                                            return (-v / (-v + 100.0)) if v < 0 else (100.0 / (v + 100.0))
+                                        p_open = _am_prob(open_o) * 100.0
+                                        p_close = _am_prob(close_o) * 100.0
+                                        shift = p_close - p_open
+                                        if shift <= -5.0:
+                                            return False, f"VETO [Vegas Line Crash]: Vegas steamed AGAINST '{title}' ({open_o} -> {close_o}, {shift:+.1f}%)"
+                                        vegas_note += f" | VegasML={open_o}->{close_o} ({shift:+.1f}%)"
+                            except Exception:
+                                pass
+
+                            return True, f"ESPN Live Verified ({state.upper()}: {scores[idx]:.0f}-{scores[opp_idx]:.0f}{vegas_note})"
             except Exception:
                 pass
 
@@ -557,7 +604,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 f"Heartbeat | Cash: ${total_cents/100:.2f} | Portfolio: ${port_cents/100:.2f} | Total Equity: ${equity_cents/100:.2f}"
             )
 
-            if total_cents >= 150 and len(resting_buy_tickers) < 6:
+            if total_cents >= 650 and len(resting_buy_tickers) < 4:
                 now_utc = datetime.now(timezone.utc)
                 shard_cents = {0: 0, 1: 0, 2: 0, 3: 0}
                 for b_item in bal.get("balance_breakdown", []):
@@ -579,7 +626,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         )
                         for m in res.get("markets", []):
                             shard_key = int(m.get("exchange_index", 0) or 0)
-                            if shard_cents.get(shard_key, 0) < 150:
+                            if shard_cents.get(shard_key, 0) < 650:
                                 continue
 
                             t = m.get("ticker", "")
@@ -619,7 +666,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
 
                 for mins_left, t, title, shard_key in candidates[:25]:
                     event_prefix = "-".join(t.split("-")[:2])
-                    if event_prefix in active_events or shard_cents.get(shard_key, 0) < 150:
+                    if event_prefix in active_events or shard_cents.get(shard_key, 0) < 650:
                         continue
                     ob = await client.get_orderbook(t)
                     if ob.best_yes_bid and ob.best_yes_ask:
@@ -640,12 +687,12 @@ async def run_autonomous_loop(duration_seconds: int = 0):
 
                             bid_cents = ob.best_yes_ask - 1
                             price_str = f"{bid_cents / 100:.4f}"
-                            # A+ Whale Conviction Sizing: 45% of equity on 94c+ Tail Locks or >=1.3x educator confidence; 25% on standard leaders
-                            base_alloc_pct = 0.45 if (is_tail_lock_zone or conf_mult >= 1.30) else 0.25
-                            target_stake_cents = max(150, int(equity_cents * base_alloc_pct * conf_mult))
+                            # Concentrated High-Conviction Sizing ($8-$13+ per play, minimum 8 contracts — NO $2 or 40c crumb bets!)
+                            base_alloc_pct = 0.50 if (is_tail_lock_zone or conf_mult >= 1.30) else 0.40
+                            target_stake_cents = max(800, int(equity_cents * base_alloc_pct * conf_mult))
                             alloc_cents = min(shard_cents[shard_key], target_stake_cents)
                             count_int = int(alloc_cents // bid_cents)
-                            if count_int >= 2:
+                            if count_int >= 8:
                                 logger.info(
                                     f"Auto-deploying Educated Maker Bid on {t}: {count_int} contracts @ {price_str}"
                                 )

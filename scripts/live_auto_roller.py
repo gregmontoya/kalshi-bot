@@ -147,14 +147,22 @@ WATCH_SERIES = [
     "KXNFLSPREAD",
     "KXNCAAFSPREAD",
     "KXNHLSPREAD",
-    # 7. Sports Player Props (Points, Rebounds, Assists, TDs, Yards, Soccer Score/Assist)
+    # 7. Sports Player Props (NBA PTS/REB/AST/3PT/PRA/BLK/STL, NFL TD/PASS/RUSH/REC, NHL PTS/GOAL/AST, Soccer)
     "KXNBAPTS",
     "KXNBAREB",
     "KXNBAAST",
+    "KXNBA3PT",
+    "KXNBAPRA",
+    "KXNBABLK",
+    "KXNBASTL",
     "KXNFLANYTD",
     "KXNFLPASSYDS",
     "KXNFLRUSHYDS",
     "KXNFLRECYDS",
+    "KXNFLREC",
+    "KXNHLPTS",
+    "KXNHLGOAL",
+    "KXNHLAST",
     "KXUCLSOA",
 ]
 
@@ -421,23 +429,31 @@ class PreTradeEducator:
             except Exception as e:
                 return False, f"VETO [Wall St API Error]: Could not verify live index/commodity feed ({e})"
 
-        # C2. Live League In-Play Check for Sports Totals, Spreads & Player Props (Never buy pre-game props/totals!)
+        # C2. Deep ESPN Live Box Score & Matchup Verification for Sports Totals, Spreads & Player Props
         sport_prop_league_map = {
             "KXNBATOTAL": "basketball/nba/scoreboard",
             "KXNBASPREAD": "basketball/nba/scoreboard",
             "KXNBAPTS": "basketball/nba/scoreboard",
             "KXNBAREB": "basketball/nba/scoreboard",
             "KXNBAAST": "basketball/nba/scoreboard",
+            "KXNBA3PT": "basketball/nba/scoreboard",
+            "KXNBAPRA": "basketball/nba/scoreboard",
+            "KXNBABLK": "basketball/nba/scoreboard",
+            "KXNBASTL": "basketball/nba/scoreboard",
             "KXNFLTOTAL": "football/nfl/scoreboard",
             "KXNFLSPREAD": "football/nfl/scoreboard",
             "KXNFLANYTD": "football/nfl/scoreboard",
             "KXNFLPASSYDS": "football/nfl/scoreboard",
             "KXNFLRUSHYDS": "football/nfl/scoreboard",
             "KXNFLRECYDS": "football/nfl/scoreboard",
+            "KXNFLREC": "football/nfl/scoreboard",
             "KXNCAAFTOTAL": "football/college-football/scoreboard?groups=80&limit=200",
             "KXNCAAFSPREAD": "football/college-football/scoreboard?groups=80&limit=200",
             "KXNHLTOTAL": "hockey/nhl/scoreboard",
             "KXNHLSPREAD": "hockey/nhl/scoreboard",
+            "KXNHLPTS": "hockey/nhl/scoreboard",
+            "KXNHLGOAL": "hockey/nhl/scoreboard",
+            "KXNHLAST": "hockey/nhl/scoreboard",
             "KXLIGAMXBTTS": "soccer/mex.1/scoreboard",
             "KXLALIGA1HTOTAL": "soccer/esp.1/scoreboard",
             "KXUCLTEAMTOTAL": "soccer/uefa.champions/scoreboard",
@@ -455,7 +471,93 @@ class PreTradeEducator:
                 ]
                 if not live_events:
                     return False, f"VETO [ESPN Live Check]: No live in-play {series} games right now (all pre-game/post-game)"
-                return True, f"ESPN League Live ({len(live_events)} active game(s) in-play)"
+
+                # Match exact game in ticker (e.g. KXNBAPTS-26OCT26PHXOKC-...) to an active live event
+                parts = ticker.split("-")
+                event_slug = parts[1].upper() if len(parts) >= 2 else ""
+                matched_ev = None
+                for ev in live_events:
+                    comps = ev.get("competitions", [{}])
+                    competitors = comps[0].get("competitors", []) if comps else []
+                    abbrs = [
+                        (c.get("team", {}).get("abbreviation") or "").upper()
+                        for c in competitors
+                    ]
+                    if any(ab and ab in event_slug for ab in abbrs):
+                        matched_ev = ev
+                        break
+                if not matched_ev:
+                    return False, f"VETO [ESPN Matchup Check]: Specific game '{event_slug}' is NOT live in-play right now"
+
+                # Deep Player Prop Box Score Check via ESPN Summary API (/summary?event={id})
+                nba_prop_Set = {"KXNBAPTS", "KXNBAREB", "KXNBAAST", "KXNBA3PT", "KXNBAPRA", "KXNBABLK", "KXNBASTL"}
+                nfl_prop_Set = {"KXNFLPASSYDS", "KXNFLRUSHYDS", "KXNFLRECYDS", "KXNFLREC"}
+                if (series in nba_prop_Set or series in nfl_prop_Set) and ":" in title and len(parts) >= 4:
+                    player_target_name = title.split(":")[0].strip().lower()
+                    player_last = player_target_name.split()[-1] if player_target_name else ""
+                    try:
+                        target_val = float(parts[-1])
+                    except Exception:
+                        target_val = 0.0
+
+                    if target_val > 0 and player_last:
+                        sport_base = sp_path.split("/scoreboard")[0]
+                        ev_id = matched_ev.get("id", "")
+                        r_box = await hc.get(
+                            f"https://site.api.espn.com/apis/site/v2/sports/{sport_base}/summary?event={ev_id}",
+                            timeout=3.5,
+                        )
+                        bs_players = r_box.json().get("boxscore", {}).get("players", [])
+                        found_stat = None
+                        fouls_val = 0
+                        mins_played = "0"
+                        for team_blk in bs_players:
+                            for sg in team_blk.get("statistics", []):
+                                sg_name = (sg.get("name") or "").lower()
+                                labels = [lbl.upper() for lbl in sg.get("labels", [])]
+                                for ath in sg.get("athletes", []):
+                                    a_name = (ath.get("athlete", {}).get("displayName") or "").lower()
+                                    if player_last in a_name:
+                                        st_arr = ath.get("stats", [])
+                                        if not st_arr:
+                                            continue
+                                        if series in nba_prop_Set and len(st_arr) == len(labels):
+                                            s_map = dict(zip(labels, st_arr))
+                                            mins_played = s_map.get("MIN", "0")
+                                            fouls_val = int(float(s_map.get("PF", "0") or 0))
+                                            pts = float(s_map.get("PTS", "0") or 0)
+                                            reb = float(s_map.get("REB", "0") or 0)
+                                            ast = float(s_map.get("AST", "0") or 0)
+                                            blk = float(s_map.get("BLK", "0") or 0)
+                                            stl = float(s_map.get("STL", "0") or 0)
+                                            tpt_raw = str(s_map.get("3PT", "0-0")).split("-")[0]
+                                            tpt = float(tpt_raw or 0)
+                                            if series == "KXNBAPTS": found_stat = pts
+                                            elif series == "KXNBAREB": found_stat = reb
+                                            elif series == "KXNBAAST": found_stat = ast
+                                            elif series == "KXNBA3PT": found_stat = tpt
+                                            elif series == "KXNBAPRA": found_stat = pts + reb + ast
+                                            elif series == "KXNBABLK": found_stat = blk
+                                            elif series == "KXNBASTL": found_stat = stl
+                                        elif series in nfl_prop_Set and len(st_arr) == len(labels):
+                                            s_map = dict(zip(labels, st_arr))
+                                            if series == "KXNFLPASSYDS" and sg_name == "passing":
+                                                found_stat = float(s_map.get("YDS", "0") or 0)
+                                            elif series == "KXNFLRUSHYDS" and sg_name == "rushing":
+                                                found_stat = float(s_map.get("YDS", "0") or 0)
+                                            elif series == "KXNFLRECYDS" and sg_name == "receiving":
+                                                found_stat = float(s_map.get("YDS", "0") or 0)
+                                            elif series == "KXNFLREC" and sg_name == "receiving":
+                                                found_stat = float(s_map.get("REC", "0") or 0)
+                        if found_stat is not None:
+                            if fouls_val >= 5:
+                                return False, f"VETO [ESPN Boxscore]: {title} has {fouls_val} personal fouls (foul trouble risk!)"
+                            prog_pct = (found_stat / target_val) * 100.0
+                            if prog_pct < 65.0:
+                                return False, f"VETO [ESPN Boxscore]: {title} only at {found_stat:.0f}/{target_val:.0f} ({prog_pct:.0f}% < 65% live progress min)"
+                            return True, f"ESPN Boxscore Verified ({found_stat:.0f}/{target_val:.0f} = {prog_pct:.0f}% banked | MIN={mins_played} | PF={fouls_val})"
+
+                return True, f"ESPN Matchup Live ({event_slug} active in-play)"
             except Exception as e:
                 return False, f"VETO [ESPN API Error]: League live check failed ({e})"
 

@@ -1628,7 +1628,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 # Sort by Fastest Capital Turnover Velocity (1c spreads & closest to finishing first!)
                 candidates.sort(key=lambda x: x[0])
 
-                for _vel, mins_left, t, title, shard_key in candidates[:25]:
+                for _vel, mins_left, t, title, shard_key in candidates[:35]:
                     event_prefix = _entity_key(t)
                     is_crypto_t = t.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB"))
                     is_index_t = t.startswith(("KXINX", "KXNASDAQ", "KXWTI"))
@@ -1766,7 +1766,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
             logger.info(f"Completed scheduled cloud burst ({duration_seconds}s).")
             break
 
-        await asyncio.sleep(8)
+        await asyncio.sleep(5)
 
     await client.close()
 

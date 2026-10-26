@@ -127,11 +127,6 @@ WATCH_SERIES = [
     "KXEPLGAME",
     "KXSERIEAGAME",
     "KXBUNDESLIGAGAME",
-    "KXTTSTARMATCH",
-    "KXCS2GAMES",
-    "KXLOLGAMES",
-    "KXWKBLGAME",
-    "KXFIBAGAME",
     # 5. Sports Over / Unders (Totals, 1H/2H Totals, 1Q-4Q Totals, Team Totals, BTTS, Corners)
     "KXNBATOTAL",
     "KXNBA1HTOTAL",
@@ -164,7 +159,6 @@ WATCH_SERIES = [
     "KXBUNDESLIGA1HTOTAL",
     "KXUCLTEAMTOTAL",
     "KXSERIEACORNERS",
-    "KXLIGAPORTUGALTEAMTOTAL",
     # 6. Sports Point Spreads & Quarter/Half Winners (1Q, 2Q, 3Q, 4Q, 1H, 2H, 1P-3P)
     "KXNBASPREAD",
     "KXNBA1HSPREAD",
@@ -648,12 +642,23 @@ class PreTradeEducator:
                     if c_idx is not None:
                         my_pts = _comp_window_pts(competitors[c_idx])
                         opp_pts = _comp_window_pts(competitors[1 - c_idx])
-                        if my_pts <= opp_pts:
+                        margin = my_pts - opp_pts
+                        if margin <= 0:
                             return False, (
                                 f"VETO [ESPN {period_tag} Winner]: {suffix} is NOT leading {period_tag} "
                                 f"({my_pts:.0f}-{opp_pts:.0f} in P{live_period} {clock_disp})"
                             )
-                        lock_tag = " | PROP-LOCK" if (my_pts - opp_pts) >= 5 else ""
+                        # Multi-Possession / Anti-Single-Goal Shield for Quarter & Half Winners
+                        if is_soccer and margin < 2:
+                            try:
+                                clk_min = float(str(clock_disp).replace("'", "").split("+")[0] or 0)
+                            except Exception:
+                                clk_min = 0.0
+                            if clk_min < 38.0:
+                                return False, f"VETO [Soccer 1H 1-Goal Risk]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} at {clock_disp} (<38' or <2 goal cushion)"
+                        elif series.startswith(("KXNBA", "KXNFL")) and margin < 4:
+                            return False, f"VETO [ESPN {period_tag} Cushion]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} (+{margin:.0f} < +4 pt two-possession min)"
+                        lock_tag = " | PROP-LOCK" if margin >= 6 or (is_soccer and margin >= 2) else ""
                         return True, f"ESPN {period_tag} Leader Verified ({suffix} leading {my_pts:.0f}-{opp_pts:.0f}{lock_tag} | P{live_period} {clock_disp})"
 
                 # 3. Deep Player Prop Box Score Check via ESPN Summary API (/summary?event={id})
@@ -793,7 +798,8 @@ class PreTradeEducator:
                                 return False, f"VETO [ESPN API]: Match '{title}' is not live in-play (state='{state}')"
                             idx = 0 if last_word in names[0] else 1
                             opp_idx = 1 - idx
-                            if scores[idx] <= scores[opp_idx]:
+                            margin = scores[idx] - scores[opp_idx]
+                            if margin <= 0:
                                 return False, f"VETO [ESPN API]: '{title}' is NOT LEADING on live scoreboard ({scores[idx]:.0f} vs {scores[opp_idx]:.0f})"
                             if series in ("KXWTAMATCH", "KXATPMATCH"):
                                 if sets_won[idx] < sets_won[opp_idx]:
@@ -801,12 +807,43 @@ class PreTradeEducator:
                                 if sets_won[idx] == sets_won[opp_idx] and cur_set_games[idx] <= cur_set_games[opp_idx]:
                                     return False, f"VETO [ESPN Tennis]: '{title}' not leading current set ({cur_set_games[idx]:.0f}-{cur_set_games[opp_idx]:.0f})"
 
+                            # Anti-Fluke / Multi-Possession Cushion Shield on Full-Game Moneylines (Soccer, NHL, NBA, NFL)
+                            st_obj = comp.get("status", {})
+                            period_num = int(st_obj.get("period", 1) or 1)
+                            clock_disp = st_obj.get("displayClock", "")
+                            if "soccer/" in sport_path and margin < 2:
+                                try:
+                                    clk_min = float(str(clock_disp).replace("'", "").split("+")[0] or 0)
+                                except Exception:
+                                    clk_min = 0.0
+                                if period_num < 2 or clk_min < 72.0:
+                                    return False, (
+                                        f"VETO [Soccer 1-Goal Draw Risk]: '{title}' only leading {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
+                                        f"at {clock_disp} (requires 2+ goal cushion or 72'+ late clock!)"
+                                    )
+                            elif series == "KXNHLGAME" and margin < 2 and period_num < 3:
+                                return False, (
+                                    f"VETO [NHL 1-Goal Risk]: '{title}' only up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
+                                    f"in P{period_num} (requires 2+ goal lead or 3rd Period!)"
+                                )
+                            elif series in ("KXNBAGAME", "KXNCAAMBGAME", "KXNCAAWBGAME"):
+                                min_bball_margin = 6 if period_num <= 2 else 4
+                                if margin < min_bball_margin:
+                                    return False, (
+                                        f"VETO [Basketball 1-Possession Risk]: '{title}' only up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
+                                        f"(+{margin:.0f} < +{min_bball_margin} pt cushion in P{period_num})"
+                                    )
+                            elif series in ("KXNFLGAME", "KXNCAAFGAME"):
+                                min_fball_margin = 7 if period_num <= 2 else 4
+                                if margin < min_fball_margin:
+                                    return False, (
+                                        f"VETO [Football FG Risk]: '{title}' only up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
+                                        f"(+{margin:.0f} < +{min_fball_margin} pt cushion in P{period_num})"
+                                    )
+
                             # Check Vegas Opening vs Closing Line Movement, Game Clock Period & Live Win Probability
                             vegas_note = ""
                             try:
-                                st_obj = comp.get("status", {})
-                                period_num = int(st_obj.get("period", 1) or 1)
-                                clock_disp = st_obj.get("displayClock", "")
                                 is_4q_sport = series in ("KXNBAGAME", "KXNFLGAME", "KXNCAAFGAME", "KXNCAAWBGAME")
                                 is_late_clock = (period_num >= 3) if is_4q_sport else (period_num >= 2)
                                 if is_late_clock:
@@ -847,7 +884,7 @@ class PreTradeEducator:
             except Exception as e:
                 return False, f"VETO [ESPN API Error]: Scoreboard verification failed ({e})"
 
-        return True, "External API Verified"
+        return False, f"VETO [Unverified Series]: '{series}' has no live external scoreboard/data feed"
 
     async def evaluate_opportunity(
         self, client: KalshiClient, ticker: str, ob, title: str = "", min_book_depth_dlr: float = 150.0

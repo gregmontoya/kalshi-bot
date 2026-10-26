@@ -327,8 +327,8 @@ class PreTradeEducator:
                                 return False, f"VETO [ESPN API]: Match '{title}' is still PRE-GAME (not live in-play yet)"
                             idx = 0 if last_word in names[0] else 1
                             opp_idx = 1 - idx
-                            if state == "in" and scores[idx] < scores[opp_idx]:
-                                return False, f"VETO [ESPN API]: '{title}' is TRAILING on live scoreboard ({scores[idx]:.0f} vs {scores[opp_idx]:.0f})"
+                            if state == "in" and scores[idx] <= scores[opp_idx]:
+                                return False, f"VETO [ESPN API]: '{title}' is NOT LEADING on live scoreboard ({scores[idx]:.0f} vs {scores[opp_idx]:.0f})"
 
                             # Check Vegas Opening vs Closing Line Movement & Live Win Probability
                             vegas_note = ""
@@ -463,8 +463,9 @@ async def run_autonomous_loop(duration_seconds: int = 0):
     logger.info("Autonomous Worldwide Live Roller + PreTradeEducator started.")
     start_ts = time.time()
     peak_bids: dict[str, int] = {}
-    tracked_open_positions: dict[str, dict] = {}
+    tracked_open_positions: dict[str, dict] = educator.memory.setdefault("tracked_open_positions", {})
     stopped_out_events: set[str] = {"KXLIGAMXGAME-26OCT25TIJSLA"}
+    buy_order_cycles: dict[str, int] = {}
 
     while True:
         try:
@@ -482,19 +483,22 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 exp = float(pos.get("market_exposure_dollars", "0") or 0)
                 if cnt >= 1.0:
                     tracked_open_positions[t] = {"count": int(cnt), "stake": exp}
+                    educator.save_memory()
                 elif cnt == 0.0 and t in tracked_open_positions:
                     prev = tracked_open_positions.pop(t)
+                    educator.save_memory()
                     stake_dlr = prev["stake"]
                     cnt_int = prev["count"]
-                    payout_dlr = round(cnt_int * 0.96, 2)
-                    profit_dlr = max(0.01, round(payout_dlr - stake_dlr, 2))
+                    realized_pnl = float(pos.get("realized_pnl_dollars", "0") or 0)
+                    profit_dlr = realized_pnl if realized_pnl > 0 else max(0.01, round((cnt_int * 0.94) - stake_dlr, 2))
+                    payout_dlr = round(stake_dlr + profit_dlr, 2)
                     roi_pct = round((profit_dlr / max(0.01, stake_dlr)) * 100, 1)
                     await send_phone_alert(
                         client,
                         "💰 TRADE WON & CASHED OUT!",
                         (
                             f"Play: {t}\n"
-                            f"Action: Sold {cnt_int}x @ 96c (${payout_dlr:.2f} payout on ${stake_dlr:.2f} stake)\n"
+                            f"Action: Sold {cnt_int}x (${payout_dlr:.2f} payout on ${stake_dlr:.2f} stake)\n"
                             f"Net Realized Profit: +${profit_dlr:.2f} (+{roi_pct}% ROI)\n"
                             f"New Account Equity: ${equity_cents/100:.2f}"
                         ),
@@ -508,6 +512,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
             resting_sell_orders: dict[str, list[dict]] = {}
             resting_sell_counts: dict[str, float] = {}
             resting_buy_tickers: set[str] = set()
+            stale_buys_to_cancel: list[dict] = []
             for o in open_orders:
                 t = o.get("ticker", "")
                 if o.get("action") == "sell":
@@ -516,7 +521,33 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         o.get("remaining_count_fp", "0") or 0
                     )
                 elif o.get("action") == "buy":
-                    resting_buy_tickers.add(t)
+                    oid = o.get("order_id", "")
+                    buy_order_cycles[oid] = buy_order_cycles.get(oid, 0) + 1
+                    # Auto-cancel resting buy orders unfilled after 3 cycles (~60s) to prevent stale adverse selection!
+                    if buy_order_cycles[oid] > 3:
+                        stale_buys_to_cancel.append(
+                            {
+                                "order_id": oid,
+                                "market_ticker": t,
+                                "exchange_index": o.get("exchange_index", 0),
+                                "subaccount": o.get("subaccount_number", 0),
+                            }
+                        )
+                        buy_order_cycles.pop(oid, None)
+                    else:
+                        resting_buy_tickers.add(t)
+
+            if stale_buys_to_cancel:
+                logger.info(f"Auto-canceling {len(stale_buys_to_cancel)} unfilled resting buy order(s) (>60s old) to free cash.")
+                try:
+                    await client.request(
+                        "DELETE",
+                        "/portfolio/events/orders/batched",
+                        json_data={"orders": stale_buys_to_cancel},
+                        authenticated=True,
+                    )
+                except Exception:
+                    pass
 
             # 1. Manage Open Positions: Trailing Stop / Guillotine (<58c or -12c drop) + 96c Harvest Queue
             for pos in positions:
@@ -639,12 +670,16 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             "/markets",
                             params={"series_ticker": series, "status": "open", "limit": 200},
                         )
+                        await asyncio.sleep(0.06)
                         for m in res.get("markets", []):
                             shard_key = int(m.get("exchange_index", 0) or 0)
                             if shard_cents.get(shard_key, 0) < 650:
                                 continue
 
                             t = m.get("ticker", "")
+                            # Block fragile Soccer Draws (-TIE) and narrow middle range brackets (-B)
+                            if t.endswith("-TIE") or "-B" in t:
+                                continue
                             event_prefix = "-".join(t.split("-")[:2])
                             if t in resting_buy_tickers or resting_sell_counts.get(t, 0) > 0 or event_prefix in active_events:
                                 continue
@@ -672,7 +707,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             if not ((80 <= ask_c <= 89) or (93 <= ask_c <= 97)):
                                 continue
 
-                            candidates.append((mins_to_exp, t, m.get("title", t), shard_key))
+                            clean_title = m.get("yes_sub_title") or m.get("title", t)
+                            candidates.append((mins_to_exp, t, clean_title, shard_key))
                     except Exception:
                         pass
 

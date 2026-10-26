@@ -1035,15 +1035,44 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     if idx in shard_cents:
                         shard_cents[idx] = int(float(b_item.get("balance", "0") or 0) * 100)
 
+                # Pre-warm any dry trading shard (0, 2, 3) via Intra Account Transfer API if total cash permits
+                for dst_shard in (0, 2, 3):
+                    if shard_cents.get(dst_shard, 0) < min_stake_c:
+                        donor_shard = max((0, 2, 3), key=lambda s: shard_cents.get(s, 0))
+                        if donor_shard != dst_shard and shard_cents.get(donor_shard, 0) >= (min_stake_c * 2):
+                            xfer_c = min(min_stake_c + 500, shard_cents[donor_shard] - min_stake_c)
+                            if xfer_c >= 500:
+                                try:
+                                    await client.request(
+                                        "POST",
+                                        "/portfolio/intra_exchange_instance_transfer",
+                                        json_data={
+                                            "source": "event_contract",
+                                            "destination": "event_contract",
+                                            "amount": xfer_c * 100,  # Kalshi expects centicents (1c = 100 centicents)
+                                            "client_transfer_id": str(uuid.uuid4()),
+                                            "source_exchange_shard": donor_shard,
+                                            "destination_exchange_shard": dst_shard,
+                                            "source_subaccount": 0,
+                                            "destination_subaccount": 0,
+                                        },
+                                        authenticated=True,
+                                    )
+                                    shard_cents[donor_shard] -= xfer_c
+                                    shard_cents[dst_shard] += xfer_c
+                                    logger.info(
+                                        f"⚡ Auto-Rebalanced ${xfer_c/100:.2f} from Shard {donor_shard} -> Shard {dst_shard} (Shards: 0=${shard_cents[0]/100:.2f}, 2=${shard_cents[2]/100:.2f}, 3=${shard_cents[3]/100:.2f})"
+                                    )
+                                    await asyncio.sleep(1.0)
+                                except Exception as e:
+                                    logger.warning(f"Pre-warm shard transfer {donor_shard}->{dst_shard} note: {e}")
+
                 active_events = set(stopped_out_events) | {
                     "-".join(tk.split("-")[:2])
                     for tk in (list(resting_buy_tickers) + list(resting_sell_counts.keys()) + list(tracked_open_positions.keys()))
                 }
                 candidates = []
                 for series in WATCH_SERIES:
-                    known_shard = series_shard_cache.get(series)
-                    if known_shard is not None and shard_cents.get(known_shard, 0) < min_stake_c:
-                        continue
                     try:
                         res = await client.request(
                             "GET",
@@ -1056,8 +1085,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             series_shard_cache[series] = int(markets_list[0].get("exchange_index", 0) or 0)
                         for m in markets_list:
                             shard_key = int(m.get("exchange_index", 0) or 0)
-                            if shard_cents.get(shard_key, 0) < min_stake_c:
-                                continue
 
                             t = m.get("ticker", "")
                             # Block fragile Soccer Draws (-TIE) and narrow middle range brackets (-B)
@@ -1101,7 +1128,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
 
                 for mins_left, t, title, shard_key in candidates[:25]:
                     event_prefix = "-".join(t.split("-")[:2])
-                    if event_prefix in active_events or shard_cents.get(shard_key, 0) < min_stake_c:
+                    if event_prefix in active_events or total_cents < min_stake_c:
                         continue
                     await asyncio.sleep(0.12)
                     ob = await client.get_orderbook(t)
@@ -1128,8 +1155,44 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             # 4-Tier Institutional Kelly Sizing (Auto-scales from $25 up to $500+ deposits!)
                             base_alloc_pct = tier["boost_pct"] if (is_tail_lock_zone or conf_mult >= 1.30) else tier["base_pct"]
                             raw_stake = int(equity_cents * base_alloc_pct * conf_mult)
-                            target_stake_cents = min(tier["max_stake_cents"], max(min_stake_c, raw_stake))
-                            alloc_cents = min(shard_cents[shard_key], target_stake_cents)
+                            target_stake_cents = min(tier["max_stake_cents"], max(min_stake_c, raw_stake), total_cents)
+
+                            # Just-In-Time (JIT) Cross-Shard Liquidity Sweeper: pull cash from other shards if needed!
+                            if shard_cents.get(shard_key, 0) < target_stake_cents:
+                                deficit_cents = target_stake_cents - shard_cents.get(shard_key, 0) + 25
+                                for donor in sorted((0, 2, 3), key=lambda s: shard_cents.get(s, 0), reverse=True):
+                                    if donor == shard_key or deficit_cents <= 0:
+                                        continue
+                                    avail = shard_cents.get(donor, 0)
+                                    pull_c = min(avail, deficit_cents)
+                                    if pull_c >= 100:
+                                        try:
+                                            await client.request(
+                                                "POST",
+                                                "/portfolio/intra_exchange_instance_transfer",
+                                                json_data={
+                                                    "source": "event_contract",
+                                                    "destination": "event_contract",
+                                                    "amount": pull_c * 100,  # centicents
+                                                    "client_transfer_id": str(uuid.uuid4()),
+                                                    "source_exchange_shard": donor,
+                                                    "destination_exchange_shard": shard_key,
+                                                    "source_subaccount": 0,
+                                                    "destination_subaccount": 0,
+                                                },
+                                                authenticated=True,
+                                            )
+                                            shard_cents[donor] -= pull_c
+                                            shard_cents[shard_key] = shard_cents.get(shard_key, 0) + pull_c
+                                            deficit_cents -= pull_c
+                                            logger.info(
+                                                f"⚡ JIT Shard Sweep: Pulled ${pull_c/100:.2f} from Shard {donor} -> Shard {shard_key} for {t}"
+                                            )
+                                            await asyncio.sleep(1.2)
+                                        except Exception as e:
+                                            logger.warning(f"JIT Shard Sweep {donor}->{shard_key} failed: {e}")
+
+                            alloc_cents = min(shard_cents.get(shard_key, 0), target_stake_cents)
                             count_int = int(alloc_cents // bid_cents)
                             if count_int >= tier["min_contracts"]:
                                 # Multi-Slice Iceberg Order Splitting (Drips 75 contracts per slice on large Tier 3/4/5 orders!)

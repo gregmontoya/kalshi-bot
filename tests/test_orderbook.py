@@ -1,4 +1,4 @@
-"""Unit tests for Phase 1 Reciprocal Order Book Law & Ask Synthesis."""
+"""Unit tests for Phase 1 Reciprocal Order Book Law, Fixed-Point Parsing & Ask Synthesis."""
 
 import pytest
 from src.core.models import OrderSide
@@ -44,6 +44,38 @@ def test_reciprocal_order_book_law():
 
     # 4. Midpoint
     assert book.yes_midpoint == 73.5
+
+
+def test_fixed_point_dollar_strings_orderbook_fp():
+    """
+    LAW 2: Fixed-Point Dollar Strings (API Format)
+    Kalshi v2 orderbook_fp uses yes_dollars and no_dollars strings like "0.7200".
+    """
+    payload_fp = {
+        "orderbook_fp": {
+            "yes_dollars": [
+                ["0.7400", "50.00"],
+                ["0.7200", "100.00"],
+            ],
+            "no_dollars": [
+                ["0.2300", "80.00"],
+                ["0.2000", "120.00"],
+            ],
+        },
+        "timestamp": 1714521600000,
+    }
+
+    book = KalshiOrderBookEngine.parse_kalshi_orderbook("FP-TICKER", payload_fp)
+
+    assert book.best_yes_bid == 74
+    assert book.best_no_bid == 23
+    # Reciprocal: 1.00 - 0.23 = 0.77 (77c)
+    assert book.best_yes_ask == 77
+    assert book.best_no_ask == 26
+
+    depth = KalshiOrderBookEngine.get_market_depth(book)
+    assert depth["best_yes_bid_dollars"] == "0.7400"
+    assert depth["best_yes_ask_dollars"] == "0.7700"
 
 
 def test_synthesized_ask_ladders():

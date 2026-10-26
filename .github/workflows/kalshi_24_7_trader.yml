@@ -4,7 +4,12 @@ on:
   schedule:
     # Runs every 5 minutes, 24/7/365 on GitHub Cloud for $0.00
     - cron: '*/5 * * * *'
-  workflow_dispatch: # Allows 1-click manual trigger from GitHub mobile/web
+  workflow_dispatch:
+    inputs:
+      force_cloud_burst_seconds:
+        description: 'Optional: Force a short cloud test burst (e.g. 12 seconds) even if Mac is online'
+        required: false
+        default: '0'
 
 concurrency:
   group: kalshi-live-roller
@@ -17,38 +22,48 @@ jobs:
     steps:
       - name: Check if Local Mac Primary Engine is Awake (Zero-Downtime Cloud Failover)
         id: mac_check
+        env:
+          FORCE_BURST: ${{ github.event.inputs.force_cloud_burst_seconds }}
         run: |
+          if [ -n "$FORCE_BURST" ] && [ "$FORCE_BURST" != "0" ]; then
+            echo "🧪 Running Live Cloud Verification Burst (${FORCE_BURST}s)..."
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            echo "burst_sec=$FORCE_BURST" >> $GITHUB_OUTPUT
+            exit 0
+          fi
           HB=$(curl -s -m 5 "https://ntfy.sh/kalshi-greg-hb-3fc522ce/json?poll=1&since=180s" || true)
           if echo "$HB" | grep -q "mac-online"; then
             echo "🟢 Local Mac Primary Engine is online and actively trading. Cloud Standby yielding cleanly."
-            echo "mac_online=true" >> $GITHUB_OUTPUT
+            echo "should_run=false" >> $GITHUB_OUTPUT
+            echo "burst_sec=0" >> $GITHUB_OUTPUT
           else
             echo "⚡ Local Mac is offline/shut down! Activating 24/7 GitHub Cloud Autonomous Trading Engine!"
-            echo "mac_online=false" >> $GITHUB_OUTPUT
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            echo "burst_sec=265" >> $GITHUB_OUTPUT
           fi
 
       - name: Checkout Engine
-        if: steps.mac_check.outputs.mac_online == 'false'
+        if: steps.mac_check.outputs.should_run == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Python 3.12
-        if: steps.mac_check.outputs.mac_online == 'false'
+        if: steps.mac_check.outputs.should_run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip'
 
-      - name: Install Dependencies
-        if: steps.mac_check.outputs.mac_online == 'false'
-        run: pip install -r requirements.txt
+      - name: Install Fast Core Dependencies
+        if: steps.mac_check.outputs.should_run == 'true'
+        run: pip install -q httpx cryptography pydantic pydantic-settings python-dotenv
 
-      - name: Execute 24/7 Cloud Autonomous Trading Burst (When Mac is Shut Down)
-        if: steps.mac_check.outputs.mac_online == 'false'
+      - name: Execute 24/7 Cloud Autonomous Trading Burst
+        if: steps.mac_check.outputs.should_run == 'true'
         env:
           KALSHI_ENV: PROD
           KALSHI_KEY_ID: ${{ secrets.KALSHI_KEY_ID }}
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
           THE_ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          BURST_SEC: ${{ steps.mac_check.outputs.burst_sec }}
         run: |
-          python scripts/live_auto_roller.py --duration 265 || true
+          python scripts/live_auto_roller.py --duration "$BURST_SEC" || true

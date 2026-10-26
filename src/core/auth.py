@@ -47,7 +47,9 @@ class KalshiAuthSigner:
             return
 
         pem_bytes: bytes
-        if isinstance(key_source, Path) or (
+        if isinstance(key_source, str) and "PRIVATE KEY" in key_source:
+            pem_bytes = key_source.encode("utf-8")
+        elif isinstance(key_source, Path) or (
             isinstance(key_source, str)
             and (Path(key_source).exists() or "/" in key_source or "\\" in key_source)
         ):

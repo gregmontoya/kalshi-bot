@@ -1,0 +1,39 @@
+name: Kalshi 24/7 Autonomous Cloud Trader
+
+on:
+  schedule:
+    # Runs every 5 minutes, 24/7/365 on GitHub Cloud for $0.00
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # Allows 1-click manual trigger from GitHub mobile/web
+
+concurrency:
+  group: kalshi-live-roller
+  cancel-in-progress: false
+
+jobs:
+  trade-loop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout Engine
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ping Render Free Worker (Optional Keep-Alive)
+        if: ${{ secrets.RENDER_HEALTH_URL != '' }}
+        run: curl -s -m 5 "${{ secrets.RENDER_HEALTH_URL }}" || true
+
+      - name: Execute 4-Minute Autonomous Trading Burst (Polls Every 20s)
+        env:
+          KALSHI_ENV: prod
+          KALSHI_KEY_ID: ${{ secrets.KALSHI_KEY_ID }}
+          KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
+        run: python scripts/live_auto_roller.py --duration 240

@@ -361,7 +361,7 @@ class PreTradeEducator:
             except Exception as e:
                 return False, f"VETO [Open-Meteo API Error]: Could not verify weather forecast ({e})"
 
-        # B2. Live Wall Street Indices & Crude Oil Verification via Yahoo Finance API
+        # B2. Live Wall Street Indices & Crude Oil Verification via Yahoo Finance API (with 15m ATR & Trend Guard!)
         yahoo_map = {
             "KXINXU": "%5EGSPC", "KXINX": "%5EGSPC",
             "KXNASDAQ100U": "%5ENDX", "KXNASDAQ100": "%5ENDX",
@@ -376,12 +376,38 @@ class PreTradeEducator:
                     headers={"User-Agent": "Mozilla/5.0"},
                     timeout=3.0,
                 )
-                spot_val = float(r.json()["chart"]["result"][0]["meta"]["regularMarketPrice"])
+                res_obj = r.json()["chart"]["result"][0]
+                spot_val = float(res_obj["meta"]["regularMarketPrice"])
                 is_below = "below" in title.lower()
                 cushion_pct = (((strike_val - spot_val) if is_below else (spot_val - strike_val)) / strike_val) * 100.0
-                if cushion_pct < 0.15:
-                    return False, f"VETO [Wall St Feed]: Index/Oil (${spot_val:,.2f}) too close/wrong side of strike (${strike_val:,.2f}, {cushion_pct:+.2f}%)"
-                return True, f"WallSt Spot={spot_val:,.2f} ({cushion_pct:+.2f}% > strike)"
+
+                min_req_cushion = 0.35
+                trend_info = ""
+                try:
+                    q = res_obj.get("indicators", {}).get("quote", [{}])[0]
+                    closes = [x for x in (q.get("close") or []) if x is not None]
+                    opens = [x for x in (q.get("open") or []) if x is not None]
+                    highs = [x for x in (q.get("high") or []) if x is not None]
+                    lows = [x for x in (q.get("low") or []) if x is not None]
+                    if len(closes) >= 3 and len(opens) >= 3 and len(highs) >= 3 and len(lows) >= 3:
+                        h15 = max(highs[-3:])
+                        l15 = min(lows[-3:])
+                        atr_15m = ((h15 - l15) / max(0.01, spot_val)) * 100.0
+                        min_req_cushion = max(0.35, round(atr_15m * 1.25, 2))
+                        trend_15m = ((closes[-1] - opens[-3]) / max(0.01, opens[-3])) * 100.0
+                        eff_trend = -trend_15m if is_below else trend_15m
+                        if eff_trend < -0.05:
+                            return False, f"VETO [Wall St 15m Trend]: {series} moving {trend_15m:+.2f}% toward strike over last 15m"
+                        trend_info = f" | 15mTrend={trend_15m:+.2f}% | 15mVol={atr_15m:.2f}%"
+                except Exception:
+                    pass
+
+                if cushion_pct < min_req_cushion:
+                    return False, (
+                        f"VETO [Wall St Feed]: {series} spot (${spot_val:,.2f}) cushion {cushion_pct:+.2f}% < "
+                        f"required {min_req_cushion:.2f}% (strike ${strike_val:,.2f})"
+                    )
+                return True, f"WallSt Spot={spot_val:,.2f} ({cushion_pct:+.2f}% > strike{trend_info})"
             except Exception as e:
                 return False, f"VETO [Wall St API Error]: Could not verify live index/commodity feed ({e})"
 
@@ -1050,7 +1076,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 mins_to_exp = (exp_dt - now_utc).total_seconds() / 60.0
                             except Exception:
                                 continue
-                            max_exp_mins = 90.0
+                            max_exp_mins = 45.0 if series.startswith(("KXINX", "KXNASDAQ", "KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE")) else 90.0
                             if not (-180.0 <= mins_to_exp <= max_exp_mins):
                                 continue
 

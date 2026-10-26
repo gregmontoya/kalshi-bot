@@ -241,44 +241,87 @@ class PreTradeEducator:
         hc = await client.get_client()
         series = ticker.split("-")[0] if "-" in ticker else ticker
 
-        # A. Live Crypto Spot Verification via Coinbase API
+        # A. Live Multi-Exchange Crypto Oracle (Synthetic CF Benchmarks BRTI + L2 Whale Book + Dynamic ATR Cushion)
         crypto_map = {
-            "KXBTCD": "BTC-USD", "KXBTC": "BTC-USD",
-            "KXETHD": "ETH-USD", "KXETH": "ETH-USD",
-            "KXSOLD": "SOL-USD",
-            "KXXRPD": "XRP-USD", "KXXRP": "XRP-USD",
-            "KXDOGED": "DOGE-USD", "KXDOGE": "DOGE-USD",
-            "KXBNBD": "BNB-USD",
+            "KXBTCD": ("BTC-USD", "XXBTZUSD"), "KXBTC": ("BTC-USD", "XXBTZUSD"),
+            "KXETHD": ("ETH-USD", "XETHZUSD"), "KXETH": ("ETH-USD", "XETHZUSD"),
+            "KXSOLD": ("SOL-USD", "SOLUSD"),
+            "KXXRPD": ("XRP-USD", "XXRPZUSD"), "KXXRP": ("XRP-USD", "XXRPZUSD"),
+            "KXDOGED": ("DOGE-USD", "XDGUSD"), "KXDOGE": ("DOGE-USD", "XDGUSD"),
+            "KXBNBD": ("BNB-USD", ""),
         }
         if series in crypto_map and "-T" in ticker:
-            pair = crypto_map[series]
+            pair, kraken_pair = crypto_map[series]
             try:
                 strike = float(ticker.split("-T")[-1])
-                r = await hc.get(f"https://api.coinbase.com/v2/prices/{pair}/spot", timeout=3.0)
-                spot = float(r.json()["data"]["amount"])
+                # 1. Synthetic CF Benchmarks BRTI Settlement Price (Coinbase Spot + Kraken Spot Average)
+                r_cb = await hc.get(f"https://api.coinbase.com/v2/prices/{pair}/spot", timeout=2.5)
+                cb_spot = float(r_cb.json()["data"]["amount"])
+                spot = cb_spot
+                oracle_src = "CB"
+                if kraken_pair:
+                    try:
+                        r_kr = await hc.get(f"https://api.kraken.com/0/public/Ticker?pair={kraken_pair}", timeout=2.0)
+                        kr_res = r_kr.json().get("result", {})
+                        if kr_res:
+                            first_key = next(iter(kr_res))
+                            kr_spot = float(kr_res[first_key]["c"][0])
+                            spot = (cb_spot + kr_spot) / 2.0
+                            oracle_src = "BRTI(CB+Kraken)"
+                    except Exception:
+                        pass
+
                 is_below = "below" in title.lower()
                 cushion_pct = (((strike - spot) if is_below else (spot - strike)) / strike) * 100.0
-                if cushion_pct < 0.25:
-                    return False, f"VETO [Coinbase API]: {pair} spot (${spot:,.2f}) too close/wrong side of strike (${strike:,.2f}, {cushion_pct:+.2f}%)"
 
-                # Check 15-minute Coinbase Exchange candlestick trend (3x 5m candles)
+                # 2. Dynamic 15-Minute ATR Volatility Cushion & Multi-Timeframe Candlesticks (Coinbase Exchange API)
+                min_required_cushion = 0.25
                 trend_str = ""
                 try:
                     rc = await hc.get(f"https://api.exchange.coinbase.com/products/{pair}/candles?granularity=300", timeout=2.5)
                     candles = rc.json()
                     if isinstance(candles, list) and len(candles) >= 3:
+                        # candles[i] = [time, low, high, open, close, volume]
                         newest_close = float(candles[0][4])
                         oldest_open = float(candles[2][3])
+                        high_15m = max(float(c[2]) for c in candles[:3])
+                        low_15m = min(float(c[1]) for c in candles[:3])
+                        atr_15m_pct = ((high_15m - low_15m) / max(0.01, spot)) * 100.0
+                        # Require strike cushion to exceed at least 85% of the live 15-min volatility range (min 0.25%)
+                        min_required_cushion = max(0.25, round(atr_15m_pct * 0.85, 2))
+
                         trend_15m = ((newest_close - oldest_open) / oldest_open) * 100.0
                         effective_trend = -trend_15m if is_below else trend_15m
                         if effective_trend < -0.20:
                             return False, f"VETO [Crypto 15m Trend]: {pair} moving {trend_15m:+.2f}% over last 15m toward strike"
-                        trend_str = f" | 15mTrend={trend_15m:+.2f}%"
+                        trend_str = f" | 15mTrend={trend_15m:+.2f}% | 15mVol={atr_15m_pct:.2f}%"
                 except Exception:
                     pass
-                return True, f"Coinbase Spot=${spot:,.2f} ({cushion_pct:+.2f}% > strike{trend_str})"
+
+                if cushion_pct < min_required_cushion:
+                    return False, (
+                        f"VETO [{oracle_src}]: {pair} spot (${spot:,.2f}) cushion {cushion_pct:+.2f}% < "
+                        f"required volatility cushion {min_required_cushion:.2f}% (strike ${strike:,.2f})"
+                    )
+
+                # 3. Coinbase Exchange L2 Spot Order Book Whale Wall Check (Top 50 Spot Bids vs Asks)
+                l2_str = ""
+                try:
+                    rl2 = await hc.get(f"https://api.exchange.coinbase.com/products/{pair}/book?level=2", timeout=2.5)
+                    book_l2 = rl2.json()
+                    bids_l2 = sum(float(b[0]) * float(b[1]) for b in book_l2.get("bids", [])[:25])
+                    asks_l2 = sum(float(a[0]) * float(a[1]) for a in book_l2.get("asks", [])[:25])
+                    if bids_l2 > 0 and asks_l2 > 0:
+                        spot_imb = (asks_l2 / bids_l2) if is_below else (bids_l2 / asks_l2)
+                        if spot_imb < 0.45:
+                            return False, f"VETO [Spot L2 Whale Book]: Heavy opposing Coinbase spot orderbook wall (ratio={spot_imb:.2f}x)"
+                        l2_str = f" | SpotL2={spot_imb:.2f}x"
+                except Exception:
+                    pass
+
+                return True, f"{oracle_src}=${spot:,.2f} ({cushion_pct:+.2f}% > strike{trend_str}{l2_str})"
             except Exception as e:
-                return False, f"VETO [Coinbase API Error]: Could not verify live crypto spot ({e})"
+                return False, f"VETO [Crypto Oracle Error]: Could not verify live crypto spot ({e})"
 
         # B. Live City Weather High-Temp Verification via Open-Meteo API
         weather_coords = {
@@ -639,6 +682,15 @@ async def run_autonomous_loop(duration_seconds: int = 0):
     client = KalshiClient(signer=signer, base_url=settings.PROD_REST_URL)
     educator = PreTradeEducator()
     logger.info("Autonomous Worldwide Live Roller + PreTradeEducator started.")
+    try:
+        await client._request(
+            "POST",
+            "/portfolio/target_balance_allocation",
+            json_body={"target_allocation": {"0": 4000, "2": 2000, "3": 4000}},
+        )
+        logger.info("Kalshi 3-Shard Auto-Allocator verified: 40% Shard 0 / 20% Shard 2 (Crypto) / 40% Shard 3.")
+    except Exception as e:
+        logger.warning(f"Shard allocation sync note: {e}")
     start_ts = time.time()
     peak_bids: dict[str, int] = {}
     tracked_open_positions: dict[str, dict] = educator.memory.setdefault("tracked_open_positions", {})

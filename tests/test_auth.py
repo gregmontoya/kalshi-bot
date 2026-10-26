@@ -1,7 +1,7 @@
-"""Tests for Kalshi RSA-PSS signing law."""
+"""Unit tests for Phase 1 RSA-PSS Authentication Signer."""
 
 from cryptography.hazmat.primitives.asymmetric import rsa
-from engine.core.auth import KalshiAuthSigner
+from src.core.auth import KalshiAuthSigner
 
 
 def test_rsa_key_generation_and_export():
@@ -18,7 +18,7 @@ def test_rsa_key_generation_and_export():
 
 def test_rsa_pss_signing_and_verification():
     private_key, public_key = KalshiAuthSigner.generate_key_pair(2048)
-    signer = KalshiAuthSigner(key_id="test-key-123", private_key=private_key)
+    signer = KalshiAuthSigner(key_id="test-key-phase1", private_key=private_key)
 
     timestamp_ms = 1714521600000
     method = "GET"
@@ -33,7 +33,7 @@ def test_rsa_pss_signing_and_verification():
     assert timestamp_str == "1714521600000"
     assert len(signature) > 64
 
-    # Verify signature passes
+    # Verify signature
     valid = KalshiAuthSigner.verify_signature(
         public_key=public_key,
         signature_b64=signature,
@@ -56,14 +56,14 @@ def test_path_without_query_extraction():
 
 def test_auth_headers_generation():
     private_key, _ = KalshiAuthSigner.generate_key_pair(2048)
-    signer = KalshiAuthSigner(key_id="demo-user-key", private_key=private_key)
+    signer = KalshiAuthSigner(key_id="phase1-demo-key", private_key=private_key)
 
     headers = signer.get_auth_headers(
         method="POST",
         path_or_url="/trade-api/v2/portfolio/orders",
     )
 
-    assert headers["KALSHI-ACCESS-KEY"] == "demo-user-key"
+    assert headers["KALSHI-ACCESS-KEY"] == "phase1-demo-key"
     assert "KALSHI-ACCESS-TIMESTAMP" in headers
     assert "KALSHI-ACCESS-SIGNATURE" in headers
     assert len(headers["KALSHI-ACCESS-SIGNATURE"]) > 32

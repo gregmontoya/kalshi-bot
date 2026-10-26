@@ -1,8 +1,8 @@
-"""Tests for Reciprocal Order Book Law and Maker-First liquidity calculations."""
+"""Unit tests for Phase 1 Reciprocal Order Book Law & Ask Synthesis."""
 
 import pytest
-from engine.core.models import OrderSide
-from engine.core.orderbook import KalshiOrderBookEngine
+from src.core.models import OrderSide
+from src.core.orderbook import KalshiOrderBookEngine
 
 
 def test_reciprocal_order_book_law():
@@ -12,7 +12,6 @@ def test_reciprocal_order_book_law():
     best_yes_ask = 100 - best_no_bid
     best_no_ask  = 100 - best_yes_bid
     """
-    # Simulate Kalshi response with yes and no bids
     payload = {
         "orderbook": {
             "yes": [
@@ -36,19 +35,14 @@ def test_reciprocal_order_book_law():
     assert book.best_no_bid == 25
 
     # 2. Reciprocal synthetic asks
-    # best_yes_ask = 100 - best_no_bid = 100 - 25 = 75c
-    assert book.best_yes_ask == 75
-    # best_no_ask = 100 - best_yes_bid = 100 - 72 = 28c
-    assert book.best_no_ask == 28
+    assert book.best_yes_ask == 75  # 100 - 25
+    assert book.best_no_ask == 28   # 100 - 72
 
     # 3. Spreads
-    # YES spread = 75 - 72 = 3c
-    assert book.yes_spread == 3
-    # NO spread = 28 - 25 = 3c
-    assert book.no_spread == 3
+    assert book.yes_spread == 3  # 75 - 72
+    assert book.no_spread == 3   # 28 - 25
 
     # 4. Midpoint
-    # (72 + 75) / 2 = 73.5
     assert book.yes_midpoint == 73.5
 
 
@@ -60,8 +54,6 @@ def test_synthesized_ask_ladders():
     book = KalshiOrderBookEngine.parse_kalshi_orderbook("DEMO-NFL", payload)
 
     yes_asks = book.get_synthesized_yes_asks()
-    # no bids: 35c (qty 80) -> yes ask at 100 - 35 = 65c (qty 80)
-    # no bids: 30c (qty 120) -> yes ask at 100 - 30 = 70c (qty 120)
     assert len(yes_asks) == 2
     assert yes_asks[0].price == 65
     assert yes_asks[0].quantity == 80
@@ -69,8 +61,6 @@ def test_synthesized_ask_ladders():
     assert yes_asks[1].quantity == 120
 
     no_asks = book.get_synthesized_no_asks()
-    # yes bids: 60c (qty 50) -> no ask at 100 - 60 = 40c (qty 50)
-    # yes bids: 58c (qty 100) -> no ask at 100 - 58 = 42c (qty 100)
     assert len(no_asks) == 2
     assert no_asks[0].price == 40
     assert no_asks[0].quantity == 50
@@ -86,19 +76,13 @@ def test_maker_first_order_crossing_check():
     book = KalshiOrderBookEngine.parse_kalshi_orderbook("DEMO-NFL", payload)
 
     # BUY YES:
-    # 72c is < 75c (best_yes_ask) -> RESTS as Maker (fee = $0.00)
     assert KalshiOrderBookEngine.is_maker_order(book, OrderSide.YES, "buy", 72) is True
-    # 74c is < 75c -> RESTS as Maker
     assert KalshiOrderBookEngine.is_maker_order(book, OrderSide.YES, "buy", 74) is True
-    # 75c equals best_yes_ask -> CROSSES book, becomes Taker (violates Maker-First law!)
     assert KalshiOrderBookEngine.is_maker_order(book, OrderSide.YES, "buy", 75) is False
-    # 76c > 75c -> CROSSES book
     assert KalshiOrderBookEngine.is_maker_order(book, OrderSide.YES, "buy", 76) is False
 
     # SELL YES:
-    # 72c is > 70c (best_yes_bid) -> RESTS as Maker
     assert KalshiOrderBookEngine.is_maker_order(book, OrderSide.YES, "sell", 72) is True
-    # 70c <= best_yes_bid -> CROSSES book, becomes Taker
     assert KalshiOrderBookEngine.is_maker_order(book, OrderSide.YES, "sell", 70) is False
 
 
@@ -109,7 +93,6 @@ def test_suggest_maker_entry_price():
     }
     book = KalshiOrderBookEngine.parse_kalshi_orderbook("DEMO-NFL", payload)
 
-    # 2c dip fill below best bid: 72 - 2 = 70c
     suggested = KalshiOrderBookEngine.suggest_maker_entry_price(book, OrderSide.YES, offset_cents=2)
     assert suggested == 70
     assert KalshiOrderBookEngine.is_maker_order(book, OrderSide.YES, "buy", suggested) is True

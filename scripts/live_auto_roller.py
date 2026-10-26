@@ -132,21 +132,79 @@ WATCH_SERIES = [
     "KXLOLGAMES",
     "KXWKBLGAME",
     "KXFIBAGAME",
-    # 5. Sports Over / Unders (Totals, 1H Totals, Team Totals, BTTS, Corners)
+    # 5. Sports Over / Unders (Totals, 1H/2H Totals, 1Q-4Q Totals, Team Totals, BTTS, Corners)
     "KXNBATOTAL",
+    "KXNBA1HTOTAL",
+    "KXNBA2HTOTAL",
+    "KXNBA1QTOTAL",
+    "KXNBA2QTOTAL",
+    "KXNBA3QTOTAL",
+    "KXNBA4QTOTAL",
+    "KXNBA1HTEAMTOTAL",
+    "KXNBATEAMTOTAL",
     "KXNFLTOTAL",
+    "KXNFL1HTOTAL",
+    "KXNFL2HTOTAL",
+    "KXNFL1QTOTAL",
+    "KXNFL2QTOTAL",
+    "KXNFL3QTOTAL",
+    "KXNFL4QTOTAL",
+    "KXNFLTEAMTOTAL",
     "KXNCAAFTOTAL",
     "KXNHLTOTAL",
+    "KXNHL1PTOTAL",
+    "KXNHL2PTOTAL",
+    "KXNHL3PTOTAL",
+    "KXNHLTEAMTOTAL",
     "KXLIGAMXBTTS",
     "KXLALIGA1HTOTAL",
+    "KXUCL1HTOTAL",
+    "KXEPL1HTOTAL",
+    "KXSERIEA1HTOTAL",
+    "KXBUNDESLIGA1HTOTAL",
     "KXUCLTEAMTOTAL",
     "KXSERIEACORNERS",
     "KXLIGAPORTUGALTEAMTOTAL",
-    # 6. Sports Point Spreads
+    # 6. Sports Point Spreads & Quarter/Half Winners (1Q, 2Q, 3Q, 4Q, 1H, 2H, 1P-3P)
     "KXNBASPREAD",
+    "KXNBA1HSPREAD",
+    "KXNBA2HSPREAD",
+    "KXNBA1QSPREAD",
+    "KXNBA2QSPREAD",
+    "KXNBA3QSPREAD",
+    "KXNBA4QSPREAD",
+    "KXNBA1Q",
+    "KXNBA2Q",
+    "KXNBA3Q",
+    "KXNBA4Q",
+    "KXNBA1H",
+    "KXNBA2H",
     "KXNFLSPREAD",
+    "KXNFL1HSPREAD",
+    "KXNFL2HSPREAD",
+    "KXNFL1QSPREAD",
+    "KXNFL2QSPREAD",
+    "KXNFL3QSPREAD",
+    "KXNFL4QSPREAD",
+    "KXNFL1Q",
+    "KXNFL2Q",
+    "KXNFL3Q",
+    "KXNFL4Q",
+    "KXNFL1H",
+    "KXNFL2H",
     "KXNCAAFSPREAD",
     "KXNHLSPREAD",
+    "KXNHL1PSPREAD",
+    "KXNHL2PSPREAD",
+    "KXNHL3PSPREAD",
+    "KXNHL1P",
+    "KXNHL2P",
+    "KXNHL3P",
+    "KXUCL1H",
+    "KXEPL1H",
+    "KXLALIGA1H",
+    "KXSERIEA1H",
+    "KXBUNDESLIGA1H",
     # 7. Sports Player Props (NBA PTS/REB/AST/3PT/PRA/BLK/STL, NFL TD/PASS/RUSH/REC, NHL PTS/GOAL/AST, Soccer)
     "KXNBAPTS",
     "KXNBAREB",
@@ -429,39 +487,35 @@ class PreTradeEducator:
             except Exception as e:
                 return False, f"VETO [Wall St API Error]: Could not verify live index/commodity feed ({e})"
 
-        # C2. Deep ESPN Live Box Score & Matchup Verification for Sports Totals, Spreads & Player Props
-        sport_prop_league_map = {
-            "KXNBATOTAL": "basketball/nba/scoreboard",
-            "KXNBASPREAD": "basketball/nba/scoreboard",
-            "KXNBAPTS": "basketball/nba/scoreboard",
-            "KXNBAREB": "basketball/nba/scoreboard",
-            "KXNBAAST": "basketball/nba/scoreboard",
-            "KXNBA3PT": "basketball/nba/scoreboard",
-            "KXNBAPRA": "basketball/nba/scoreboard",
-            "KXNBABLK": "basketball/nba/scoreboard",
-            "KXNBASTL": "basketball/nba/scoreboard",
-            "KXNFLTOTAL": "football/nfl/scoreboard",
-            "KXNFLSPREAD": "football/nfl/scoreboard",
-            "KXNFLANYTD": "football/nfl/scoreboard",
-            "KXNFLPASSYDS": "football/nfl/scoreboard",
-            "KXNFLRUSHYDS": "football/nfl/scoreboard",
-            "KXNFLRECYDS": "football/nfl/scoreboard",
-            "KXNFLREC": "football/nfl/scoreboard",
-            "KXNCAAFTOTAL": "football/college-football/scoreboard?groups=80&limit=200",
-            "KXNCAAFSPREAD": "football/college-football/scoreboard?groups=80&limit=200",
-            "KXNHLTOTAL": "hockey/nhl/scoreboard",
-            "KXNHLSPREAD": "hockey/nhl/scoreboard",
-            "KXNHLPTS": "hockey/nhl/scoreboard",
-            "KXNHLGOAL": "hockey/nhl/scoreboard",
-            "KXNHLAST": "hockey/nhl/scoreboard",
-            "KXLIGAMXBTTS": "soccer/mex.1/scoreboard",
-            "KXLALIGA1HTOTAL": "soccer/esp.1/scoreboard",
-            "KXUCLTEAMTOTAL": "soccer/uefa.champions/scoreboard",
-            "KXUCLSOA": "soccer/uefa.champions/scoreboard",
-            "KXSERIEACORNERS": "soccer/ita.1/scoreboard",
-        }
-        if series in sport_prop_league_map:
-            sp_path = sport_prop_league_map[series]
+        # C2. Deep ESPN Live Box Score, Quarter/Halftime Linescore & Matchup Verification
+        sp_path = None
+        if series not in (
+            "KXNBAGAME", "KXNFLGAME", "KXNCAAFGAME", "KXNCAAMBGAME", "KXNCAAWBGAME",
+            "KXNHLGAME", "KXUCLGAME", "KXMLSGAME", "KXLIGAMXGAME", "KXLALIGAGAME",
+            "KXEPLGAME", "KXSERIEAGAME", "KXBUNDESLIGAGAME", "KXLIGUE1GAME",
+        ):
+            if series.startswith("KXNBA"):
+                sp_path = "basketball/nba/scoreboard"
+            elif series.startswith("KXNFL"):
+                sp_path = "football/nfl/scoreboard"
+            elif series.startswith("KXNCAAF"):
+                sp_path = "football/college-football/scoreboard?groups=80&limit=200"
+            elif series.startswith("KXNHL"):
+                sp_path = "hockey/nhl/scoreboard"
+            elif series.startswith("KXUCL"):
+                sp_path = "soccer/uefa.champions/scoreboard"
+            elif series.startswith("KXEPL"):
+                sp_path = "soccer/eng.1/scoreboard"
+            elif series.startswith("KXLALIGA"):
+                sp_path = "soccer/esp.1/scoreboard"
+            elif series.startswith("KXSERIEA"):
+                sp_path = "soccer/ita.1/scoreboard"
+            elif series.startswith("KXBUNDESLIGA"):
+                sp_path = "soccer/ger.1/scoreboard"
+            elif series.startswith("KXLIGAMX"):
+                sp_path = "soccer/mex.1/scoreboard"
+
+        if sp_path:
             try:
                 r = await hc.get(f"https://site.api.espn.com/apis/site/v2/sports/{sp_path}", timeout=3.5)
                 events = r.json().get("events", [])
@@ -489,7 +543,120 @@ class PreTradeEducator:
                 if not matched_ev:
                     return False, f"VETO [ESPN Matchup Check]: Specific game '{event_slug}' is NOT live in-play right now"
 
-                # Deep Player Prop Box Score Check via ESPN Summary API (/summary?event={id})
+                comp = matched_ev.get("competitions", [{}])[0]
+                st_obj = comp.get("status", {})
+                live_period = int(st_obj.get("period", 1) or 1)
+                clock_disp = st_obj.get("displayClock", "")
+                competitors = comp.get("competitors", [])
+                is_soccer = "soccer/" in sp_path
+
+                # 1. Quarter / Period / Halftime Active Window Enforcement (Never lock cash in a future quarter!)
+                req_periods = None
+                period_tag = f"P{live_period}"
+                if any(q in series for q in ("1Q", "1P")):
+                    req_periods = (1,)
+                    period_tag = "1Q" if "1Q" in series else "1P"
+                elif any(q in series for q in ("2Q", "2P")):
+                    req_periods = (2,)
+                    period_tag = "2Q" if "2Q" in series else "2P"
+                elif any(q in series for q in ("3Q", "3P")):
+                    req_periods = (3,)
+                    period_tag = "3Q" if "3Q" in series else "3P"
+                elif "4Q" in series:
+                    req_periods = (4,)
+                    period_tag = "4Q"
+                elif "1H" in series:
+                    req_periods = (1,) if is_soccer else (1, 2)
+                    period_tag = "1H"
+                elif "2H" in series:
+                    req_periods = (2,) if is_soccer else (3, 4)
+                    period_tag = "2H"
+
+                if req_periods is not None and live_period not in req_periods:
+                    return False, (
+                        f"VETO [Period Window]: {series} targets {period_tag} (periods {req_periods}), "
+                        f"but live game is in P{live_period} ({clock_disp}) — never lock cash in wrong period!"
+                    )
+
+                # Helper to compute exact Quarter / Half / Full-Game points per competitor via ESPN linescores
+                def _comp_window_pts(c_obj: dict) -> float:
+                    ls = [float(x.get("value", 0) or 0) for x in c_obj.get("linescores", [])]
+                    full_sc = float(c_obj.get("score", 0) or (sum(ls) if ls else 0))
+                    if req_periods == (1,) and ls:
+                        return ls[0]
+                    if req_periods == (2,) and not is_soccer:
+                        return ls[1] if len(ls) >= 2 else 0.0
+                    if req_periods == (3,):
+                        return ls[2] if len(ls) >= 3 else 0.0
+                    if req_periods == (4,):
+                        return ls[3] if len(ls) >= 4 else 0.0
+                    if req_periods == (1, 2) and ls:
+                        return sum(ls[:2])
+                    if req_periods == (3, 4) and ls:
+                        return sum(ls[2:4])
+                    return full_sc
+
+                # 2. Quarter/Half Winner, Spread & Total Live Scoreboard Verification
+                suffix = parts[-1].upper() if len(parts) >= 3 else ""
+                import re
+                m_suf = re.match(r"^([A-Z]{2,4})?(\d+(?:\.\d+)?)$", suffix)
+
+                if "TOTAL" in series and len(competitors) >= 2 and m_suf:
+                    tm_prefix, num_str = m_suf.group(1), m_suf.group(2)
+                    target_val = max(0.5, float(num_str) - 0.5)
+                    if "TEAMTOTAL" in series and tm_prefix:
+                        target_comp = next(
+                            (c for c in competitors if (c.get("team", {}).get("abbreviation") or "").upper() == tm_prefix),
+                            competitors[0],
+                        )
+                        cur_pts = _comp_window_pts(target_comp)
+                    else:
+                        cur_pts = _comp_window_pts(competitors[0]) + _comp_window_pts(competitors[1])
+                    prog_pct = (cur_pts / target_val) * 100.0
+                    if prog_pct < 65.0:
+                        return False, (
+                            f"VETO [ESPN {period_tag} Total]: Only {cur_pts:.0f}/{target_val:.1f} pts scored "
+                            f"({prog_pct:.0f}% < 65% min in P{live_period} {clock_disp})"
+                        )
+                    lock_tag = " | PROP-LOCK" if prog_pct >= 80.0 else ""
+                    return True, f"ESPN {period_tag} Total Verified ({cur_pts:.0f}/{target_val:.1f} = {prog_pct:.0f}% banked{lock_tag} | P{live_period} {clock_disp})"
+
+                if "SPREAD" in series and len(competitors) >= 2 and m_suf and m_suf.group(1):
+                    tm_prefix, num_str = m_suf.group(1), m_suf.group(2)
+                    strike_val = max(0.5, float(num_str) - 0.5)
+                    c_idx = next(
+                        (i for i, c in enumerate(competitors) if (c.get("team", {}).get("abbreviation") or "").upper() == tm_prefix),
+                        None,
+                    )
+                    if c_idx is not None:
+                        my_pts = _comp_window_pts(competitors[c_idx])
+                        opp_pts = _comp_window_pts(competitors[1 - c_idx])
+                        margin = my_pts - opp_pts
+                        if margin <= 0 or margin < (strike_val - 2.5):
+                            return False, (
+                                f"VETO [ESPN {period_tag} Spread]: {tm_prefix} margin is {margin:+.0f} ({my_pts:.0f}-{opp_pts:.0f}) "
+                                f"vs -{strike_val:.1f} spread in P{live_period} {clock_disp}"
+                            )
+                        lock_tag = " | PROP-LOCK" if margin >= (strike_val + 2.5) else ""
+                        return True, f"ESPN {period_tag} Spread Verified ({tm_prefix} {my_pts:.0f}-{opp_pts:.0f}, margin {margin:+.0f} vs -{strike_val:.1f}{lock_tag} | P{live_period} {clock_disp})"
+
+                if req_periods is not None and "TOTAL" not in series and "SPREAD" not in series and len(competitors) >= 2:
+                    c_idx = next(
+                        (i for i, c in enumerate(competitors) if (c.get("team", {}).get("abbreviation") or "").upper() == suffix),
+                        None,
+                    )
+                    if c_idx is not None:
+                        my_pts = _comp_window_pts(competitors[c_idx])
+                        opp_pts = _comp_window_pts(competitors[1 - c_idx])
+                        if my_pts <= opp_pts:
+                            return False, (
+                                f"VETO [ESPN {period_tag} Winner]: {suffix} is NOT leading {period_tag} "
+                                f"({my_pts:.0f}-{opp_pts:.0f} in P{live_period} {clock_disp})"
+                            )
+                        lock_tag = " | PROP-LOCK" if (my_pts - opp_pts) >= 5 else ""
+                        return True, f"ESPN {period_tag} Leader Verified ({suffix} leading {my_pts:.0f}-{opp_pts:.0f}{lock_tag} | P{live_period} {clock_disp})"
+
+                # 3. Deep Player Prop Box Score Check via ESPN Summary API (/summary?event={id})
                 nba_prop_Set = {"KXNBAPTS", "KXNBAREB", "KXNBAAST", "KXNBA3PT", "KXNBAPRA", "KXNBABLK", "KXNBASTL"}
                 nfl_prop_Set = {"KXNFLPASSYDS", "KXNFLRUSHYDS", "KXNFLRECYDS", "KXNFLREC"}
                 if (series in nba_prop_Set or series in nfl_prop_Set) and ":" in title and len(parts) >= 4:
@@ -558,7 +725,7 @@ class PreTradeEducator:
                             lock_tag = " | PROP-LOCK" if prog_pct >= 80.0 else ""
                             return True, f"ESPN Boxscore Verified ({found_stat:.0f}/{target_val:.0f} = {prog_pct:.0f}% banked{lock_tag} | MIN={mins_played} | PF={fouls_val})"
 
-                return True, f"ESPN Matchup Live ({event_slug} active in-play)"
+                return True, f"ESPN Matchup Live ({event_slug} active in P{live_period} {clock_disp})"
             except Exception as e:
                 return False, f"VETO [ESPN API Error]: League live check failed ({e})"
 
@@ -1243,7 +1410,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             "/markets",
                             params={"series_ticker": series, "status": "open", "limit": 1000},
                         )
-                        await asyncio.sleep(0.06)
+                        await asyncio.sleep(0.035)
                         markets_list = res.get("markets", [])
                         if markets_list and series not in series_shard_cache:
                             series_shard_cache[series] = int(markets_list[0].get("exchange_index", 0) or 0)
@@ -1287,8 +1454,16 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 continue
 
                             clean_title = m.get("yes_sub_title") or m.get("title", t)
-                            # Velocity Priority Score: Tightest spread (1c first) + closest to finishing first
-                            vel_score = (spread_c * 25.0) + max(0.0, mins_to_exp)
+                            # Fast-Settlement Velocity Cap: Quarters/Periods resolve in ~10m, Halves in ~20m, Player Props mid-game!
+                            eff_mins = max(0.0, mins_to_exp)
+                            if any(q in series for q in ("1Q", "2Q", "3Q", "4Q", "1P", "2P", "3P")):
+                                eff_mins = min(eff_mins, 10.0)
+                            elif any(h in series for h in ("1H", "2H")):
+                                eff_mins = min(eff_mins, 20.0)
+                            elif len(t.split("-")) >= 4:
+                                eff_mins = min(eff_mins, 30.0)
+                            # Velocity Priority Score: Tightest spread (1c first) + fastest-settling period/prop first
+                            vel_score = (spread_c * 25.0) + eff_mins
                             candidates.append((vel_score, mins_to_exp, t, clean_title, shard_key))
                     except Exception:
                         pass

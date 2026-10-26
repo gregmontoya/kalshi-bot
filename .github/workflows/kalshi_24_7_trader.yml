@@ -28,8 +28,12 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Ping Render Free Worker (Optional Keep-Alive)
-        if: ${{ secrets.RENDER_HEALTH_URL != '' }}
-        run: curl -s -m 5 "${{ secrets.RENDER_HEALTH_URL }}" || true
+        env:
+          RENDER_HEALTH_URL: ${{ secrets.RENDER_HEALTH_URL }}
+        run: |
+          if [ -n "$RENDER_HEALTH_URL" ]; then
+            curl -s -m 5 "$RENDER_HEALTH_URL" || true
+          fi
 
       - name: Execute 4-Minute Autonomous Trading Burst (Polls Every 20s)
         env:

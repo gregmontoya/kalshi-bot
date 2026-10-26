@@ -626,14 +626,16 @@ class PreTradeEducator:
             self.save_memory()
             return False, ext_reason, 0.0
 
-        # 4. Self-Learning Series Confidence Multiplier
+        # 4. Self-Learning Series Confidence Multiplier + A+ Whale Wall Boost
         series = ticker.split("-")[0] if "-" in ticker else ticker
         st = self.memory.get("series_stats", {}).get(series, {})
         conf_mult = 1.0
         if st.get("realized_pnl", 0) > 0:
             conf_mult = 1.15  # Boost allocation 15% on proven profitable series
-        if imbalance_ratio >= 2.0 and momentum_delta >= 0:
-            conf_mult *= 1.15  # Whale accumulation + stable/positive tape trend
+        if imbalance_ratio >= 2.25 and momentum_delta >= 0:
+            conf_mult *= 1.22  # A+ Whale Wall (>=2.25x) + non-negative tape momentum
+        elif imbalance_ratio >= 1.85 and momentum_delta >= 0:
+            conf_mult *= 1.12
 
         self.save_memory()
         reason = (
@@ -664,9 +666,9 @@ def get_scaling_tier(equity_cents: int) -> dict:
         return {
             "name": "TIER 2 (Acceleration)",
             "base_pct": 0.28,
-            "boost_pct": 0.33,
+            "boost_pct": 0.35,
             "min_stake_cents": 1500,
-            "max_stake_cents": 6000,
+            "max_stake_cents": 7400,
             "min_contracts": 18,
             "max_concurrent": 4,
             "min_depth_dlr": 250.0,
@@ -1187,11 +1189,11 @@ async def run_autonomous_loop(duration_seconds: int = 0):
 
                             bid_cents = ob.best_yes_ask - 1
                             price_str = f"{bid_cents / 100:.4f}"
-                            # 4-Tier Institutional Kelly Sizing (Cap volatile Crypto/Index stake at 20% equity; full size on live Sports!)
+                            # 4-Tier Institutional Kelly Sizing (Cap volatile Crypto/Index stake at 20% equity; Boost A+ Live Sports up to 42%!)
                             if is_crypto_t or is_index_t:
                                 base_alloc_pct = min(0.20, tier["base_pct"])
                             else:
-                                base_alloc_pct = tier["boost_pct"] if (is_tail_lock_zone or conf_mult >= 1.30) else tier["base_pct"]
+                                base_alloc_pct = tier["boost_pct"] if (is_tail_lock_zone or conf_mult >= 1.20) else tier["base_pct"]
                             raw_stake = int(equity_cents * base_alloc_pct * conf_mult)
                             target_stake_cents = min(tier["max_stake_cents"], max(min_stake_c, raw_stake), total_cents)
 

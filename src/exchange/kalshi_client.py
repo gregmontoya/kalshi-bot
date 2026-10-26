@@ -80,9 +80,10 @@ class KalshiClient:
 
         if authenticated:
             if not self.signer or not self.signer.has_key:
-                raise ValueError("Authenticated request requires loaded KalshiAuthSigner RSA credentials")
-            # Sign over path without query
-            auth_headers = self.signer.get_auth_headers(method=method, path_or_url=path)
+                raise ValueError("Authenticated request requires loaded KalshiAuthSigner credentials")
+            # Ensure full trade-api/v2 prefix for signature matching Kalshi CLOB requirement
+            clean_path = path if path.startswith("/trade-api/v2") else f"/trade-api/v2{path if path.startswith('/') else '/' + path}"
+            auth_headers = self.signer.get_auth_headers(method=method, path_or_url=clean_path)
             headers.update(auth_headers)
 
         response = await client.request(

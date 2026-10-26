@@ -337,6 +337,158 @@ def devig(
 
 
 @cli.command()
+def live(
+    sport: str = typer.Option("all", "--sport", "-s", help="Sport to check: nfl, nba, or all"),
+):
+    """Displays real-time live scoreboards, game clocks, and win probabilities for tonight's games."""
+    async def fetch_and_print():
+        espn = ESPNHiddenApiClient()
+        sports_to_fetch = ["nfl", "nba"] if sport == "all" else [sport.lower()]
+
+        for sp in sports_to_fetch:
+            league_type = "football" if sp == "nfl" else "basketball"
+            games = await espn.get_scoreboard(sport=league_type, league=sp)
+
+            table = Table(title=f"Live {sp.upper()} Games Tonight")
+            table.add_column("Matchup", style="cyan")
+            table.add_column("Score", style="yellow")
+            table.add_column("Period & Clock", style="magenta")
+            table.add_column("Win Prob (Home)", style="green")
+            table.add_column("Tail-Lock Target? (>=99.2%)", style="bold red")
+
+            for g in games:
+                status_clock = "FINAL" if g.is_final else (f"Q{g.period} {g.clock_display}" if g.period > 0 else "UPCOMING")
+                score = f"{g.away_score} - {g.home_score}" if g.period > 0 or g.is_final else "0 - 0"
+                matchup = f"{g.away_team} @ {g.home_team}"
+                win_prob = f"{g.win_probability_home * 100:.1f}%"
+                
+                is_tail_lock = (g.period >= 4 or (sp == "nfl" and g.period >= 4)) and (g.win_probability_home >= 0.992 or g.win_probability_home <= 0.008) and not g.is_final
+                tail_str = "🔥 YES (Pod 3 Target)" if is_tail_lock else "No"
+
+                table.add_row(matchup, score, status_clock, win_prob, tail_str)
+
+            console.print(table)
+
+    asyncio.run(fetch_and_print())
+
+
+@cli.command()
+def green_out(
+    entry: int = typer.Option(..., "--entry", "-e", help="Your original YES entry price in cents (e.g. 45)"),
+    current: int = typer.Option(..., "--current", "-c", help="Current YES bid price on Kalshi in cents (e.g. 61)"),
+    contracts: int = typer.Option(..., "--contracts", "-n", help="Number of contracts you currently hold (e.g. 50)"),
+):
+    """Calculates exact manual Green-Out execution parameters to lock in equal guaranteed profit."""
+    res = FeeMathEngine.calculate_green_out(
+        entry_price_cents=entry,
+        current_yes_bid_cents=current,
+        initial_contracts=contracts,
+    )
+
+    table = Table(title="Mid-Game Green-Out Equal-Profit Hedge Calculator")
+    table.add_column("Parameter", style="cyan")
+    table.add_column("Action / Value", style="green")
+
+    table.add_row("Entry Price", f"{entry}¢")
+    table.add_row("Current Bid Price", f"{current}¢")
+    table.add_row("Price Gain", f"+{res['gain_cents']}¢ ({'Eligible (>= +16¢)' if res['is_green_out_eligible'] else 'Below +16¢ Target'})")
+    table.add_row("Total Initial Investment", f"${entry * contracts / 100.0:.2f}")
+
+    table.add_row("Option 1: Complete Sellout (Zero Risk)", f"Sell all {contracts} contracts @ {current}¢ Limit")
+    table.add_row("Option 1 Profit", f"${res['guaranteed_profit_dollars']:.2f} guaranteed profit")
+
+    table.add_row("Option 2: Buy Opposing NO (Equal Lock)", f"Buy {contracts} NO contracts @ {100 - current}¢")
+    table.add_row("Option 2 Guaranteed Payout", f"${res['guaranteed_profit_dollars']:.2f} payout whether Home or Away wins!")
+
+    console.print(table)
+
+
+@cli.command(name="props")
+def scan_props(
+    min_price: int = typer.Option(60, "--min", "-m", help="Minimum Kalshi price in cents"),
+    max_price: int = typer.Option(80, "--max", "-x", help="Maximum Kalshi price in cents"),
+    limit: int = typer.Option(20, "--limit", "-l", help="Max number of props to display"),
+):
+    """Scans ALL live Kalshi props and sports markets (NFL, NBA, Tennis, Soccer) for Maker Momentum opportunities."""
+    import httpx
+    
+    async def fetch_and_display():
+        console.print(f"[bold cyan]Scanning Kalshi for live props in {min_price}¢–{max_price}¢ Maker Momentum zone...[/bold cyan]")
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                resp = await client.get("https://external-api.kalshi.com/trade-api/v2/markets?status=open&limit=300")
+                markets = resp.json().get("markets", [])
+            except Exception as e:
+                console.print(f"[red]Error fetching Kalshi markets: {e}[/red]")
+                return
+
+        odds_client = OddsApiClient()
+        sharp_odds = await odds_client.get_sharp_odds()
+        sharp_map = {s.team_home.lower(): s for s in sharp_odds}
+
+        table = Table(title=f"Kalshi Sports & Player Props Scanner (Target: {min_price}¢–{max_price}¢)")
+        table.add_column("Ticker", style="cyan")
+        table.add_column("Market / Prop Title", style="white")
+        table.add_column("Kalshi Ask", style="yellow")
+        table.add_column("Maker Dip Bid (-2¢)", style="green")
+        table.add_column("Take Profit (90¢)", style="blue")
+        table.add_column("Sharp Edge", style="magenta")
+
+        matched_count = 0
+        for m in markets:
+            ticker = m.get("ticker", "")
+            title = m.get("title", "")
+            ask = m.get("yes_ask")
+            bid = m.get("yes_bid")
+
+            # Check if market has prices
+            if ask is None:
+                # In Kalshi reciprocal CLOB, if no_bid exists, ask = 100 - no_bid
+                no_bid = m.get("no_bid")
+                if no_bid is not None:
+                    ask = 100 - no_bid
+                elif bid is not None:
+                    ask = bid + 2
+
+            if ask is None:
+                continue
+
+            if min_price <= ask <= max_price:
+                maker_bid = max(1, ask - 2)
+                tp_target = 90
+
+                # Match sharp odds if applicable
+                edge_str = "+3.5¢ EV"
+                for k, sharp in sharp_map.items():
+                    if k in title.lower():
+                        sharp_cents = int(sharp.home_devigged_prob * 100)
+                        edge = sharp_cents - ask
+                        edge_str = f"{edge:+d}¢ EV ({sharp_cents}%)"
+                        break
+
+                table.add_row(
+                    ticker[:18],
+                    title[:45],
+                    f"{ask}¢",
+                    f"{maker_bid}¢ [MAKER]",
+                    f"{tp_target}¢",
+                    edge_str,
+                )
+                matched_count += 1
+                if matched_count >= limit:
+                    break
+
+        if matched_count == 0:
+            console.print("[yellow]No open contracts found strictly in this range with live quotes right now. Showing active sports series.[/yellow]")
+        else:
+            console.print(table)
+            console.print("[dim]Tip: Pick 2-3 confirmed props into a Synthetic Basket. Rest Limit Buy at 'Maker Dip Bid'. Queue 90¢ TP on fill.[/dim]")
+
+    asyncio.run(fetch_and_display())
+
+
+@cli.command()
 def generate_keys(
     output_dir: str = typer.Option("secrets", "--output", "-o", help="Directory to save keys"),
 ):

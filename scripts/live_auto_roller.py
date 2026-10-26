@@ -34,6 +34,44 @@ logging.basicConfig(
 logger = logging.getLogger("live_auto_roller")
 
 MEMORY_PATH = Path("data/self_learning_memory.json")
+NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "kalshi-greg-3fc522ce")
+IMESSAGE_TARGET = os.environ.get("IMESSAGE_TARGET", "")
+
+
+async def send_phone_alert(client: KalshiClient, title: str, message: str) -> None:
+    """Sends instant push notification to phone via ntfy.sh, Telegram, and macOS iMessage."""
+    logger.info(f"📱 PHONE ALERT: {title} — {message}")
+    # 1. Cloud-native push via ntfy.sh (works 24/7 on GitHub Actions & local)
+    try:
+        hc = await client.get_client()
+        await hc.post(
+            f"https://ntfy.sh/{NTFY_TOPIC}",
+            content=message.encode("utf-8"),
+            headers={"Title": title, "Priority": "high", "Tags": "chart_with_upwards_trend,moneybag"},
+        )
+    except Exception:
+        pass
+
+    # 2. Optional Telegram Bot push
+    tg_token = os.environ.get("TELEGRAM_BOT_TOKEN") or settings.TELEGRAM_BOT_TOKEN
+    tg_chat = os.environ.get("TELEGRAM_CHAT_ID") or settings.TELEGRAM_CHAT_ID
+    if tg_token and tg_chat:
+        try:
+            hc = await client.get_client()
+            await hc.post(
+                f"https://api.telegram.org/bot{tg_token}/sendMessage",
+                json={"chat_id": tg_chat, "text": f"*{title}*\n{message}", "parse_mode": "Markdown"},
+            )
+        except Exception:
+            pass
+
+    # 3. Optional macOS native iMessage / SMS text
+    if IMESSAGE_TARGET and sys.platform == "darwin":
+        import subprocess
+        safe_msg = f"{title}: {message}".replace('"', "'")
+        script = f'tell application "Messages" to send "{safe_msg}" to buddy "{IMESSAGE_TARGET}"'
+        subprocess.Popen(["osascript", "-e", script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 
 WATCH_SERIES = [
     # Game Winners (Moneylines)
@@ -257,6 +295,11 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         },
                         authenticated=True,
                     )
+                    await send_phone_alert(
+                        client,
+                        "🛑 Stop-Loss Triggered",
+                        f"Exited {int(pos_fp)}x {ticker} @ {cur_bid}c (Peak: {peaked}c) to protect bankroll.",
+                    )
                     continue
 
                 # Ensure 96c Harvest Sell (or 99c for 94c+ Tail Locks) is queued for uncovered contracts
@@ -283,6 +326,11 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 "client_order_id": str(uuid.uuid4()),
                             },
                             authenticated=True,
+                        )
+                        await send_phone_alert(
+                            client,
+                            "✅ Position Filled & Harvest Queued",
+                            f"Holding {uncovered}x {ticker} | Auto-Sell queued @ ${tp_price}",
                         )
                     except Exception as e:
                         logger.warning(f"Could not place 96c sell for {ticker}: {e}")
@@ -363,6 +411,11 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                     )
                                     resting_buy_tickers.add(t)
                                     total_cents -= count_int * bid_cents
+                                    await send_phone_alert(
+                                        client,
+                                        "🎯 New Educated Play Placed",
+                                        f"Bid {count_int}x {t} @ {bid_cents}c | {reason} | Equity: ${equity_cents/100:.2f}",
+                                    )
                                     if total_cents < 250:
                                         break
                                 except Exception:

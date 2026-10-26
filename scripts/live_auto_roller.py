@@ -947,15 +947,19 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     except Exception as e:
                         logger.warning(f"Green-Out split failed on {ticker}: {e}")
 
-                # Ensure Smart Dynamic Harvest Sell (90c-96c for Leaders, 99c for 92c+ Tail Locks) is queued
+                # Ensure High-Velocity Dynamic Harvest Sell (+6c quick-hit Maker flip for 80c-88c, +5c for 89c+)
                 whole_covered = int(resting_sell_counts.get(ticker, 0.0))
                 uncovered = whole_pos - whole_covered
                 if uncovered >= 1:
                     count_str = f"{uncovered}.00"
-                    target_tp_cents = 99 if avg_entry_cents >= 92 else min(96, max(90, avg_entry_cents + 15))
+                    if avg_entry_cents >= 89:
+                        target_tp_cents = min(97, avg_entry_cents + 5)
+                    else:
+                        target_tp_cents = max(86, min(91, avg_entry_cents + 6))
+                    target_tp_cents = max(target_tp_cents, cur_bid + 1)
                     tp_price = f"{target_tp_cents / 100:.4f}"
                     logger.info(
-                        f"Auto-queuing Harvest Sell for {ticker}: {count_str} @ {tp_price}"
+                        f"Auto-queuing Fast-Velocity Harvest Sell for {ticker}: {count_str} @ {tp_price}"
                     )
                     try:
                         await client.request(
@@ -1031,8 +1035,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 mins_to_exp = (exp_dt - now_utc).total_seconds() / 60.0
                             except Exception:
                                 continue
-                            max_exp_mins = 600.0 if series.startswith(("KXINX", "KXNASDAQ", "KXHIGH", "KXWTI")) else 240.0
-                            if not (-360.0 <= mins_to_exp <= max_exp_mins):
+                            max_exp_mins = 90.0
+                            if not (-180.0 <= mins_to_exp <= max_exp_mins):
                                 continue
 
                             # Fast pre-filter on live Bid/Ask before fetching full orderbook

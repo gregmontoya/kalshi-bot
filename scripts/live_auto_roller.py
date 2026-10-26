@@ -919,7 +919,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 mins_to_exp = (exp_dt - now_utc).total_seconds() / 60.0
                             except Exception:
                                 continue
-                            if not (-180.0 <= mins_to_exp <= 240.0):
+                            if not (-720.0 <= mins_to_exp <= 1440.0):
                                 continue
 
                             # Fast pre-filter on live Bid/Ask before fetching full orderbook
@@ -945,6 +945,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     event_prefix = "-".join(t.split("-")[:2])
                     if event_prefix in active_events or shard_cents.get(shard_key, 0) < min_stake_c:
                         continue
+                    await asyncio.sleep(0.12)
                     ob = await client.get_orderbook(t)
                     if ob.best_yes_bid and ob.best_yes_ask:
                         spread = ob.best_yes_ask - ob.best_yes_bid

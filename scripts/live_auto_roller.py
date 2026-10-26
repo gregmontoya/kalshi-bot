@@ -1643,6 +1643,32 @@ async def run_autonomous_loop(duration_seconds: int = 0):
             logger.info(
                 f"Heartbeat [{tier['name']}] | Cash: ${total_cents/100:.2f} | Portfolio: ${port_cents/100:.2f} | Total Equity: ${equity_cents/100:.2f}"
             )
+            # Emit silent Mac Primary Engine pulse every 90s so GitHub Cloud 24/7 Failover knows when Mac is awake vs. shut down
+            if sys.platform == "darwin" and duration_seconds == 0:
+                now_hb = time.time()
+                if now_hb - getattr(educator, "_last_cloud_hb_ts", 0.0) >= 90.0:
+                    educator._last_cloud_hb_ts = now_hb
+                    try:
+                        hc = await client.get_client()
+                        await hc.post(
+                            "https://ntfy.sh/kalshi-greg-hb-3fc522ce",
+                            content=f"mac-online:{equity_cents/100:.2f}".encode("utf-8"),
+                            timeout=3.0,
+                        )
+                    except Exception:
+                        pass
+            elif duration_seconds > 0:
+                now_hb = time.time()
+                if now_hb - getattr(educator, "_last_cloud_hb_ts", 0.0) >= 45.0:
+                    educator._last_cloud_hb_ts = now_hb
+                    try:
+                        hc = await client.get_client()
+                        r_hb = await hc.get("https://ntfy.sh/kalshi-greg-hb-3fc522ce/json?poll=1&since=120s", timeout=3.0)
+                        if r_hb.status_code == 200 and "mac-online" in r_hb.text:
+                            logger.info("🟢 Mac Primary Engine came back online! Yielding Cloud Failover loop immediately.")
+                            break
+                    except Exception:
+                        pass
 
             if total_cents >= min_stake_c and len(resting_buy_tickers) < tier["max_concurrent"]:
                 shard_cents = {0: 0, 1: 0, 2: 0, 3: 0}

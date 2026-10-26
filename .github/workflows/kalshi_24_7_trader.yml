@@ -15,34 +15,40 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
+      - name: Check if Local Mac Primary Engine is Awake (Zero-Downtime Cloud Failover)
+        id: mac_check
+        run: |
+          HB=$(curl -s -m 5 "https://ntfy.sh/kalshi-greg-hb-3fc522ce/json?poll=1&since=180s" || true)
+          if echo "$HB" | grep -q "mac-online"; then
+            echo "🟢 Local Mac Primary Engine is online and actively trading. Cloud Standby yielding cleanly."
+            echo "mac_online=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚡ Local Mac is offline/shut down! Activating 24/7 GitHub Cloud Autonomous Trading Engine!"
+            echo "mac_online=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Checkout Engine
+        if: steps.mac_check.outputs.mac_online == 'false'
         uses: actions/checkout@v4
 
       - name: Set up Python 3.12
+        if: steps.mac_check.outputs.mac_online == 'false'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: 'pip'
 
       - name: Install Dependencies
+        if: steps.mac_check.outputs.mac_online == 'false'
         run: pip install -r requirements.txt
 
-      - name: Ping Render Free Worker (Optional Keep-Alive)
+      - name: Execute 24/7 Cloud Autonomous Trading Burst (When Mac is Shut Down)
+        if: steps.mac_check.outputs.mac_online == 'false'
         env:
-          RENDER_HEALTH_URL: ${{ secrets.RENDER_HEALTH_URL }}
-        run: |
-          if [ -n "$RENDER_HEALTH_URL" ]; then
-            curl -s -m 5 "$RENDER_HEALTH_URL" || true
-          fi
-
-      - name: Execute Autonomous Trading Burst (If Cloud Secrets Enabled)
-        env:
-          KALSHI_ENV: prod
+          KALSHI_ENV: PROD
           KALSHI_KEY_ID: ${{ secrets.KALSHI_KEY_ID }}
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          THE_ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: |
-          if [ -z "$KALSHI_PRIVATE_KEY" ] && [ ! -f "secrets/kalshi_private_key.pem" ]; then
-            echo "Local Mac Primary Engine is active (GitHub Cloud secret not set). Exiting cleanly."
-            exit 0
-          fi
-          python scripts/live_auto_roller.py --duration 240 || true
+          python scripts/live_auto_roller.py --duration 265 || true

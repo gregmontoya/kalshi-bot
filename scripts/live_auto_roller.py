@@ -329,6 +329,44 @@ class PreTradeEducator:
             except Exception as e:
                 return False, f"VETO [Wall St API Error]: Could not verify live index/commodity feed ({e})"
 
+        # C2. Live League In-Play Check for Sports Totals, Spreads & Player Props (Never buy pre-game props/totals!)
+        sport_prop_league_map = {
+            "KXNBATOTAL": "basketball/nba/scoreboard",
+            "KXNBASPREAD": "basketball/nba/scoreboard",
+            "KXNBAPTS": "basketball/nba/scoreboard",
+            "KXNBAREB": "basketball/nba/scoreboard",
+            "KXNBAAST": "basketball/nba/scoreboard",
+            "KXNFLTOTAL": "football/nfl/scoreboard",
+            "KXNFLSPREAD": "football/nfl/scoreboard",
+            "KXNFLANYTD": "football/nfl/scoreboard",
+            "KXNFLPASSYDS": "football/nfl/scoreboard",
+            "KXNFLRUSHYDS": "football/nfl/scoreboard",
+            "KXNFLRECYDS": "football/nfl/scoreboard",
+            "KXNCAAFTOTAL": "football/college-football/scoreboard?groups=80&limit=200",
+            "KXNCAAFSPREAD": "football/college-football/scoreboard?groups=80&limit=200",
+            "KXNHLTOTAL": "hockey/nhl/scoreboard",
+            "KXNHLSPREAD": "hockey/nhl/scoreboard",
+            "KXLIGAMXBTTS": "soccer/mex.1/scoreboard",
+            "KXLALIGA1HTOTAL": "soccer/esp.1/scoreboard",
+            "KXUCLTEAMTOTAL": "soccer/uefa.champions/scoreboard",
+            "KXUCLSOA": "soccer/uefa.champions/scoreboard",
+            "KXSERIEACORNERS": "soccer/ita.1/scoreboard",
+        }
+        if series in sport_prop_league_map:
+            sp_path = sport_prop_league_map[series]
+            try:
+                r = await hc.get(f"https://site.api.espn.com/apis/site/v2/sports/{sp_path}", timeout=3.5)
+                events = r.json().get("events", [])
+                live_events = [
+                    ev for ev in events
+                    if ev.get("status", {}).get("type", {}).get("state") == "in"
+                ]
+                if not live_events:
+                    return False, f"VETO [ESPN Live Check]: No live in-play {series} games right now (all pre-game/post-game)"
+                return True, f"ESPN League Live ({len(live_events)} active game(s) in-play)"
+            except Exception as e:
+                return False, f"VETO [ESPN API Error]: League live check failed ({e})"
+
         # C. Live Sports & Tennis Scoreboard Verification via ESPN API (Fail-Closed!)
         espn_map = {
             "KXWTAMATCH": "tennis/wta/scoreboard",
@@ -919,7 +957,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 mins_to_exp = (exp_dt - now_utc).total_seconds() / 60.0
                             except Exception:
                                 continue
-                            if not (-720.0 <= mins_to_exp <= 1440.0):
+                            max_exp_mins = 600.0 if series.startswith(("KXINX", "KXNASDAQ", "KXHIGH", "KXWTI")) else 240.0
+                            if not (-360.0 <= mins_to_exp <= max_exp_mins):
                                 continue
 
                             # Fast pre-filter on live Bid/Ask before fetching full orderbook

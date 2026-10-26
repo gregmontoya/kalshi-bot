@@ -392,7 +392,9 @@ class PreTradeEducator:
 
         return True, "External API Verified"
 
-    async def evaluate_opportunity(self, client: KalshiClient, ticker: str, ob, title: str = "") -> tuple[bool, str, float]:
+    async def evaluate_opportunity(
+        self, client: KalshiClient, ticker: str, ob, title: str = "", min_book_depth_dlr: float = 150.0
+    ) -> tuple[bool, str, float]:
         """
         Returns (approved: bool, reason: str, confidence_multiplier: float).
         Enforces Ultra-High-Conviction 5-Gate Filter + External API Research.
@@ -406,10 +408,10 @@ class PreTradeEducator:
         no_depth = sum(float(level.quantity) * (level.price / 100.0) for level in top_no_bids)
         imbalance_ratio = (yes_depth + 1.0) / (no_depth + 1.0)
 
-        if yes_depth < 150.0:
+        if yes_depth < min_book_depth_dlr:
             self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
             self.save_memory()
-            return False, f"VETO: Thin bid liquidity (${yes_depth:.0f} < $150 ultra-safe exit depth)", 0.0
+            return False, f"VETO: Thin bid liquidity (${yes_depth:.0f} < ${min_book_depth_dlr:.0f} tier exit depth)", 0.0
 
         if imbalance_ratio < 1.35:
             self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
@@ -469,6 +471,59 @@ class PreTradeEducator:
             f"APPROVED [Whale={imbalance_ratio:.2f}x | Depth=${yes_depth:.0f} | LastTrade={last_trade_mins_ago:.1f}m | Tape={momentum_delta:+d}c | {ext_reason}]"
         )
         return True, reason, conf_mult
+
+
+def get_scaling_tier(equity_cents: int) -> dict:
+    """
+    Automatic 4-Tier Institutional Kelly Bankroll Scaling.
+    Automatically adjusts position size, minimum contracts, concurrent plays, and required orderbook depth
+    whether the account has $25, $100, $500, or $2,500+.
+    """
+    eq_dlr = equity_cents / 100.0
+    if eq_dlr < 60.0:
+        return {
+            "name": "TIER 1 (Growth)",
+            "base_pct": 0.40,
+            "boost_pct": 0.50,
+            "min_stake_cents": 650,
+            "max_stake_cents": 2500,
+            "min_contracts": 8,
+            "max_concurrent": 3,
+            "min_depth_dlr": 150.0,
+        }
+    elif eq_dlr < 200.0:
+        return {
+            "name": "TIER 2 (Acceleration)",
+            "base_pct": 0.28,
+            "boost_pct": 0.33,
+            "min_stake_cents": 1500,
+            "max_stake_cents": 6000,
+            "min_contracts": 18,
+            "max_concurrent": 4,
+            "min_depth_dlr": 250.0,
+        }
+    elif eq_dlr < 750.0:
+        return {
+            "name": "TIER 3 ($500 Pro Mode)",
+            "base_pct": 0.16,
+            "boost_pct": 0.20,
+            "min_stake_cents": 3500,
+            "max_stake_cents": 12000,
+            "min_contracts": 40,
+            "max_concurrent": 6,
+            "min_depth_dlr": 400.0,
+        }
+    else:
+        return {
+            "name": "TIER 4 (Institutional)",
+            "base_pct": 0.12,
+            "boost_pct": 0.15,
+            "min_stake_cents": 7500,
+            "max_stake_cents": 20000,
+            "min_contracts": 85,
+            "max_concurrent": 8,
+            "min_depth_dlr": 600.0,
+        }
 
 
 def load_signer() -> KalshiAuthSigner:
@@ -678,12 +733,14 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     except Exception as e:
                         logger.warning(f"Could not place harvest sell for {ticker}: {e}")
 
-            # 2. Dynamic Bankroll Scaling into SOONEST Worldwide Games (80c-89c Leaders & 93c-97c Tail Locks)
+            # 2. Dynamic 4-Tier Bankroll Scaling into SOONEST Worldwide Games (80c-89c Leaders & 93c-97c Tail Locks)
+            tier = get_scaling_tier(equity_cents)
+            min_stake_c = tier["min_stake_cents"]
             logger.info(
-                f"Heartbeat | Cash: ${total_cents/100:.2f} | Portfolio: ${port_cents/100:.2f} | Total Equity: ${equity_cents/100:.2f}"
+                f"Heartbeat [{tier['name']}] | Cash: ${total_cents/100:.2f} | Portfolio: ${port_cents/100:.2f} | Total Equity: ${equity_cents/100:.2f}"
             )
 
-            if total_cents >= 650 and len(resting_buy_tickers) < 4:
+            if total_cents >= min_stake_c and len(resting_buy_tickers) < tier["max_concurrent"]:
                 shard_cents = {0: 0, 1: 0, 2: 0, 3: 0}
                 for b_item in bal.get("balance_breakdown", []):
                     idx = b_item.get("exchange_index")
@@ -697,7 +754,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 candidates = []
                 for series in WATCH_SERIES:
                     known_shard = series_shard_cache.get(series)
-                    if known_shard is not None and shard_cents.get(known_shard, 0) < 650:
+                    if known_shard is not None and shard_cents.get(known_shard, 0) < min_stake_c:
                         continue
                     try:
                         res = await client.request(
@@ -711,7 +768,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             series_shard_cache[series] = int(markets_list[0].get("exchange_index", 0) or 0)
                         for m in markets_list:
                             shard_key = int(m.get("exchange_index", 0) or 0)
-                            if shard_cents.get(shard_key, 0) < 650:
+                            if shard_cents.get(shard_key, 0) < min_stake_c:
                                 continue
 
                             t = m.get("ticker", "")
@@ -755,7 +812,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
 
                 for mins_left, t, title, shard_key in candidates[:25]:
                     event_prefix = "-".join(t.split("-")[:2])
-                    if event_prefix in active_events or shard_cents.get(shard_key, 0) < 650:
+                    if event_prefix in active_events or shard_cents.get(shard_key, 0) < min_stake_c:
                         continue
                     ob = await client.get_orderbook(t)
                     if ob.best_yes_bid and ob.best_yes_ask:
@@ -764,7 +821,9 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         is_tail_lock_zone = (93 <= ob.best_yes_ask <= 97 and spread <= 2)
 
                         if is_leader_zone or is_tail_lock_zone:
-                            approved, reason, conf_mult = await educator.evaluate_opportunity(client, t, ob, title=title)
+                            approved, reason, conf_mult = await educator.evaluate_opportunity(
+                                client, t, ob, title=title, min_book_depth_dlr=tier["min_depth_dlr"]
+                            )
                             # For 93c-97c Tail Locks, require strong positive whale bid wall (Imbalance >= 1.5x)
                             if is_tail_lock_zone and conf_mult < 1.0:
                                 continue
@@ -776,14 +835,15 @@ async def run_autonomous_loop(duration_seconds: int = 0):
 
                             bid_cents = ob.best_yes_ask - 1
                             price_str = f"{bid_cents / 100:.4f}"
-                            # Concentrated High-Conviction Sizing ($8-$13+ per play, minimum 8 contracts — NO $2 or 40c crumb bets!)
-                            base_alloc_pct = 0.50 if (is_tail_lock_zone or conf_mult >= 1.30) else 0.40
-                            target_stake_cents = max(800, int(equity_cents * base_alloc_pct * conf_mult))
+                            # 4-Tier Institutional Kelly Sizing (Auto-scales from $25 up to $500+ deposits!)
+                            base_alloc_pct = tier["boost_pct"] if (is_tail_lock_zone or conf_mult >= 1.30) else tier["base_pct"]
+                            raw_stake = int(equity_cents * base_alloc_pct * conf_mult)
+                            target_stake_cents = min(tier["max_stake_cents"], max(min_stake_c, raw_stake))
                             alloc_cents = min(shard_cents[shard_key], target_stake_cents)
                             count_int = int(alloc_cents // bid_cents)
-                            if count_int >= 8:
+                            if count_int >= tier["min_contracts"]:
                                 logger.info(
-                                    f"Auto-deploying Educated Maker Bid on {t}: {count_int} contracts @ {price_str}"
+                                    f"Auto-deploying [{tier['name']}] Maker Bid on {t}: {count_int} contracts @ {price_str} (${(count_int*bid_cents)/100:.2f})"
                                 )
                                 try:
                                     await client.request(

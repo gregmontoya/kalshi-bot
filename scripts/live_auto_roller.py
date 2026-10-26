@@ -729,6 +729,76 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     )
                     continue
 
+                # Strategy 2 (GEMINI.md Pod 2): Mid-Game "Green-Out" Equal-Profit Ratchet (+18c Surge on Value Entries)
+                greened_out_set: set[str] = set(educator.memory.setdefault("greened_out_tickers", []))
+                if (
+                    avg_entry_cents <= 75
+                    and cur_bid >= avg_entry_cents + 18
+                    and whole_pos >= 6
+                    and ticker not in greened_out_set
+                ):
+                    half_pos = whole_pos // 2
+                    runner_pos = whole_pos - half_pos
+                    green_price_cents = min(94, max(cur_bid + 1, cur_ask))
+                    logger.info(
+                        f"🟢 POD 2 GREEN-OUT TRIGGERED on {ticker} (Entry={avg_entry_cents}c -> Bid={cur_bid}c)! Locking 50% ({half_pos}x @ {green_price_cents}c) + {runner_pos}x House-Money Runner @ 96c."
+                    )
+                    to_cancel = [
+                        {
+                            "order_id": so["order_id"],
+                            "market_ticker": ticker,
+                            "exchange_index": so.get("exchange_index", 0),
+                            "subaccount": so.get("subaccount_number", 0),
+                        }
+                        for so in resting_sell_orders.get(ticker, [])
+                    ]
+                    try:
+                        if to_cancel:
+                            await client.request(
+                                "DELETE",
+                                "/portfolio/events/orders/batched",
+                                json_data={"orders": to_cancel},
+                                authenticated=True,
+                            )
+                        # 1) Place 50% Green-Out Maker Profit Lock at live touch (cur_bid + 1)
+                        await client.request(
+                            "POST",
+                            "/portfolio/events/orders",
+                            json_data={
+                                "ticker": ticker,
+                                "side": "ask",
+                                "count": f"{half_pos}.00",
+                                "price": f"{green_price_cents / 100:.4f}",
+                                "time_in_force": "good_till_canceled",
+                                "self_trade_prevention_type": "maker",
+                                "post_only": True,
+                                "client_order_id": str(uuid.uuid4()),
+                            },
+                            authenticated=True,
+                        )
+                        # 2) Place remaining 50% "House Money Runner" at 96c
+                        await client.request(
+                            "POST",
+                            "/portfolio/events/orders",
+                            json_data={
+                                "ticker": ticker,
+                                "side": "ask",
+                                "count": f"{runner_pos}.00",
+                                "price": "0.9600",
+                                "time_in_force": "good_till_canceled",
+                                "self_trade_prevention_type": "maker",
+                                "post_only": True,
+                                "client_order_id": str(uuid.uuid4()),
+                            },
+                            authenticated=True,
+                        )
+                        greened_out_set.add(ticker)
+                        educator.memory["greened_out_tickers"] = list(greened_out_set)
+                        educator.save_memory()
+                        continue
+                    except Exception as e:
+                        logger.warning(f"Green-Out split failed on {ticker}: {e}")
+
                 # Ensure Smart Dynamic Harvest Sell (90c-96c for Leaders, 99c for 92c+ Tail Locks) is queued
                 whole_covered = int(resting_sell_counts.get(ticker, 0.0))
                 uncovered = whole_pos - whole_covered

@@ -79,8 +79,35 @@ async def send_phone_alert(client: KalshiClient, title: str, message: str) -> No
         subprocess.Popen(["osascript", "-e", script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+from datetime import datetime, timezone
+
 WATCH_SERIES = [
-    # Game Winners (Moneylines)
+    # 1. Hourly & Daily Crypto (24/7 Every Hour Settlement)
+    "KXBTCD",
+    "KXBTC",
+    "KXETHD",
+    "KXETH",
+    "KXSOLD",
+    "KXXRPD",
+    "KXXRP",
+    "KXDOGED",
+    "KXDOGE",
+    "KXBNBD",
+    # 2. Intraday & Daily Stock Indices / Commodities
+    "KXINXU",
+    "KXNASDAQ100U",
+    "KXINX",
+    "KXNASDAQ100",
+    "KXWTI",
+    # 3. Daily City Weather High-Temp Brackets
+    "KXHIGHLAX",
+    "KXHIGHNY",
+    "KXHIGHCHI",
+    "KXHIGHMIA",
+    "KXHIGHAUS",
+    "KXHIGHDEN",
+    "KXHIGHPHIL",
+    # 4. Sports Game Winners (Moneylines & Tennis/Esports)
     "KXNBAGAME",
     "KXNFLGAME",
     "KXNHLGAME",
@@ -97,7 +124,7 @@ WATCH_SERIES = [
     "KXLOLGAMES",
     "KXWKBLGAME",
     "KXFIBAGAME",
-    # Over / Unders (Totals, 1H Totals, Team Totals, BTTS, Corners)
+    # 5. Sports Over / Unders (Totals, 1H Totals, Team Totals, BTTS, Corners)
     "KXNBATOTAL",
     "KXNFLTOTAL",
     "KXNHLTOTAL",
@@ -106,11 +133,11 @@ WATCH_SERIES = [
     "KXUCLTEAMTOTAL",
     "KXSERIEACORNERS",
     "KXLIGAPORTUGALTEAMTOTAL",
-    # Point Spreads
+    # 6. Sports Point Spreads
     "KXNBASPREAD",
     "KXNFLSPREAD",
     "KXNHLSPREAD",
-    # Player Props (Points, Rebounds, Assists, TDs, Yards, Soccer Score/Assist)
+    # 7. Sports Player Props (Points, Rebounds, Assists, TDs, Yards, Soccer Score/Assist)
     "KXNBAPTS",
     "KXNBAREB",
     "KXNBAAST",
@@ -184,13 +211,27 @@ class PreTradeEducator:
             self.save_memory()
             return False, f"VETO: Heavy sell-side whale pressure (Imbalance={imbalance_ratio:.2f}x)", 0.0
 
-        # 2. Recent Trade Tape Momentum Check (Ensure not a falling knife)
+        # 2. Recent Trade Tape Recency & Momentum Check (Must be actively trading NOW & not a falling knife)
         momentum_delta = 0
+        last_trade_mins_ago = 999.0
         try:
             trades_resp = await client.request(
                 "GET", "/markets/trades", params={"ticker": ticker, "limit": 10}, authenticated=False
             )
             trades = trades_resp.get("trades", [])
+            if not trades:
+                self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+                self.save_memory()
+                return False, "VETO: Zero recent trades on tape (inactive market)", 0.0
+
+            now_utc = datetime.now(timezone.utc)
+            last_ts = datetime.fromisoformat(trades[0]["created_time"].replace("Z", "+00:00"))
+            last_trade_mins_ago = max(0.0, (now_utc - last_ts).total_seconds() / 60.0)
+            if last_trade_mins_ago > 15.0:
+                self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+                self.save_memory()
+                return False, f"VETO: Stale market (last trade {last_trade_mins_ago:.1f}m ago > 15m max)", 0.0
+
             if len(trades) >= 3:
                 newest_price = float(trades[0].get("yes_price_dollars") or (trades[0].get("yes_price", 0) / 100.0))
                 oldest_price = float(trades[-1].get("yes_price_dollars") or (trades[-1].get("yes_price", 0) / 100.0))
@@ -208,12 +249,12 @@ class PreTradeEducator:
         conf_mult = 1.0
         if st.get("realized_pnl", 0) > 0:
             conf_mult = 1.15  # Boost allocation 15% on proven profitable series
-        if imbalance_ratio >= 2.0 and momentum_delta >= 1:
-            conf_mult *= 1.15  # Whale accumulation + positive tape trend
+        if imbalance_ratio >= 2.0 and momentum_delta >= 0:
+            conf_mult *= 1.15  # Whale accumulation + stable/positive tape trend
 
         self.save_memory()
         reason = (
-            f"APPROVED [Whale Imb={imbalance_ratio:.2f}x | Tape Trend={momentum_delta:+d}c | Conf={conf_mult:.2f}x]"
+            f"APPROVED [Whale Imb={imbalance_ratio:.2f}x | LastTrade={last_trade_mins_ago:.1f}m ago | Tape={momentum_delta:+d}c | Conf={conf_mult:.2f}x]"
         )
         return True, reason, conf_mult
 
@@ -392,29 +433,76 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 f"Heartbeat | Cash: ${total_cents/100:.2f} | Portfolio: ${port_cents/100:.2f} | Total Equity: ${equity_cents/100:.2f}"
             )
 
-            if total_cents >= 250 and len(resting_buy_tickers) < 6:
+            if total_cents >= 200 and len(resting_buy_tickers) < 6:
+                now_utc = datetime.now(timezone.utc)
+                shard_cents = {0: total_cents, 3: total_cents}
+                for b_item in bal.get("balance_breakdown", []):
+                    idx = b_item.get("exchange_index")
+                    if idx in (0, 3):
+                        shard_cents[idx] = int(float(b_item.get("balance", "0") or 0) * 100)
+
+                SHARD_0_PREFIXES = (
+                    "KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB",
+                    "KXINX", "KXNASDAQ", "KXWTI", "KXHIGH", "KXNFL", "KXNHL",
+                )
+
+                active_events = {
+                    "-".join(tk.split("-")[:2])
+                    for tk in (list(resting_buy_tickers) + list(resting_sell_counts.keys()) + list(tracked_open_positions.keys()))
+                }
                 candidates = []
                 for series in WATCH_SERIES:
+                    is_shard_0 = series.startswith(SHARD_0_PREFIXES)
+                    avail_shard_c = shard_cents[0] if is_shard_0 else shard_cents[3]
+                    if avail_shard_c < 200:
+                        continue
                     try:
                         res = await client.request(
                             "GET",
                             "/markets",
-                            params={"series_ticker": series, "status": "open", "limit": 40},
+                            params={"series_ticker": series, "status": "open", "limit": 200},
                         )
                         for m in res.get("markets", []):
                             t = m.get("ticker", "")
-                            if "26OCT25" not in t:
+                            event_prefix = "-".join(t.split("-")[:2])
+                            if t in resting_buy_tickers or resting_sell_counts.get(t, 0) > 0 or event_prefix in active_events:
                                 continue
-                            if t in resting_buy_tickers or resting_sell_counts.get(t, 0) > 0:
+
+                            # Must be live in-play or settling within the next 4 hours (-180m to +240m)
+                            exp_str = m.get("expected_expiration_time") or m.get("expiration_time") or ""
+                            if not exp_str:
                                 continue
-                            close_str = m.get("close_time") or m.get("expiration_time") or "2099"
-                            candidates.append((close_str, t, m.get("title", t)))
+                            try:
+                                exp_dt = datetime.fromisoformat(exp_str.replace("Z", "+00:00"))
+                                mins_to_exp = (exp_dt - now_utc).total_seconds() / 60.0
+                            except Exception:
+                                continue
+                            if not (-180.0 <= mins_to_exp <= 240.0):
+                                continue
+
+                            # Fast pre-filter on live Bid/Ask before fetching full orderbook
+                            bid_f = float(m.get("yes_bid_dollars") or 0)
+                            ask_f = float(m.get("yes_ask_dollars") or 0)
+                            bid_c = int(round(bid_f * 100))
+                            ask_c = int(round(ask_f * 100))
+                            spread_c = ask_c - bid_c
+                            if spread_c <= 0 or spread_c > 2:
+                                continue
+                            if not ((74 <= ask_c <= 88) or (94 <= ask_c <= 97)):
+                                continue
+
+                            candidates.append((mins_to_exp, t, m.get("title", t), is_shard_0))
                     except Exception:
                         pass
 
-                candidates.sort(key=lambda x: x[0])
+                # Sort by soonest finishing / most imminent markets first
+                candidates.sort(key=lambda x: abs(x[0]))
 
-                for _, t, title in candidates[:30]:
+                for mins_left, t, title, is_shard_0 in candidates[:25]:
+                    event_prefix = "-".join(t.split("-")[:2])
+                    shard_key = 0 if is_shard_0 else 3
+                    if event_prefix in active_events or shard_cents[shard_key] < 200:
+                        continue
                     ob = await client.get_orderbook(t)
                     if ob.best_yes_bid and ob.best_yes_ask:
                         spread = ob.best_yes_ask - ob.best_yes_bid
@@ -427,7 +515,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             if is_tail_lock_zone and conf_mult < 1.0:
                                 continue
                             logger.info(
-                                f"PreTradeEducator [{'95%+ TAIL LOCK' if is_tail_lock_zone else '74-88% LEADER'} | {t}]: {reason}"
+                                f"PreTradeEducator [{'95%+ TAIL LOCK' if is_tail_lock_zone else '74-88% LEADER'} | {t} ({mins_left:.0f}m left)]: {reason}"
                             )
                             if not approved:
                                 continue
@@ -436,8 +524,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             price_str = f"{bid_cents / 100:.4f}"
                             # A+ Whale Conviction Sizing: 45% of equity on 94c+ Tail Locks or >=1.3x educator confidence; 25% on standard leaders
                             base_alloc_pct = 0.45 if (is_tail_lock_zone or conf_mult >= 1.30) else 0.25
-                            target_stake_cents = max(250, int(equity_cents * base_alloc_pct * conf_mult))
-                            alloc_cents = min(total_cents, target_stake_cents)
+                            target_stake_cents = max(200, int(equity_cents * base_alloc_pct * conf_mult))
+                            alloc_cents = min(shard_cents[shard_key], target_stake_cents)
                             count_int = int(alloc_cents // bid_cents)
                             if count_int >= 2:
                                 logger.info(
@@ -460,9 +548,9 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                         authenticated=True,
                                     )
                                     resting_buy_tickers.add(t)
+                                    active_events.add(event_prefix)
+                                    shard_cents[shard_key] -= count_int * bid_cents
                                     total_cents -= count_int * bid_cents
-                                    if total_cents < 250:
-                                        break
                                 except Exception:
                                     pass
 

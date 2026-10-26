@@ -58,6 +58,7 @@ class KalshiClient:
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
                 timeout=httpx.Timeout(10.0, connect=5.0),
+                transport=httpx.AsyncHTTPTransport(local_address="0.0.0.0"),
                 headers={"Content-Type": "application/json", "Accept": "application/json"},
             )
         return self._client

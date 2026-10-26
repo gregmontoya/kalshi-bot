@@ -30,8 +30,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("live_auto_roller")
 
-# Comprehensive Worldwide & Domestic Live Sports Series
+# Comprehensive Worldwide & Domestic Live Sports, Over/Unders, Spreads & Player Props
 WATCH_SERIES = [
+    # Game Winners (Moneylines)
     "KXNBAGAME",
     "KXNFLGAME",
     "KXNHLGAME",
@@ -48,6 +49,28 @@ WATCH_SERIES = [
     "KXLOLGAMES",
     "KXWKBLGAME",
     "KXFIBAGAME",
+    # Over / Unders (Totals, 1H Totals, Team Totals, BTTS, Corners)
+    "KXNBATOTAL",
+    "KXNFLTOTAL",
+    "KXNHLTOTAL",
+    "KXLIGAMXBTTS",
+    "KXLALIGA1HTOTAL",
+    "KXUCLTEAMTOTAL",
+    "KXSERIEACORNERS",
+    "KXLIGAPORTUGALTEAMTOTAL",
+    # Point Spreads
+    "KXNBASPREAD",
+    "KXNFLSPREAD",
+    "KXNHLSPREAD",
+    # Player Props (Points, Rebounds, Assists, TDs, Passing/Rushing/Receiving, Soccer Score/Assist)
+    "KXNBAPTS",
+    "KXNBAREB",
+    "KXNBAAST",
+    "KXNFLANYTD",
+    "KXNFLPASSYDS",
+    "KXNFLRUSHYDS",
+    "KXNFLRECYDS",
+    "KXUCLSOA",
 ]
 
 
@@ -101,14 +124,13 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 if cur_bid > peak_bids.get(ticker, 0):
                     peak_bids[ticker] = cur_bid
 
-                # If position is a far-away tomorrow night NFL game (e.g. DALPHI), exit at current ask/bid to free cash for live games
-                if "26OCT26DALPHI" in ticker and cur_bid >= 60:
+                # If position is a far-away tomorrow night game (e.g. DALPHI or GSWDEN), exit immediately to free cash for live games
+                if any(k in ticker for k in ["26OCT26DALPHI", "26OCT26GSWDEN"]) and cur_bid >= 50:
                     for so in resting_sell_orders.get(ticker, []):
                         await client.request(
                             "DELETE", f"/portfolio/events/orders/{so['order_id']}", authenticated=True
                         )
-                    exit_cents = max(cur_bid, (ob.best_yes_ask or cur_bid) - 1)
-                    logger.info(f"Freeing capital from tomorrow's game {ticker} @ {exit_cents}c")
+                    logger.info(f"Freeing capital from tomorrow's game {ticker} @ {cur_bid}c")
                     await client.request(
                         "POST",
                         "/portfolio/events/orders",
@@ -116,10 +138,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             "ticker": ticker,
                             "side": "ask",
                             "count": f"{int(pos_fp)}.00",
-                            "price": f"{exit_cents / 100:.4f}",
-                            "time_in_force": "good_till_canceled",
-                            "self_trade_prevention_type": "maker",
-                            "post_only": True,
+                            "price": f"{cur_bid / 100:.4f}",
+                            "time_in_force": "immediate_or_cancel",
                             "client_order_id": str(uuid.uuid4()),
                         },
                         authenticated=True,

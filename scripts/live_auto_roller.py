@@ -1719,9 +1719,17 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     return "-".join(pts[:3]) if len(pts) >= 4 else "-".join(pts[:2])
 
                 harvested_set = set(educator.memory.get("harvested_tickers", []))
-                active_events = set(stopped_out_events) | {
-                    _entity_key(tk) for tk in active_all_tickers
-                } | {_entity_key(tk) for tk in harvested_set}
+                # Lock active_events for currently held positions; for harvested plays, lock exact strike ticker
+                # on Alt-Line ladders (SPREAD / TOTAL / Player Props) so we can step up from -2.5 -> -5.5 -> -8.5 or 100 -> 150 yds!
+                active_events = (
+                    set(stopped_out_events)
+                    | {_entity_key(tk) for tk in active_all_tickers}
+                    | {
+                        _entity_key(tk)
+                        for tk in harvested_set
+                        if not any(k in tk for k in ("SPREAD", "TOTAL", "PTS", "REB", "AST", "3PT", "YDS", "REC", "GOAL", "SOA"))
+                    }
+                )
                 active_crypto_count = sum(
                     1
                     for tk in active_all_tickers
@@ -1759,7 +1767,12 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             if t.endswith("-TIE") or "-B" in t:
                                 continue
                             event_prefix = _entity_key(t)
-                            if t in resting_buy_tickers or resting_sell_counts.get(t, 0) > 0 or event_prefix in active_events:
+                            if (
+                                t in resting_buy_tickers
+                                or resting_sell_counts.get(t, 0) > 0
+                                or t in harvested_set
+                                or event_prefix in active_events
+                            ):
                                 continue
 
                             exp_str = m.get("expected_expiration_time") or m.get("expiration_time") or ""
@@ -1802,8 +1815,14 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             # "One-Way Ratchet" Bonus: Prefer Over Totals & Player Props (where stats can ONLY go up, never backwards!)
                             is_one_way_ratchet = ("TOTAL" in series) or ("BTTS" in series) or ("CORNERS" in series) or (len(t.split("-")) >= 4)
                             ratchet_bonus = -12.0 if is_one_way_ratchet else 0.0
-                            # Velocity Priority Score: Tightest spread (1c first) + One-Way Ratchet bonus + fastest-settling period/prop
-                            vel_score = (spread_c * 25.0) + eff_mins + ratchet_bonus
+                            # Alt-Line Cushion Priority ("Buying Points / Safer Strike First"):
+                            # Within the 76c-87c zone on the same game/player, prefer the LOWER strike number first
+                            # (e.g. -2.5 before -8.5 spread, Over 213 before Over 219, 100 yds before 150 yds) for maximum safety cushion!
+                            import re as _re
+                            _m_strike = _re.search(r"(\d+(?:\.\d+)?)$", t.split("-")[-1])
+                            alt_line_safety_tiebreaker = float(_m_strike.group(1)) * 0.04 if _m_strike else 0.0
+                            # Velocity Priority Score: Tightest spread (1c first) + One-Way Ratchet bonus + fastest-settling period/prop + safest Alt-Line strike
+                            vel_score = (spread_c * 25.0) + eff_mins + ratchet_bonus + alt_line_safety_tiebreaker
                             candidates.append((vel_score, mins_to_exp, t, clean_title, shard_key))
                     except Exception:
                         pass

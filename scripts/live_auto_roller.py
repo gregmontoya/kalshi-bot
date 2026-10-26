@@ -627,6 +627,22 @@ class PreTradeEducator:
                 import re
                 m_suf = re.match(r"^([A-Z]{2,4})?(\d+(?:\.\d+)?)$", suffix)
 
+                # Helper to check Vegas Opening -> Closing Line Steam & Multiplicative De-Vig (GEMINI.md Law 4)
+                odds_obj = (comp.get("odds") or [{}])[0] if comp.get("odds") else {}
+                vegas_steam_tag = ""
+                try:
+                    tot_o = odds_obj.get("total", {}).get("over", {})
+                    t_open_s = str(tot_o.get("open", {}).get("line", "")).replace("o", "").replace("u", "")
+                    t_close_s = str(tot_o.get("close", {}).get("line", "")).replace("o", "").replace("u", "")
+                    if "TOTAL" in series and t_open_s and t_close_s:
+                        t_shift = float(t_close_s) - float(t_open_s)
+                        if t_shift <= -3.5 and req_periods is None:
+                            return False, f"VETO [Vegas Total Crash]: Sportsbooks steamed total DOWN ({t_open_s} -> {t_close_s}, {t_shift:+.1f} pts)"
+                        if t_shift >= 1.5:
+                            vegas_steam_tag = f" | VEGAS-STEAM(OU {t_open_s}->{t_close_s})"
+                except Exception:
+                    pass
+
                 if "TOTAL" in series and len(competitors) >= 2 and m_suf:
                     tm_prefix, num_str = m_suf.group(1), m_suf.group(2)
                     target_val = max(0.5, float(num_str) - 0.5)
@@ -644,7 +660,7 @@ class PreTradeEducator:
                             f"VETO [ESPN {period_tag} Total]: Only {cur_pts:.0f}/{target_val:.1f} pts scored "
                             f"({prog_pct:.0f}% < 65% min in P{live_period} {clock_disp})"
                         )
-                    lock_tag = " | PROP-LOCK" if prog_pct >= 80.0 else ""
+                    lock_tag = (" | PROP-LOCK" if prog_pct >= 80.0 else "") + vegas_steam_tag
                     return True, f"ESPN {period_tag} Total Verified ({cur_pts:.0f}/{target_val:.1f} = {prog_pct:.0f}% banked{lock_tag} | P{live_period} {clock_disp})"
 
                 if "SPREAD" in series and len(competitors) >= 2 and m_suf and m_suf.group(1):
@@ -917,18 +933,27 @@ class PreTradeEducator:
                                 if odds_list and isinstance(odds_list[0], dict):
                                     ml = odds_list[0].get("moneyline", {})
                                     side_ml = ml.get("home" if home_Away == "home" else "away", {})
+                                    opp_ml = ml.get("away" if home_Away == "home" else "home", {})
                                     open_o = side_ml.get("open", {}).get("odds")
                                     close_o = side_ml.get("close", {}).get("odds")
+                                    opp_close_o = opp_ml.get("close", {}).get("odds")
                                     if open_o and close_o:
                                         def _am_prob(s):
                                             v = float(str(s).replace("+", "").replace("EVEN", "100"))
                                             return (-v / (-v + 100.0)) if v < 0 else (100.0 / (v + 100.0))
                                         p_open = _am_prob(open_o) * 100.0
                                         p_close = _am_prob(close_o) * 100.0
+                                        # Multiplicative De-Vigging (GEMINI.md Law 4)
+                                        if opp_close_o:
+                                            p_opp = _am_prob(opp_close_o) * 100.0
+                                            devig_close = (p_close / max(1.0, p_close + p_opp)) * 100.0
+                                        else:
+                                            devig_close = p_close
                                         shift = p_close - p_open
                                         if shift <= -5.0:
                                             return False, f"VETO [Vegas Line Crash]: Vegas steamed AGAINST '{title}' ({open_o} -> {close_o}, {shift:+.1f}%)"
-                                        vegas_note += f" | VegasML={open_o}->{close_o} ({shift:+.1f}%)"
+                                        steam_flag = " | VEGAS-STEAM" if shift >= 3.0 else ""
+                                        vegas_note += f" | DeVig={devig_close:.1f}% VegasML={open_o}->{close_o} ({shift:+.1f}%){steam_flag}"
                             except Exception:
                                 pass
 
@@ -1021,8 +1046,8 @@ class PreTradeEducator:
             conf_mult *= 1.12
         if "LATE-CLOCK" in ext_reason or "PROP-LOCK" in ext_reason:
             conf_mult *= 1.12  # Late-game clock drain or >=80% banked player prop boost
-        if "CLOCK-FROZEN" in ext_reason:
-            conf_mult *= 1.08  # GEMINI.md Law 6: Commercial/Halftime/Quarter-break zero stadium-snipe edge
+        if "CLOCK-FROZEN" in ext_reason or "VEGAS-STEAM" in ext_reason:
+            conf_mult *= 1.08  # Commercial/Halftime zero-snipe edge or sharp Vegas line steam boost
 
         self.save_memory()
         reason = (

@@ -1,4 +1,4 @@
-"""Pydantic domain models for Phase 1 Core."""
+"""Pydantic domain models for Core, Exchange, and Feeds."""
 
 from datetime import datetime, timezone
 from enum import Enum
@@ -28,6 +28,12 @@ class OrderStatus(str, Enum):
     PARTIALLY_FILLED = "partially_filled"
     CANCELED = "canceled"
     REJECTED = "rejected"
+
+
+class StrategyPodType(str, Enum):
+    POD1_MOMENTUM_BASKET = "maker_momentum_basket"
+    POD2_VALUE_GREEN_OUT = "sharp_value_green_out"
+    POD3_TAIL_LOCK = "tail_lock_harvester"
 
 
 class OrderBookLevel(BaseModel):
@@ -139,4 +145,82 @@ class Order(BaseModel):
     remaining_count: int = 0
     taker_fee_paid_cents: int = 0
     maker_fee_paid_cents: int = 0
+    strategy_pod: Optional[str] = None
+    basket_id: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class Market(BaseModel):
+    ticker: str
+    title: str
+    subtitle: Optional[str] = None
+    category: str = "SPORTS"
+    status: str = "open"
+    yes_bid: Optional[int] = None
+    yes_ask: Optional[int] = None
+    no_bid: Optional[int] = None
+    no_ask: Optional[int] = None
+    last_price: Optional[int] = None
+    volume: int = 0
+    open_interest: int = 0
+    expiration_time: Optional[str] = None
+
+
+class Position(BaseModel):
+    ticker: str
+    side: OrderSide
+    contracts: int
+    avg_price_cents: float
+    current_bid_cents: Optional[int] = None
+    current_ask_cents: Optional[int] = None
+    unrealized_pnl_cents: int = 0
+    realized_pnl_cents: int = 0
+    strategy_pod: Optional[str] = None
+    basket_id: Optional[str] = None
+
+
+class SharpOdds(BaseModel):
+    event_id: str
+    sport: str
+    team_home: str
+    team_away: str
+    bookmaker: str  # pinnacle, circa
+    home_raw_odds: float
+    away_raw_odds: float
+    home_devigged_prob: float
+    away_devigged_prob: float
+    devig_method: str = "shin"
+    last_updated: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class GameState(BaseModel):
+    event_id: str
+    sport: str = "football"
+    home_team: str
+    away_team: str
+    period: int = 1
+    clock_display: str = "15:00"
+    seconds_remaining: int = 3600
+    home_score: int = 0
+    away_score: int = 0
+    score_margin: int = 0
+    possession_team: Optional[str] = None
+    down: Optional[int] = None
+    distance: Optional[int] = None
+    home_timeouts: int = 3
+    away_timeouts: int = 3
+    win_probability_home: float = 0.50
+    is_fourth_quarter: bool = False
+    is_final: bool = False
+
+
+class StadiumWeather(BaseModel):
+    venue_name: str
+    latitude: float
+    longitude: float
+    temperature_f: float
+    wind_speed_mph: float
+    wind_gusts_mph: float
+    precipitation_prob: float
+    is_dome: bool = False
+    impact_note: Optional[str] = None

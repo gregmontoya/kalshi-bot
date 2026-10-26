@@ -35,7 +35,7 @@ logger = logging.getLogger("live_auto_roller")
 
 MEMORY_PATH = Path("data/self_learning_memory.json")
 NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "kalshi-greg-3fc522ce")
-IMESSAGE_TARGET = os.environ.get("IMESSAGE_TARGET", "")
+IMESSAGE_TARGET = os.environ.get("IMESSAGE_TARGET", "+19493107304")
 
 
 async def send_phone_alert(client: KalshiClient, title: str, message: str) -> None:
@@ -65,11 +65,17 @@ async def send_phone_alert(client: KalshiClient, title: str, message: str) -> No
         except Exception:
             pass
 
-    # 3. Optional macOS native iMessage / SMS text
+    # 3. Direct macOS iMessage text to +19493107304
     if IMESSAGE_TARGET and sys.platform == "darwin":
         import subprocess
-        safe_msg = f"{title}: {message}".replace('"', "'")
-        script = f'tell application "Messages" to send "{safe_msg}" to buddy "{IMESSAGE_TARGET}"'
+        safe_msg = f"{title}\n{message}".replace('"', "'")
+        script = (
+            'tell application "Messages"\n'
+            '  set targetService to 1st account whose service type = iMessage\n'
+            f'  set targetBuddy to participant "{IMESSAGE_TARGET}" of targetService\n'
+            f'  send "{safe_msg}" to targetBuddy\n'
+            'end tell'
+        )
         subprocess.Popen(["osascript", "-e", script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -224,11 +230,41 @@ async def run_autonomous_loop(duration_seconds: int = 0):
     logger.info("Autonomous Worldwide Live Roller + PreTradeEducator started.")
     start_ts = time.time()
     peak_bids: dict[str, int] = {}
+    tracked_open_positions: dict[str, dict] = {}
 
     while True:
         try:
             positions = await client.get_positions()
             educator.update_from_positions(positions)
+            bal = await client.get_balance()
+            total_cents = bal.get("balance", 0)
+            port_cents = bal.get("portfolio_value", 0)
+            equity_cents = total_cents + port_cents
+
+            # Detect when any previously held position cashes out (Example 3 Win notification)
+            for pos in positions:
+                t = pos.get("ticker", "")
+                cnt = float(pos.get("position_fp", "0") or 0)
+                exp = float(pos.get("market_exposure_dollars", "0") or 0)
+                if cnt >= 1.0:
+                    tracked_open_positions[t] = {"count": int(cnt), "stake": exp}
+                elif cnt == 0.0 and t in tracked_open_positions:
+                    prev = tracked_open_positions.pop(t)
+                    stake_dlr = prev["stake"]
+                    cnt_int = prev["count"]
+                    payout_dlr = round(cnt_int * 0.96, 2)
+                    profit_dlr = max(0.01, round(payout_dlr - stake_dlr, 2))
+                    roi_pct = round((profit_dlr / max(0.01, stake_dlr)) * 100, 1)
+                    await send_phone_alert(
+                        client,
+                        "💰 TRADE WON & CASHED OUT!",
+                        (
+                            f"Play: {t}\n"
+                            f"Action: Sold {cnt_int}x @ 96c (${payout_dlr:.2f} payout on ${stake_dlr:.2f} stake)\n"
+                            f"Net Realized Profit: +${profit_dlr:.2f} (+{roi_pct}% ROI)\n"
+                            f"New Account Equity: ${equity_cents/100:.2f}"
+                        ),
+                    )
 
             orders_resp = await client.request("GET", "/portfolio/orders", authenticated=True)
             open_orders = [
@@ -295,10 +331,16 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         },
                         authenticated=True,
                     )
+                    tracked_open_positions.pop(ticker, None)
                     await send_phone_alert(
                         client,
                         "🛑 Stop-Loss Triggered",
-                        f"Exited {int(pos_fp)}x {ticker} @ {cur_bid}c (Peak: {peaked}c) to protect bankroll.",
+                        (
+                            f"Play: {ticker}\n"
+                            f"Action: Exited {int(pos_fp)}x @ {cur_bid}c (Peak: {peaked}c, trailing drop stop triggered) "
+                            f"to protect bankroll and re-deploy into next live winner.\n"
+                            f"New Account Equity: ${equity_cents/100:.2f}"
+                        ),
                     )
                     continue
 
@@ -327,19 +369,10 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             },
                             authenticated=True,
                         )
-                        await send_phone_alert(
-                            client,
-                            "✅ Position Filled & Harvest Queued",
-                            f"Holding {uncovered}x {ticker} | Auto-Sell queued @ ${tp_price}",
-                        )
                     except Exception as e:
                         logger.warning(f"Could not place 96c sell for {ticker}: {e}")
 
             # 2. Dynamic Bankroll Scaling into SOONEST Worldwide Games (74c-88c High-Safety Leader Zone)
-            bal = await client.get_balance()
-            total_cents = bal.get("balance", 0)
-            port_cents = bal.get("portfolio_value", 0)
-            equity_cents = total_cents + port_cents
             logger.info(
                 f"Heartbeat | Cash: ${total_cents/100:.2f} | Portfolio: ${port_cents/100:.2f} | Total Equity: ${equity_cents/100:.2f}"
             )
@@ -411,23 +444,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                     )
                                     resting_buy_tickers.add(t)
                                     total_cents -= count_int * bid_cents
-                                    stake_dlr = (count_int * bid_cents) / 100.0
-                                    exit_cents = 99 if is_tail_lock_zone else 96
-                                    payout_dlr = (count_int * exit_cents) / 100.0
-                                    profit_dlr = payout_dlr - stake_dlr
-                                    zone_label = "95%+ Tail Lock" if is_tail_lock_zone else "74-88% Live Leader"
-                                    await send_phone_alert(
-                                        client,
-                                        f"🎯 NEW PLAY: {title}",
-                                        (
-                                            f"Play: {title} ({t})\n"
-                                            f"Strategy: {zone_label}\n"
-                                            f"Action: Resting Maker Buy {count_int}x @ {bid_cents}c (${stake_dlr:.2f} stake, $0 fee)\n"
-                                            f"Target Exit: {exit_cents}c (${payout_dlr:.2f} payout | +${profit_dlr:.2f} profit)\n"
-                                            f"Why Bot Took It: {reason}\n"
-                                            f"Account Equity: ${equity_cents/100:.2f}"
-                                        ),
-                                    )
                                     if total_cents < 250:
                                         break
                                 except Exception:

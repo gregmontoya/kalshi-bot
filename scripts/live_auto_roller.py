@@ -513,7 +513,7 @@ def get_scaling_tier(equity_cents: int) -> dict:
             "max_concurrent": 6,
             "min_depth_dlr": 400.0,
         }
-    else:
+    elif eq_dlr < 2500.0:
         return {
             "name": "TIER 4 (Institutional)",
             "base_pct": 0.12,
@@ -523,6 +523,19 @@ def get_scaling_tier(equity_cents: int) -> dict:
             "min_contracts": 85,
             "max_concurrent": 8,
             "min_depth_dlr": 600.0,
+            "iceberg_slice": 75,
+        }
+    else:
+        return {
+            "name": "TIER 5 ($2.5k+ Whale Iceberg Mode)",
+            "base_pct": 0.10,
+            "boost_pct": 0.12,
+            "min_stake_cents": 12000,
+            "max_stake_cents": 35000,
+            "min_contracts": 100,
+            "max_concurrent": 10,
+            "min_depth_dlr": 900.0,
+            "iceberg_slice": 75,
         }
 
 
@@ -842,8 +855,11 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             alloc_cents = min(shard_cents[shard_key], target_stake_cents)
                             count_int = int(alloc_cents // bid_cents)
                             if count_int >= tier["min_contracts"]:
+                                # Multi-Slice Iceberg Order Splitting (Drips 75 contracts per slice on large Tier 3/4/5 orders!)
+                                max_slice = tier.get("iceberg_slice", 75)
+                                slice_count = min(count_int, max_slice) if count_int > max_slice else count_int
                                 logger.info(
-                                    f"Auto-deploying [{tier['name']}] Maker Bid on {t}: {count_int} contracts @ {price_str} (${(count_int*bid_cents)/100:.2f})"
+                                    f"Auto-deploying [{tier['name']}] Maker Bid on {t}: {slice_count} contracts (Target={count_int}) @ {price_str} (${(slice_count*bid_cents)/100:.2f})"
                                 )
                                 try:
                                     await client.request(
@@ -852,7 +868,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                         json_data={
                                             "ticker": t,
                                             "side": "bid",
-                                            "count": f"{count_int}.00",
+                                            "count": f"{slice_count}.00",
                                             "price": price_str,
                                             "time_in_force": "good_till_canceled",
                                             "self_trade_prevention_type": "maker",
@@ -863,8 +879,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                     )
                                     resting_buy_tickers.add(t)
                                     active_events.add(event_prefix)
-                                    shard_cents[shard_key] -= count_int * bid_cents
-                                    total_cents -= count_int * bid_cents
+                                    shard_cents[shard_key] -= slice_count * bid_cents
+                                    total_cents -= slice_count * bid_cents
                                 except Exception:
                                     pass
 

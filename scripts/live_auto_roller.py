@@ -198,6 +198,41 @@ class PreTradeEducator:
                     st["wins"] = max(st.get("wins", 0), 1)
         self.save_memory()
 
+    def record_equity_snapshot(self, cash_cents: int, port_cents: int, equity_cents: int) -> None:
+        """Records daily winnings ledger and equity curve snapshots for charts/tables."""
+        now_local = datetime.now()
+        day_str = now_local.strftime("%Y-%m-%d")
+        ts_str = now_local.strftime("%H:%M")
+        eq_dlr = round(equity_cents / 100.0, 2)
+        cash_dlr = round(cash_cents / 100.0, 2)
+        port_dlr = round(port_cents / 100.0, 2)
+
+        daily = self.memory.setdefault("daily_ledger", {})
+        day_entry = daily.setdefault(
+            day_str,
+            {
+                "start_equity": eq_dlr,
+                "current_equity": eq_dlr,
+                "high_equity": eq_dlr,
+                "low_equity": eq_dlr,
+                "net_change_dlr": 0.0,
+                "net_change_pct": 0.0,
+            },
+        )
+        day_entry["current_equity"] = eq_dlr
+        day_entry["high_equity"] = max(day_entry.get("high_equity", eq_dlr), eq_dlr)
+        day_entry["low_equity"] = min(day_entry.get("low_equity", eq_dlr), eq_dlr)
+        start_eq = day_entry.get("start_equity", eq_dlr) or eq_dlr
+        day_entry["net_change_dlr"] = round(eq_dlr - start_eq, 2)
+        day_entry["net_change_pct"] = round(((eq_dlr - start_eq) / max(0.01, start_eq)) * 100.0, 2)
+
+        hist = self.memory.setdefault("equity_history", [])
+        if not hist or hist[-1].get("time") != ts_str or abs(hist[-1].get("equity", 0) - eq_dlr) >= 0.05:
+            hist.append({"date": day_str, "time": ts_str, "equity": eq_dlr, "cash": cash_dlr, "portfolio": port_dlr})
+            if len(hist) > 500:
+                self.memory["equity_history"] = hist[-500:]
+        self.save_memory()
+
     async def verify_external_research(self, client: KalshiClient, ticker: str, title: str) -> tuple[bool, str]:
         """
         Queries real-world external APIs (Coinbase Spot, ESPN Live Scoreboard, Open-Meteo Weather)
@@ -581,6 +616,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
             total_cents = bal.get("balance", 0)
             port_cents = bal.get("portfolio_value", 0)
             equity_cents = total_cents + port_cents
+            educator.record_equity_snapshot(total_cents, port_cents, equity_cents)
 
             # Detect when any previously held position cashes out (Example 3 Win notification)
             for pos in positions:

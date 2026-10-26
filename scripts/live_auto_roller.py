@@ -288,7 +288,9 @@ class PreTradeEducator:
                 cushion_pct = (((strike - spot) if is_below else (spot - strike)) / strike) * 100.0
 
                 # 2. Dynamic 15-Minute ATR Volatility Cushion & Multi-Timeframe Candlesticks (Coinbase Exchange API)
-                min_required_cushion = 0.25
+                is_high_beta_alt = series in ("KXSOLD", "KXXRPD", "KXXRP", "KXDOGED", "KXDOGE", "KXBNBD")
+                base_cush = 0.75 if is_high_beta_alt else 0.45
+                min_required_cushion = base_cush
                 trend_str = ""
                 try:
                     rc = await hc.get(f"https://api.exchange.coinbase.com/products/{pair}/candles?granularity=300", timeout=2.5)
@@ -300,13 +302,13 @@ class PreTradeEducator:
                         high_15m = max(float(c[2]) for c in candles[:3])
                         low_15m = min(float(c[1]) for c in candles[:3])
                         atr_15m_pct = ((high_15m - low_15m) / max(0.01, spot)) * 100.0
-                        # Require strike cushion to exceed at least 85% of the live 15-min volatility range (min 0.25%)
-                        min_required_cushion = max(0.25, round(atr_15m_pct * 0.85, 2))
+                        # Require strike cushion to exceed at least 1.50x the live 15-min volatility range (min 0.45% BTC/ETH, 0.75% Alts)
+                        min_required_cushion = max(base_cush, round(atr_15m_pct * 1.50, 2))
 
                         trend_15m = ((newest_close - oldest_open) / oldest_open) * 100.0
                         effective_trend = -trend_15m if is_below else trend_15m
-                        if effective_trend < -0.20:
-                            return False, f"VETO [Crypto 15m Trend]: {pair} moving {trend_15m:+.2f}% over last 15m toward strike"
+                        if effective_trend < -0.02:
+                            return False, f"VETO [Crypto 15m Trend]: {pair} drifting {trend_15m:+.2f}% over last 15m toward strike (strict zero-drift rule)"
                         trend_str = f" | 15mTrend={trend_15m:+.2f}% | 15mVol={atr_15m_pct:.2f}%"
                 except Exception:
                     pass
@@ -314,7 +316,7 @@ class PreTradeEducator:
                 if cushion_pct < min_required_cushion:
                     return False, (
                         f"VETO [{oracle_src}]: {pair} spot (${spot:,.2f}) cushion {cushion_pct:+.2f}% < "
-                        f"required volatility cushion {min_required_cushion:.2f}% (strike ${strike:,.2f})"
+                        f"strict volatility cushion {min_required_cushion:.2f}% (strike ${strike:,.2f})"
                     )
 
                 # 3. Coinbase Exchange L2 Spot Order Book Whale Wall Check (Top 50 Spot Bids vs Asks)
@@ -326,8 +328,8 @@ class PreTradeEducator:
                     asks_l2 = sum(float(a[0]) * float(a[1]) for a in book_l2.get("asks", [])[:25])
                     if bids_l2 > 0 and asks_l2 > 0:
                         spot_imb = (asks_l2 / bids_l2) if is_below else (bids_l2 / asks_l2)
-                        if spot_imb < 0.45:
-                            return False, f"VETO [Spot L2 Whale Book]: Heavy opposing Coinbase spot orderbook wall (ratio={spot_imb:.2f}x)"
+                        if spot_imb < 0.80:
+                            return False, f"VETO [Spot L2 Whale Book]: Opposing Coinbase spot orderbook wall (ratio={spot_imb:.2f}x < 0.80x strict min)"
                         l2_str = f" | SpotL2={spot_imb:.2f}x"
                 except Exception:
                     pass
@@ -1067,17 +1069,38 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 except Exception as e:
                                     logger.warning(f"Pre-warm shard transfer {donor_shard}->{dst_shard} note: {e}")
 
+                active_all_tickers = (
+                    list(resting_buy_tickers)
+                    + list(resting_sell_counts.keys())
+                    + list(tracked_open_positions.keys())
+                )
                 active_events = set(stopped_out_events) | {
-                    "-".join(tk.split("-")[:2])
-                    for tk in (list(resting_buy_tickers) + list(resting_sell_counts.keys()) + list(tracked_open_positions.keys()))
+                    "-".join(tk.split("-")[:2]) for tk in active_all_tickers
                 }
+                active_crypto_count = sum(
+                    1
+                    for tk in active_all_tickers
+                    if tk.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB"))
+                )
+                active_index_count = sum(
+                    1
+                    for tk in active_all_tickers
+                    if tk.startswith(("KXINX", "KXNASDAQ", "KXWTI"))
+                )
                 candidates = []
                 for series in WATCH_SERIES:
+                    is_crypto_s = series.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB"))
+                    is_index_s = series.startswith(("KXINX", "KXNASDAQ", "KXWTI"))
+                    # Correlation Guard: Max 1 active Crypto play & Max 1 active Wall St Index play at a time!
+                    if is_crypto_s and active_crypto_count >= 1:
+                        continue
+                    if is_index_s and active_index_count >= 1:
+                        continue
                     try:
                         res = await client.request(
                             "GET",
                             "/markets",
-                            params={"series_ticker": series, "status": "open", "limit": 200},
+                            params={"series_ticker": series, "status": "open", "limit": 1000},
                         )
                         await asyncio.sleep(0.06)
                         markets_list = res.get("markets", [])
@@ -1094,7 +1117,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             if t in resting_buy_tickers or resting_sell_counts.get(t, 0) > 0 or event_prefix in active_events:
                                 continue
 
-                            # Must be live in-play or settling within the next 4 hours (-180m to +240m)
                             exp_str = m.get("expected_expiration_time") or m.get("expiration_time") or ""
                             if not exp_str:
                                 continue
@@ -1103,9 +1125,13 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 mins_to_exp = (exp_dt - now_utc).total_seconds() / 60.0
                             except Exception:
                                 continue
-                            max_exp_mins = 45.0 if series.startswith(("KXINX", "KXNASDAQ", "KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE")) else 90.0
-                            if not (-180.0 <= mins_to_exp <= max_exp_mins):
-                                continue
+                            # Strict Final-25-Minute Lock Window for volatile Crypto/Indices; 165m for live in-play Sports
+                            if is_crypto_s or is_index_s:
+                                if not (5.0 <= mins_to_exp <= 25.0):
+                                    continue
+                            else:
+                                if not (-180.0 <= mins_to_exp <= 165.0):
+                                    continue
 
                             # Fast pre-filter on live Bid/Ask before fetching full orderbook
                             bid_f = float(m.get("yes_bid_dollars") or 0)
@@ -1119,16 +1145,25 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 continue
 
                             clean_title = m.get("yes_sub_title") or m.get("title", t)
-                            candidates.append((mins_to_exp, t, clean_title, shard_key))
+                            # Velocity Priority Score: Tightest spread (1c first) + closest to finishing first
+                            vel_score = (spread_c * 25.0) + max(0.0, mins_to_exp)
+                            candidates.append((vel_score, mins_to_exp, t, clean_title, shard_key))
                     except Exception:
                         pass
 
-                # Sort by soonest finishing / most imminent markets first
-                candidates.sort(key=lambda x: abs(x[0]))
+                # Sort by Fastest Capital Turnover Velocity (1c spreads & closest to finishing first!)
+                candidates.sort(key=lambda x: x[0])
 
-                for mins_left, t, title, shard_key in candidates[:25]:
+                for _vel, mins_left, t, title, shard_key in candidates[:25]:
                     event_prefix = "-".join(t.split("-")[:2])
-                    if event_prefix in active_events or total_cents < min_stake_c:
+                    is_crypto_t = t.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB"))
+                    is_index_t = t.startswith(("KXINX", "KXNASDAQ", "KXWTI"))
+                    if (
+                        event_prefix in active_events
+                        or total_cents < min_stake_c
+                        or (is_crypto_t and active_crypto_count >= 1)
+                        or (is_index_t and active_index_count >= 1)
+                    ):
                         continue
                     await asyncio.sleep(0.12)
                     ob = await client.get_orderbook(t)
@@ -1152,8 +1187,11 @@ async def run_autonomous_loop(duration_seconds: int = 0):
 
                             bid_cents = ob.best_yes_ask - 1
                             price_str = f"{bid_cents / 100:.4f}"
-                            # 4-Tier Institutional Kelly Sizing (Auto-scales from $25 up to $500+ deposits!)
-                            base_alloc_pct = tier["boost_pct"] if (is_tail_lock_zone or conf_mult >= 1.30) else tier["base_pct"]
+                            # 4-Tier Institutional Kelly Sizing (Cap volatile Crypto/Index stake at 20% equity; full size on live Sports!)
+                            if is_crypto_t or is_index_t:
+                                base_alloc_pct = min(0.20, tier["base_pct"])
+                            else:
+                                base_alloc_pct = tier["boost_pct"] if (is_tail_lock_zone or conf_mult >= 1.30) else tier["base_pct"]
                             raw_stake = int(equity_cents * base_alloc_pct * conf_mult)
                             target_stake_cents = min(tier["max_stake_cents"], max(min_stake_c, raw_stake), total_cents)
 
@@ -1219,6 +1257,10 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                     )
                                     resting_buy_tickers.add(t)
                                     active_events.add(event_prefix)
+                                    if is_crypto_t:
+                                        active_crypto_count += 1
+                                    if is_index_t:
+                                        active_index_count += 1
                                     shard_cents[shard_key] -= slice_count * bid_cents
                                     total_cents -= slice_count * bid_cents
                                 except Exception:

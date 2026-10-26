@@ -13,7 +13,7 @@ concurrency:
 jobs:
   trade-loop:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - name: Checkout Engine
         uses: actions/checkout@v4
@@ -35,9 +35,14 @@ jobs:
             curl -s -m 5 "$RENDER_HEALTH_URL" || true
           fi
 
-      - name: Execute 4-Minute Autonomous Trading Burst (Polls Every 20s)
+      - name: Execute Autonomous Trading Burst (If Cloud Secrets Enabled)
         env:
           KALSHI_ENV: prod
           KALSHI_KEY_ID: ${{ secrets.KALSHI_KEY_ID }}
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
-        run: python scripts/live_auto_roller.py --duration 240
+        run: |
+          if [ -z "$KALSHI_PRIVATE_KEY" ] && [ ! -f "secrets/kalshi_private_key.pem" ]; then
+            echo "Local Mac Primary Engine is active (GitHub Cloud secret not set). Exiting cleanly."
+            exit 0
+          fi
+          python scripts/live_auto_roller.py --duration 240 || true

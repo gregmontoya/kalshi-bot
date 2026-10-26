@@ -186,16 +186,24 @@ class PreTradeEducator:
             pass
 
     def update_from_positions(self, positions: list[dict]) -> None:
-        series_stats = self.memory.setdefault("series_stats", {})
+        series_Map: dict[str, dict] = {}
         for p in positions:
             t = p.get("ticker", "")
             series = t.split("-")[0] if "-" in t else t
+            if not series or series.startswith("KXMVE"):
+                continue
             pnl = float(p.get("realized_pnl_dollars", "0") or 0)
-            if pnl != 0:
-                st = series_stats.setdefault(series, {"realized_pnl": 0.0, "wins": 0, "losses": 0})
-                st["realized_pnl"] = round(pnl, 4)
-                if pnl > 0:
-                    st["wins"] = max(st.get("wins", 0), 1)
+            if abs(pnl) >= 0.01:
+                st = series_Map.setdefault(series, {"realized_pnl": 0.0, "wins": 0, "losses": 0})
+                st["realized_pnl"] = round(st["realized_pnl"] + pnl, 4)
+                if pnl >= 0.05:
+                    st["wins"] += 1
+                elif pnl <= -0.25:
+                    st["losses"] += 1
+        if series_Map:
+            existing = self.memory.setdefault("series_stats", {})
+            for s, data in series_Map.items():
+                existing[s] = data
         self.save_memory()
 
     def record_equity_snapshot(self, cash_cents: int, port_cents: int, equity_cents: int) -> None:
@@ -570,7 +578,12 @@ class PreTradeEducator:
         """
         self.memory["evaluated_plays"] = self.memory.get("evaluated_plays", 0) + 1
 
-        # 1. Whale Order Book Imbalance Check (Top 5 levels near touch)
+        # 1. Whale Order Book Imbalance Check (Top 5 levels near touch) + Self-Correcting Drawdown Gate
+        series = ticker.split("-")[0] if "-" in ticker else ticker
+        st = self.memory.get("series_stats", {}).get(series, {})
+        series_pnl = float(st.get("realized_pnl", 0.0) or 0.0)
+        req_imbalance = 1.85 if series_pnl < -1.00 else 1.35
+
         top_yes_bids = sorted(ob.yes_bids, key=lambda x: x.price, reverse=True)[:5]
         top_no_bids = sorted(ob.no_bids, key=lambda x: x.price, reverse=True)[:5]
         yes_depth = sum(float(level.quantity) * (level.price / 100.0) for level in top_yes_bids)
@@ -582,10 +595,10 @@ class PreTradeEducator:
             self.save_memory()
             return False, f"VETO: Thin bid liquidity (${yes_depth:.0f} < ${min_book_depth_dlr:.0f} tier exit depth)", 0.0
 
-        if imbalance_ratio < 1.35:
+        if imbalance_ratio < req_imbalance:
             self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
             self.save_memory()
-            return False, f"VETO: Weak whale buying pressure (Imbalance={imbalance_ratio:.2f}x < 1.35x min)", 0.0
+            return False, f"VETO: Weak whale buying pressure (Imbalance={imbalance_ratio:.2f}x < {req_imbalance:.2f}x min for {series})", 0.0
 
         # 2. Recent Trade Tape Recency & Momentum Check (Must be actively trading NOW & strictly flat/rising)
         momentum_delta = 0
@@ -627,11 +640,11 @@ class PreTradeEducator:
             return False, ext_reason, 0.0
 
         # 4. Self-Learning Series Confidence Multiplier + A+ Whale Wall Boost
-        series = ticker.split("-")[0] if "-" in ticker else ticker
-        st = self.memory.get("series_stats", {}).get(series, {})
         conf_mult = 1.0
-        if st.get("realized_pnl", 0) > 0:
+        if series_pnl > 0:
             conf_mult = 1.15  # Boost allocation 15% on proven profitable series
+        elif series_pnl < -1.00:
+            conf_mult = 0.85  # Auto-trim size 15% on drawdown series until back in green
         if imbalance_ratio >= 2.25 and momentum_delta >= 0:
             conf_mult *= 1.22  # A+ Whale Wall (>=2.25x) + non-negative tape momentum
         elif imbalance_ratio >= 1.85 and momentum_delta >= 0:

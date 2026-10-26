@@ -531,9 +531,19 @@ class PreTradeEducator:
                                 if sets_won[idx] == sets_won[opp_idx] and cur_set_games[idx] <= cur_set_games[opp_idx]:
                                     return False, f"VETO [ESPN Tennis]: '{title}' not leading current set ({cur_set_games[idx]:.0f}-{cur_set_games[opp_idx]:.0f})"
 
-                            # Check Vegas Opening vs Closing Line Movement & Live Win Probability
+                            # Check Vegas Opening vs Closing Line Movement, Game Clock Period & Live Win Probability
                             vegas_note = ""
                             try:
+                                st_obj = comp.get("status", {})
+                                period_num = int(st_obj.get("period", 1) or 1)
+                                clock_disp = st_obj.get("displayClock", "")
+                                is_4q_sport = series in ("KXNBAGAME", "KXNFLGAME", "KXNCAAFGAME", "KXNCAAWBGAME")
+                                is_late_clock = (period_num >= 3) if is_4q_sport else (period_num >= 2)
+                                if is_late_clock:
+                                    vegas_note += f" | LATE-CLOCK(P{period_num} {clock_disp})"
+                                else:
+                                    vegas_note += f" | P{period_num} {clock_disp}"
+
                                 sit_prob = comp.get("situation", {}).get("lastPlay", {}).get("probability", {})
                                 home_Away = competitors[idx].get("homeAway", "")
                                 wp = sit_prob.get("homeWinPercentage" if home_Away == "home" else "awayWinPercentage")
@@ -649,6 +659,8 @@ class PreTradeEducator:
             conf_mult *= 1.22  # A+ Whale Wall (>=2.25x) + non-negative tape momentum
         elif imbalance_ratio >= 1.85 and momentum_delta >= 0:
             conf_mult *= 1.12
+        if "LATE-CLOCK" in ext_reason:
+            conf_mult *= 1.10  # Late-game 2nd-half/4th-quarter clock drain boost
 
         self.save_memory()
         reason = (
@@ -689,13 +701,13 @@ def get_scaling_tier(equity_cents: int) -> dict:
     elif eq_dlr < 750.0:
         return {
             "name": "TIER 3 ($500 Pro Mode)",
-            "base_pct": 0.16,
-            "boost_pct": 0.20,
+            "base_pct": 0.24,
+            "boost_pct": 0.32,
             "min_stake_cents": 3500,
             "max_stake_cents": 12000,
-            "min_contracts": 40,
-            "max_concurrent": 6,
-            "min_depth_dlr": 400.0,
+            "min_contracts": 30,
+            "max_concurrent": 5,
+            "min_depth_dlr": 300.0,
         }
     elif eq_dlr < 2500.0:
         return {
@@ -1205,7 +1217,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             if not approved:
                                 continue
 
-                            bid_cents = ob.best_yes_ask - 1
+                            # Front-of-Queue Spread-Capture Entry Discount: bid (cur_bid + 1) on 2c-3c spreads to save +1c for free!
+                            bid_cents = max(ob.best_yes_bid + 1, ob.best_yes_ask - 2) if spread >= 2 else (ob.best_yes_ask - 1)
                             price_str = f"{bid_cents / 100:.4f}"
                             # 4-Tier Institutional Kelly Sizing (Cap volatile Crypto/Index stake at 20% equity; Boost A+ Live Sports up to 42%!)
                             if is_crypto_t or is_index_t:

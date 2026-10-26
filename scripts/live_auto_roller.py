@@ -419,7 +419,9 @@ async def run_autonomous_loop(duration_seconds: int = 0):
 
                             bid_cents = ob.best_yes_ask - 1
                             price_str = f"{bid_cents / 100:.4f}"
-                            target_stake_cents = max(250, int(equity_cents * 0.25 * conf_mult))
+                            # A+ Whale Conviction Sizing: 45% of equity on 94c+ Tail Locks or >=1.3x educator confidence; 25% on standard leaders
+                            base_alloc_pct = 0.45 if (is_tail_lock_zone or conf_mult >= 1.30) else 0.25
+                            target_stake_cents = max(250, int(equity_cents * base_alloc_pct * conf_mult))
                             alloc_cents = min(total_cents, target_stake_cents)
                             count_int = int(alloc_cents // bid_cents)
                             if count_int >= 2:

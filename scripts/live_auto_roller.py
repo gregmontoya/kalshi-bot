@@ -785,8 +785,17 @@ class PreTradeEducator:
                                 f"VETO [1H Time-in-Play Gate]: Full-game spread in P{live_period} {clock_disp} traps cash through Halftime "
                                 f"(use 1Q/2Q/1H spread instead!)"
                             )
-                        # Require team to ALREADY be covering the spread: +0.5 goals for NHL/Soccer, +3.5 points for Basketball/Football!
-                        req_spread_buf = 0.5 if ("NHL" in series or is_soccer) else 3.5
+                        # Require team to ALREADY be covering the spread:
+                        # - NHL/Soccer: +0.5 goals
+                        # - Fast Quarters/Halves (req_periods is not None): +3.5 points
+                        # - Full-Game NBA/Football Spreads in Q3: +7.5 points above spread (prevents Q3 2-possession swing wipeouts!)
+                        # - Full-Game NBA/Football Spreads in Q4: +5.0 points above spread
+                        if "NHL" in series or is_soccer:
+                            req_spread_buf = 0.5
+                        elif req_periods is not None:
+                            req_spread_buf = 3.5
+                        else:
+                            req_spread_buf = 7.5 if live_period <= 3 else 5.0
                         if margin <= 0 or margin < (strike_val + req_spread_buf):
                             return False, (
                                 f"VETO [ESPN {period_tag} Spread Cushion]: {tm_prefix} margin is {margin:+.0f} ({my_pts:.0f}-{opp_pts:.0f}) "
@@ -1021,20 +1030,31 @@ class PreTradeEducator:
                                     f"in P{period_num} (requires 2+ goal lead or 3rd Period!)"
                                 )
                             elif series in ("KXNBAGAME", "KXNCAAMBGAME", "KXNCAAWBGAME"):
-                                # Time-in-Play Velocity Gate: In P1/P2 (1st Half), require a massive +15 blowout to buy Full-Game ML
-                                # so we prioritize 1Q, 2Q, and 1H fast-settle lines instead of trapping cash through Halftime!
-                                min_bball_margin = 15 if (series == "KXNBAGAME" and period_num <= 2) else (6 if period_num <= 2 else 5)
+                                # Strict Multi-Possession Full-Game Moneyline Cushion:
+                                # - P1/P2 (1st Half): +15 pts (prioritize 1Q/2Q/1H fast-settle lines!)
+                                # - P3 (3rd Quarter): +12 pts (a 5-pt Q3 lead is <2 three-pointers and caused both MINCLE & DALMIA wipeouts!)
+                                # - P4 (4th Quarter): +8 pts (or +5 pts inside final 3:00 of Q4)
+                                try:
+                                    q4_clk_m = float(str(clock_disp).split(":")[0]) if ":" in str(clock_disp) else 6.0
+                                except Exception:
+                                    q4_clk_m = 6.0
+                                if period_num <= 2:
+                                    min_bball_margin = 15 if series == "KXNBAGAME" else 10
+                                elif period_num == 3:
+                                    min_bball_margin = 12
+                                else:
+                                    min_bball_margin = 5 if q4_clk_m < 3.0 else 8
                                 if margin < min_bball_margin:
                                     return False, (
                                         f"VETO [Basketball Cushion/Time Gate]: '{title}' up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
-                                        f"(+{margin:.0f} < +{min_bball_margin} pt min in P{period_num} — prioritizing 1Q/2Q/1H!)"
+                                        f"(+{margin:.0f} < +{min_bball_margin} pt min in P{period_num} {clock_disp} — avoiding fragile Q3/Q4 leads!)"
                                     )
                             elif series in ("KXNFLGAME", "KXNCAAFGAME"):
-                                min_fball_margin = 14 if period_num <= 2 else 6
+                                min_fball_margin = 14 if period_num <= 2 else (10 if period_num == 3 else 7)
                                 if margin < min_fball_margin:
                                     return False, (
                                         f"VETO [Football Cushion/Time Gate]: '{title}' up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
-                                        f"(+{margin:.0f} < +{min_fball_margin} pt min in P{period_num} — prioritizing 1Q/2Q/1H!)"
+                                        f"(+{margin:.0f} < +{min_fball_margin} pt min in P{period_num} — avoiding single-TD flips!)"
                                     )
 
                             # Check Vegas Opening vs Closing Line Movement, Game Clock Period & Live Win Probability
@@ -1511,21 +1531,20 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 is_fast_period = any(
                     p in ticker for p in ("1Q", "2Q", "3Q", "4Q", "1H", "2H", "1P", "2P", "3P")
                 )
-                stage1_banked = (
-                    (max_orig_cnt >= 6 and whole_pos <= int(max_orig_cnt * 0.60))
-                    or (peaked >= avg_entry_cents + 6)
-                    or (is_soccer_ml and peaked >= avg_entry_cents + 3)
+                is_one_way_ratchet = any(
+                    k in ticker for k in ("TOTAL", "PTS", "REB", "AST", "3PT", "PRA", "YDS", "REC", "GOAL", "SOA")
                 )
-                micro_ratchet_armed = (peaked >= avg_entry_cents + 4)
-                # 3-Tier Dynamic Stop Floor:
-                # - Base Floor: 54c on fast Quarter/Half contracts (prevents final-minute cliff drops), 48c on Full Games
-                # - Micro-Ratchet (+4c peak): raises floor to (entry - 7c) across all sports
-                # - Stage-1 Banked (+6c / 50% sold): locks floor at (entry - 3c) for a 100% Zero-Loss Breakeven Shield!
-                base_floor_c = 54 if is_fast_period else 48
-                if stage1_banked:
-                    stop_floor_c = max(base_floor_c, avg_entry_cents - 3)
-                elif micro_ratchet_armed:
-                    stop_floor_c = max(base_floor_c, avg_entry_cents - 7)
+                # Stage-1 is ONLY banked when >=40% of contracts have ACTUALLY filled & cashed out (never on an unfilled touch!)
+                stage1_banked = (max_orig_cnt >= 6 and whole_pos <= int(max_orig_cnt * 0.60))
+                # Smart Stop-Loss Floor (GEMINI.md Law 3 & Pod 1):
+                # - Never fire hair-trigger Taker dumps (-3c / -7c) on One-Way Ratchets (Over Totals & Player Props) during timeouts!
+                # - Base emergency thesis-broken floor: 52c on fast Quarter/Half contracts, 48c on Full Games.
+                # - Once Stage-1 (50% of contracts) has actually sold in cash at +6c, protect the runner at max(base_floor_c, entry - 12c).
+                base_floor_c = 52 if is_fast_period else 48
+                if stage1_banked and not is_one_way_ratchet:
+                    stop_floor_c = max(base_floor_c, avg_entry_cents - 12)
+                elif is_soccer_ml and peaked >= avg_entry_cents + 4:
+                    stop_floor_c = max(base_floor_c, avg_entry_cents - 6)
                 else:
                     stop_floor_c = base_floor_c
                 thesis_broken_guillotine = (0 < cur_bid <= stop_floor_c) and (cur_ask <= stop_floor_c + 5)
@@ -1782,9 +1801,15 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     pts = tk.split("-")
                     return "-".join(pts[:3]) if len(pts) >= 4 else "-".join(pts[:2])
 
+                def _matchup_slug(tk: str) -> str:
+                    pts = tk.split("-")
+                    return pts[1] if len(pts) >= 2 else tk
+
                 harvested_set = set(educator.memory.get("harvested_tickers", []))
-                # Lock active_events for currently held positions; for harvested plays, lock exact strike ticker
-                # on Alt-Line ladders (SPREAD / TOTAL / Player Props) so we can step up from -2.5 -> -5.5 -> -8.5 or 100 -> 150 yds!
+                # Strict Single-Game Correlation Lock: Never hold two concurrent active positions or resting buys
+                # in the same matchup (e.g. never hold both DALMIA Moneyline AND DALMIA Total at the same time!).
+                # Once a matchup position cashes out, _matchup_slug frees up so we can step up the alt-line ladder!
+                active_matchups = {_matchup_slug(tk) for tk in active_all_tickers}
                 active_events = (
                     set(stopped_out_events)
                     | {_entity_key(tk) for tk in active_all_tickers}
@@ -1907,15 +1932,22 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         seen_entity_counts[ek] = seen_entity_counts.get(ek, 0) + 1
                         dedup_candidates.append(cand)
 
+                locked_buy_shards: set[int] = {
+                    int(o.get("exchange_index", 0) or 0)
+                    for o in open_orders
+                    if o.get("action") == "buy"
+                }
                 for _vel, mins_left, t, title, shard_key in dedup_candidates[:40]:
                     event_prefix = _entity_key(t)
+                    matchup_slug = _matchup_slug(t)
                     is_crypto_t = t.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB"))
                     is_index_t = t.startswith(("KXINX", "KXNASDAQ", "KXWTI"))
                     if (
                         event_prefix in active_events
+                        or matchup_slug in active_matchups
                         or total_cents < min_stake_c
                         or unshielded_open_count >= 3
-                        or len(resting_buy_tickers) >= min(3, tier["max_concurrent"])
+                        or len(resting_buy_tickers) >= max(1, 3 - unshielded_open_count)
                         or (is_crypto_t and active_crypto_count >= 1)
                         or (is_index_t and active_index_count >= 1)
                     ):
@@ -1953,7 +1985,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             if shard_cents.get(shard_key, 0) < target_stake_cents:
                                 deficit_cents = target_stake_cents - shard_cents.get(shard_key, 0) + 25
                                 for donor in sorted((0, 2, 3), key=lambda s: shard_cents.get(s, 0), reverse=True):
-                                    if donor == shard_key or deficit_cents <= 0:
+                                    if donor == shard_key or donor in locked_buy_shards or deficit_cents <= 0:
                                         continue
                                     avail = shard_cents.get(donor, 0)
                                     pull_c = min(avail, deficit_cents)
@@ -2012,6 +2044,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                     )
                                     resting_buy_tickers.add(t)
                                     active_events.add(event_prefix)
+                                    active_matchups.add(matchup_slug)
+                                    locked_buy_shards.add(shard_key)
                                     if is_crypto_t:
                                         active_crypto_count += 1
                                     if is_index_t:

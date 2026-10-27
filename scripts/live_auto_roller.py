@@ -438,13 +438,26 @@ class PreTradeEducator:
             except Exception:
                 return 0.0, "", False
 
+        # Explicit Perennial All-Star / MVP Superstar Floor vs. 4-Tier Sleeper Rank Classification:
+        all_star_superstars = {
+            "nikola jokic", "giannis antetokounmpo", "luka doncic", "shai gilgeous-alexander",
+            "jayson tatum", "stephen curry", "anthony davis", "lebron james", "kevin durant",
+            "anthony edwards", "donovan mitchell", "victor wembanyama", "jalen brunson",
+            "devin booker", "tyrese haliburton", "damian lillard", "jaylen brown", "de'aaron fox",
+            "domantas sabonis", "trae young", "paolo banchero", "cade cunningham", "karl-anthony towns",
+            "josh allen", "lamar jackson", "patrick mahomes", "joe burrow", "jalen hurts",
+            "saquon barkley", "derrick henry", "bijan robinson", "jahmyr gibbs", "breece hall",
+            "ja'marr chase", "ceedee lamb", "justin jefferson", "amon-ra st brown", "nico collins",
+            "aj brown", "puka nacua", "malik nabers", "brock bowers", "trey mcbride",
+        }
+        is_explicit_all_star = player_target_name in all_star_superstars
         p_info = name_idx.get(player_target_name)
-        if not p_info:
+        if not p_info and not is_explicit_all_star:
             return 0.0, "", False
-        inj = str(p_info.get("inj") or "").upper()
-        depth = p_info.get("depth")
-        rank = int(p_info.get("rank") or 9999)
-        pid = p_info.get("pid", "")
+        inj = str((p_info or {}).get("inj") or "").upper()
+        depth = (p_info or {}).get("depth", 1 if is_explicit_all_star else None)
+        rank = int((p_info or {}).get("rank") or (15 if is_explicit_all_star else 9999))
+        pid = (p_info or {}).get("pid", "")
 
         if inj in ("OUT", "DOUBTFUL", "IR", "SUSPENDED"):
             return 99.0, f"VETO [Sleeper Fantasy Injury]: {player_target_name} flagged '{inj}'", True
@@ -453,12 +466,19 @@ class PreTradeEducator:
         if inj in ("QUESTIONABLE", "GTD", "PROBABLE"):
             adj += 8.0
             tags.append(f"FANTASY-INJURY-DECOY({inj}:+8%)")
-        if depth is not None and int(depth) >= 3:
+        # 4-Tier Player Classification: All-Star (Tier 1) -> Starter (Tier 2) -> Role Player (Tier 3) -> Scrub/Backup (Tier 4)
+        if is_explicit_all_star or (depth == 1 and rank <= 35 and not inj):
+            adj -= 4.5
+            tags.append(f"+TIER1-ALL-STAR(Rank#{rank})")
+        elif depth == 1 and rank <= 85 and not inj:
+            adj -= 2.5
+            tags.append(f"+TIER2-QUALITY-STARTER(Rank#{rank})")
+        elif (depth is not None and int(depth) >= 3) or rank >= 220:
             adj += 12.0
-            tags.append(f"FANTASY-BACKUP-MIRAGE(Depth#{depth}:+12%)")
-        elif depth == 1 and rank <= 60 and not inj:
-            adj -= 3.5
-            tags.append(f"+FANTASY-ALPHA-WR1/RB1(Rank#{rank})")
+            tags.append(f"TIER4-BENCH-SCRUB-MIRAGE(Depth#{depth},Rank#{rank}:+12%)")
+        else:
+            adj += 3.0
+            tags.append(f"TIER3-ROLE-PLAYER(Rank#{rank}:+3%)")
         if pid in trend_drops:
             adj += 6.0
             tags.append("FANTASY-WAIVER-DROP(+6%)")
@@ -844,12 +864,20 @@ class PreTradeEducator:
                 ov_wp = _rec_to_wp(ov_sum, prior_g=4.0)
                 ven_wp = _rec_to_wp(venue_sum, prior_g=2.0) if venue_sum else ov_wp
                 strength = 0.70 * ov_wp + 0.30 * ven_wp
+                # Blend with Explicit Franchise Power Tier Priors (so early-season 2-2 records still recognize Elite Contenders vs. Tanking Teams!)
+                tm_ab = (c_obj.get("team", {}).get("abbreviation") or "").upper()
+                elite_franchises = {"BOS", "OKC", "DEN", "CLE", "NYK", "MIN", "DAL", "HOU", "GSW", "KC", "DET", "BAL", "BUF", "PHI", "GB", "FLA", "EDM", "CAR", "DAL", "WPG", "RMA", "MCI", "FCB", "ARS", "LIV", "BAY", "INT"}
+                bad_tanking_franchises = {"WAS", "UTA", "BKN", "CHA", "POR", "TOR", "CAR", "NE", "NYG", "TEN", "LV", "CLE", "SJS", "ANA", "CBJ", "CHI"}
+                if tm_ab in elite_franchises:
+                    strength = min(0.90, strength + 0.07)
+                elif tm_ab in bad_tanking_franchises:
+                    strength = max(0.15, strength - 0.07)
                 rank_val = int(c_obj.get("curatedRank", {}).get("current", 99) or 99)
                 if 1 <= rank_val <= 10:
                     strength = min(0.92, strength + 0.14)
                 elif 11 <= rank_val <= 25:
                     strength = min(0.86, strength + 0.08)
-                tier_lbl = "GOOD" if strength >= 0.57 else ("BAD" if strength <= 0.43 else "MED")
+                tier_lbl = "ELITE" if strength >= 0.65 else ("GOOD" if strength >= 0.56 else ("BAD" if strength <= 0.43 else "MED"))
                 rank_str = f"#{rank_val} " if 1 <= rank_val <= 25 else ""
                 return strength, f"{rank_str}{ tier_lbl }({ov_sum})", tier_lbl
 
@@ -1742,13 +1770,16 @@ class PreTradeEducator:
             self.save_memory()
             return False, f"VETO: Weak whale buying pressure (Imbalance={imbalance_ratio:.2f}x < {req_imbalance:.2f}x min for {series})", 0.0
 
-        # 2. Recent Trade Tape Recency & Momentum Check (Must be actively trading NOW & strictly flat/rising)
-        # Note: Fast 12-minute Quarter markets (1Q-4Q / 1P-3P) settle to $1.00 in minutes via institutional MM quotes!
+        # 2. Recent Trade Tape Recency, Velocity & Whip-Saw Volatility Check:
+        #    - Gate 2A (Pop-and-Drop Reversal Veto): Never buy a percentage that jumped to a peak and dropped >=4c back down!
+        #    - Gate 2B (Parabolic Vertical Spike Veto): If price jumped >= +22c inside < 2.5 mins from <62c, wait for consolidation!
+        #    - Gate 2C (Whip-Saw Volatility Veto): Block ping-ponging contracts where total tick path >= 28c with low net efficiency!
         momentum_delta = 0
         last_trade_mins_ago = 999.0
+        tape_velocity_tag = ""
         try:
             trades_resp = await client.request(
-                "GET", "/markets/trades", params={"ticker": ticker, "limit": 10}, authenticated=False
+                "GET", "/markets/trades", params={"ticker": ticker, "limit": 20}, authenticated=False
             )
             trades = trades_resp.get("trades", [])
             if not trades:
@@ -1768,13 +1799,64 @@ class PreTradeEducator:
                     return False, f"VETO: Stale market (last trade {last_trade_mins_ago:.1f}m ago > {max_stale_m:.0f}m max)", 0.0
 
                 if len(trades) >= 3:
-                    newest_price = float(trades[0].get("yes_price_dollars") or (trades[0].get("yes_price", 0) / 100.0))
-                    oldest_price = float(trades[-1].get("yes_price_dollars") or (trades[-1].get("yes_price", 0) / 100.0))
-                    momentum_delta = int(round((newest_price - oldest_price) * 100))
+                    t_prices = [
+                        int(round(float(tr.get("yes_price_dollars") or (tr.get("yes_price", 0) / 100.0)) * 100))
+                        for tr in trades
+                    ]
+                    newest_c = t_prices[0]
+                    window_10 = t_prices[:10]
+                    oldest_10_c = window_10[-1]
+                    momentum_delta = newest_c - oldest_10_c
                     if momentum_delta < 0:
                         self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
                         self.save_memory()
-                        return False, f"VETO: Negative tape drift ({momentum_delta}c over last 10 trades — only buying rising/flat leaders)", 0.0
+                        return False, f"VETO: Negative tape drift ({momentum_delta}c over last {len(window_10)} trades — only buying rising/flat leaders)", 0.0
+
+                    # Gate 2A: Pop-and-Drop / Peak Pullback Veto (Jumped up and is now dropping back down!)
+                    tape_high_c = max(t_prices[:12])
+                    pullback_from_peak_c = tape_high_c - newest_c
+                    if pullback_from_peak_c >= 4:
+                        self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+                        self.save_memory()
+                        return False, (
+                            f"VETO [Pop-and-Drop Reversal]: Jumped to {tape_high_c}c peak and dropped -{pullback_from_peak_c}c "
+                            f"back down to {newest_c}c (avoiding fading spike!)"
+                        ), 0.0
+
+                    # Gate 2B: Parabolic Vertical Spike / Overheated FOMO Exhaustion Veto
+                    # Check trades within the last 2.5 minutes: if it jumped >= +22c from <62c in <2.5 mins, wait for consolidation!
+                    recent_fast_prices = []
+                    for tr, pc in zip(trades, t_prices):
+                        try:
+                            tr_dt = datetime.fromisoformat(tr["created_time"].replace("Z", "+00:00"))
+                            if (now_utc - tr_dt).total_seconds() <= 150.0:
+                                recent_fast_prices.append(pc)
+                        except Exception:
+                            pass
+                    if len(recent_fast_prices) >= 2:
+                        fast_low_c = min(recent_fast_prices)
+                        fast_jump_c = newest_c - fast_low_c
+                        if fast_jump_c >= 22 and fast_low_c <= 62:
+                            self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+                            self.save_memory()
+                            return False, (
+                                f"VETO [Overheated Vertical Spike]: Percentage jumped +{fast_jump_c}c ({fast_low_c}c -> {newest_c}c) "
+                                "in <2.5 mins — waiting for consolidation so it doesn't snap back!"
+                            ), 0.0
+
+                    # Gate 2C: Tick-to-Tick Whip-Saw Volatility Veto (Ping-Pong Percentage)
+                    total_path_c = sum(abs(window_10[i] - window_10[i - 1]) for i in range(1, len(window_10)))
+                    net_disp_c = abs(newest_c - oldest_10_c)
+                    eff_ratio = (net_disp_c / total_path_c) if total_path_c > 0 else 1.0
+                    if total_path_c >= 24 and eff_ratio < 0.25:
+                        self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+                        self.save_memory()
+                        return False, (
+                            f"VETO [Whip-Saw Percentage Volatility]: Price ping-ponging ({total_path_c}c total swing for only "
+                            f"{momentum_delta:+d}c net move, efficiency={eff_ratio:.0%})!"
+                        ), 0.0
+                    if 2 <= momentum_delta <= 14 and pullback_from_peak_c <= 1 and eff_ratio >= 0.60:
+                        tape_velocity_tag = f" | +STAIR-STEP-VELOCITY(Eff={eff_ratio:.0%})"
         except Exception as e:
             return False, f"VETO: Trade tape unavailable ({e})", 0.0
 
@@ -1785,10 +1867,12 @@ class PreTradeEducator:
             self.save_memory()
             return False, ext_reason, 0.0
 
-        # 3B. Live Pinnacle / Sharp Book Multiplicative De-Vig Check (The Odds API v4)
+        # 3B. Live Pinnacle / Sharp Book Multiplicative De-Vig Check (The Odds API v4) + Stair-Step Tape Velocity Tag
         pin_note = await self.verify_pinnacle_sharp_odds(client, series, ticker, title)
         if pin_note:
             ext_reason += pin_note
+        if tape_velocity_tag:
+            ext_reason += tape_velocity_tag
 
         # 4. Self-Learning Series & Archetype Confidence Multiplier + A+ Whale Wall Boost
         conf_mult = 1.0

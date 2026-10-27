@@ -1238,30 +1238,35 @@ class PreTradeEducator:
                     pts_needed = max(0.0, target_val - cur_pts)
                     gm_margin_tot = abs(float(competitors[0].get("score", 0) or 0) - float(competitors[1].get("score", 0) or 0))
                     try:
-                        cur_clk_m = float(str(clock_disp).replace("'", "").split(":")[0].split("+")[0] or 0) if ":" in str(clock_disp) else 0.5
+                        clean_clk = str(clock_disp).replace("'", "").split(":")[0].split("+")[0].strip()
+                        cur_clk_m = float(clean_clk) if clean_clk else 0.5
                     except Exception:
                         cur_clk_m = 6.0
 
+                    # Positive-Theta Total Rule:
+                    # In Soccer & NHL, NEVER buy an "Over" Total unless the goals are ALREADY 100% scored on the scoreboard (pts_needed <= 0)!
+                    # Hoping for a goal in the last 15-30 minutes has negative time-decay (Theta bleeds every minute without a goal).
+                    if (is_soccer or "NHL" in series) and pts_needed > 0.0:
+                        return False, (
+                            f"VETO [Negative-Theta Unbanked Total]: {series} still needs {pts_needed:.1f} more goal(s) "
+                            f"({cur_pts:.0f}/{target_val:.1f} at {clock_disp}) — never hope for goals against a ticking clock!"
+                        )
+
                     # Period-Aware + Minute-by-Minute Clock-Ahead Scoring Pace Curve:
-                    # - Quarter/Half Totals (req_periods is not None): require >= 60% of that Quarter/Half total banked (and >=85% if <3.5m left in window!)
-                    # - NHL Full-Game Totals (3 periods): P1 >= 45%, P2 >= 68%, P3 >= 80%
-                    # - NBA/NFL/NCAAF Full-Game Totals (4 quarters): must ALSO be >= +6.0% AHEAD of exact minute-by-minute elapsed game clock!
                     if req_periods is not None:
                         is_final_period_of_win = (live_period == req_periods[-1])
-                        req_tot_pct = 85.0 if (is_final_period_of_win and cur_clk_m < 3.5) else (72.0 if (is_final_period_of_win and cur_clk_m < 6.0) else 60.0)
+                        req_tot_pct = 90.0 if (is_final_period_of_win and cur_clk_m < 4.5) else 80.0
                     elif is_soccer:
-                        req_tot_pct = 55.0 if live_period == 1 else 68.0
+                        req_tot_pct = 100.0
                     elif "NHL" in series:
-                        elapsed_nhl_m = ((min(3, live_period) - 1) * 20.0) + max(0.0, 20.0 - cur_clk_m)
-                        elapsed_nhl_pct = min(92.0, (elapsed_nhl_m / 60.0) * 100.0)
-                        req_tot_pct = max({1: 45.0, 2: 68.0}.get(live_period, 80.0), elapsed_nhl_pct + 6.0)
+                        req_tot_pct = 100.0
                     else:
                         p_len_m = 15.0 if series.startswith(("KXNFL", "KXNCAAF")) else (20.0 if "NCAAMB" in series else 12.0)
                         reg_tot_m = 60.0 if series.startswith(("KXNFL", "KXNCAAF")) else (40.0 if "NCAAMB" in series else 48.0)
                         max_reg_p = 2 if "NCAAMB" in series else 4
                         elapsed_gm_m = ((min(max_reg_p, live_period) - 1) * p_len_m) + max(0.0, p_len_m - cur_clk_m)
-                        elapsed_gm_pct = min(93.0, (elapsed_gm_m / reg_tot_m) * 100.0)
-                        req_tot_pct = max({1: 36.0, 2: 58.0, 3: 72.0}.get(live_period, 82.0), elapsed_gm_pct + 6.0)
+                        elapsed_gm_pct = min(95.0, (elapsed_gm_m / reg_tot_m) * 100.0)
+                        req_tot_pct = max({1: 65.0, 2: 78.0, 3: 86.0}.get(live_period, 92.0), elapsed_gm_pct + 12.0)
 
                     # Point Trap 0 (Overtime Sudden-Death & Short-Period Impossible-Total Trap):
                     # - NHL Overtime (P4+): Sudden-death 3-on-3 or Shootout means AT MOST 1.0 goal can be scored in the entire rest of the game!

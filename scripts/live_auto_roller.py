@@ -595,20 +595,15 @@ class PreTradeEducator:
             st_state["mode"] = f"CONSERVATIVE_DEFENSE({st_state['loss_streak']}L)"
         self.save_memory()
 
-    def get_streak_sizing(self, equity_cents: int, bid_cents: int) -> tuple[int, str, float]:
+    def get_streak_sizing(self, equity_cents: int, bid_cents: int, ticker: str = "") -> tuple[int, str, float]:
         """
-        Returns (target_stake_cents, mode_label, extra_req_imbalance):
-        1) CONSERVATIVE_DEFENSE (After any loss or $0 House-Money Pool):
-           - Tight ~12% stake (~$54 at $440 equity = ~65 contracts -> +$5.20/win, -$6.50 max risk at -10c stop).
-           - Stricter Whale Imbalance (+0.20x boost required).
-        2) STANDARD_BUILDER (1 Win in a row & positive House-Money Pool):
-           - ~19% stake (~$85 at $440 equity = ~103 contracts -> +$8.25/win, -$10.30 max risk at -10c stop).
-        3) HOUSE_MONEY_OFFENSE (2-3 Wins in a row & >= $5.00 banked House-Money Pool):
-           - Reinvests House-Money Pool up to ~$130 stake (~158 contracts -> +$12.60/win).
-        4) DAILY_HEATER_SUPER_COMPOUNDER (4+ Wins in a row & >= $30.00 banked Daily Profit Pool):
-           - When up big on the day, scales with your Daily Profit Pool up to $150-$195 stake
-             (180-235 contracts -> +$14.50 to +$19.00 per win!), while -10c stop-loss (-$18 to -$23)
-             is still <50% of your banked daily winnings (0% of starting principal at risk!).
+        Combines 4-Gear Daily Streak Scaling with 3-Tier Play Action Sizing:
+        - TIER C (SCOUT SCALP, CONF 68-75 or early P1/P2 / $80-$290 book depth):
+          *$24-$32 stake (~30-38 contracts -> +$2.00 to +$3.00 profit/win, only -$2.40 max risk at -8c stop!).
+        - TIER B (BUILDER SCALP, CONF 76-83):
+          *$54-$90 stake (~68-110 contracts -> +$4.50 to +$8.50 profit/win).
+        - TIER A (A+ SNIPER / HEATER, CONF >= 84):
+          *Full 4-Gear Streak Stake ($65 in Gear 1 -> $90 in Gear 2 -> $130 in Gear 3 -> $155-$195 in Gear 4 -> +$10 to +$19/win!).
         """
         st_state = self.memory.setdefault(
             "streak_state",
@@ -619,18 +614,30 @@ class PreTradeEducator:
         hm_pool_dlr = float(st_state.get("house_money_pool_dlr", 0.0) or 0.0)
         hm_pool_cents = int(round(hm_pool_dlr * 100))
 
+        conf_sc = int(self.memory.get("last_conf_scores", {}).get(ticker, 80) or 80) if ticker else 80
+        is_scout = bool(self.memory.get("last_scout_flags", {}).get(ticker, False)) if ticker else False
+
+        if is_scout or conf_sc <= 75:
+            scout_c = min(3200, max(2200, int(equity_cents * 0.065)))
+            return scout_c, f"🎯 TIER-C SCOUT SCALP ($28 Cap, Conf={conf_sc}/100 -> +$2-$3 Target)", 0.0
+
         if w_strk >= 4 and hm_pool_dlr >= 30.0:
-            raw_target_c = min(19500, int(equity_cents * 0.36), int(equity_cents * 0.22) + int(hm_pool_cents * 0.85))
-            return raw_target_c, f"🚀 DAILY HEATER GEAR 4 ({w_strk}W Streak, Pool=+${hm_pool_dlr:.2f})", 0.0
+            base_c = min(19500, int(equity_cents * 0.36), int(equity_cents * 0.22) + int(hm_pool_cents * 0.85))
+            gear_lbl = f"🚀 GEAR-4 HEATER ({w_strk}W, Pool=+${hm_pool_dlr:.2f})"
         elif w_strk >= 2 and hm_pool_dlr >= 5.0:
-            raw_target_c = min(13000, int(equity_cents * 0.28), int(equity_cents * 0.19) + int(hm_pool_cents * 0.75))
-            return raw_target_c, f"🔥 HOUSE-MONEY GEAR 3 ({w_strk}W Streak, Pool=+${hm_pool_dlr:.2f})", 0.0
+            base_c = min(13000, int(equity_cents * 0.28), int(equity_cents * 0.19) + int(hm_pool_cents * 0.75))
+            gear_lbl = f"🔥 GEAR-3 HOUSE-MONEY ({w_strk}W, Pool=+${hm_pool_dlr:.2f})"
         elif w_strk == 1 and hm_pool_dlr > 0.0:
-            stake_c = min(8500, int(equity_cents * 0.19))
-            return stake_c, f"⚖️ STANDARD BUILDER GEAR 2 (1W Streak, Pool=+${hm_pool_dlr:.2f})", 0.0
+            base_c = min(8800, int(equity_cents * 0.19))
+            gear_lbl = f"⚖️ GEAR-2 BUILDER (1W, Pool=+${hm_pool_dlr:.2f})"
         else:
-            stake_c = min(5500, max(3000, int(equity_cents * 0.12)))
-            return stake_c, f"🛡️ CONSERVATIVE DEFENSE GEAR 1 ({l_strk}L, Protected $54 Cap)", 0.20
+            base_c = min(5800, max(3200, int(equity_cents * 0.13)))
+            gear_lbl = f"🛡️ GEAR-1 DEFENSE ({l_strk}L)"
+
+        if conf_sc <= 82:
+            builder_c = max(4200, int(base_c * 0.78))
+            return builder_c, f"⚡ TIER-B BUILDER [{gear_lbl}, Conf={conf_sc}/100]", 0.10
+        return base_c, f"💎 TIER-A SNIPER [{gear_lbl}, Conf={conf_sc}/100]", 0.0
 
     def get_daily_quota_status(self) -> dict:
         now_local = datetime.now()
@@ -1440,14 +1447,21 @@ class PreTradeEducator:
                         # Time-in-Play Velocity Gate:
                         # - In NBA/NFL/College 1st Half (P1/P2), avoid Full-Game Spreads (traps cash through 20-min Halftime) unless up +16 above spread
                         # - In NHL (3 periods), avoid Full-Game Puck Lines in P1/P2 unless up +2.5 goals above spread (use 1P/2P instead!)
+                        scout_spread_tag = ""
                         if req_periods is None and not is_soccer:
                             if "NHL" in series and live_period <= 2 and margin < (strike_val + 2.5):
-                                return False, f"VETO [NHL Intermission Gate]: Full-game puck line in P{live_period} traps cash through intermission (use 1P/2P/3P!)"
+                                if margin >= (strike_val + 1.5):
+                                    scout_spread_tag = " | SCOUT-TIER(Early P1/P2 +2G Spread)"
+                                else:
+                                    return False, f"VETO [NHL Intermission Gate]: Full-game puck line in P{live_period} traps cash through intermission (use 1P/2P/3P!)"
                             elif "NHL" not in series and live_period <= 2 and margin < (strike_val + 16.0):
-                                return False, (
-                                    f"VETO [1H Time-in-Play Gate]: Full-game spread in P{live_period} {clock_disp} traps cash through Halftime "
-                                    f"(use 1Q/2Q/1H spread instead!)"
-                                )
+                                if margin >= (strike_val + 9.5):
+                                    scout_spread_tag = " | SCOUT-TIER(Early 1H Spread)"
+                                else:
+                                    return False, (
+                                        f"VETO [1H Time-in-Play Gate]: Full-game spread in P{live_period} {clock_disp} traps cash through Halftime "
+                                        f"(use 1Q/2Q/1H spread instead!)"
+                                    )
                         # Require team to ALREADY be covering the spread by a Multi-Score Safety Cushion:
                         # - NHL/Soccer: +1.5 goals above spread (2-goal cushion so 1 goal against you CANNOT break the spread!)
                         # - Fast Quarters/Halves (req_periods is not None): +5.5 points above spread (2 full possessions!)
@@ -1474,7 +1488,7 @@ class PreTradeEducator:
                                 f"VETO [ESPN {period_tag} Spread Cushion]: {tm_prefix} margin is {margin:+.0f} ({my_pts:.0f}-{opp_pts:.0f}) "
                                 f"vs -{strike_val:.1f} spread (requires +{strike_val + req_spread_buf:.1f} min lead{st_tag}) in P{live_period} {clock_disp}"
                             )
-                        lock_tag = (" | PROP-LOCK" if margin >= (strike_val + req_spread_buf + 1.0) or st_edge >= 0.12 else "") + st_tag
+                        lock_tag = (" | PROP-LOCK" if margin >= (strike_val + req_spread_buf + 1.0) or st_edge >= 0.12 else "") + st_tag + scout_spread_tag
                         return True, f"ESPN {period_tag} Spread Verified ({tm_prefix} {my_pts:.0f}-{opp_pts:.0f}, margin {margin:+.0f} vs -{strike_val:.1f}{lock_tag} | P{live_period} {clock_disp})"
 
                 if req_periods is not None and "TOTAL" not in series and "SPREAD" not in series and len(competitors) >= 2:
@@ -2078,10 +2092,14 @@ class PreTradeEducator:
         is_quarter_mkt = any(q in series for q in ("1Q", "2Q", "3Q", "4Q", "1P", "2P", "3P"))
         is_prop_mkt = len(ticker.split("-")) >= 4
         eff_min_depth = min(min_book_depth_dlr, 90.0) if is_quarter_mkt else (min(min_book_depth_dlr, 150.0) if is_prop_mkt else min_book_depth_dlr)
+        is_depth_scout = False
         if yes_depth < eff_min_depth:
-            self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
-            self.save_memory()
-            return False, f"VETO: Thin bid liquidity (${yes_depth:.0f} < ${eff_min_depth:.0f} tier exit depth)", 0.0
+            if yes_depth >= 85.0:
+                is_depth_scout = True
+            else:
+                self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+                self.save_memory()
+                return False, f"VETO: Thin bid liquidity (${yes_depth:.0f} < $85 min Scout exit depth)", 0.0
 
         if imbalance_ratio < req_imbalance:
             self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
@@ -2293,13 +2311,16 @@ class PreTradeEducator:
         if "CLOCK-FROZEN" in ext_reason or "LATE-CLOCK" in ext_reason or is_under_no:
             conf_score += 4
         conf_score = max(10, min(99, conf_score))
-        if conf_score < 75:
+        if conf_score < 70:
             self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
             self.save_memory()
             return False, (
-                f"VETO [Low Team Pedigree / Confidence Score: {conf_score}/100 < 75 min]: Shaky team quality or matchup ({ext_reason})"
+                f"VETO [Low Team Pedigree / Confidence Score: {conf_score}/100 < 70 min]: Shaky team quality or matchup ({ext_reason})"
             ), 0.0
+        is_scout_play = is_depth_scout or ("SCOUT-TIER" in ext_reason) or (conf_score <= 75)
         self.memory.setdefault("last_conf_scores", {})[ticker] = conf_score
+        self.memory.setdefault("last_scout_flags", {})[ticker] = is_scout_play
+        tier_tag = "TIER-C SCOUT($28)" if is_scout_play else ("TIER-B BUILDER" if conf_score <= 82 else "TIER-A SNIPER")
 
         conf_mult = 1.0
         if series_pnl > 0:
@@ -2325,7 +2346,7 @@ class PreTradeEducator:
 
         self.save_memory()
         reason = (
-            f"APPROVED [CONF={conf_score}/100 | Whale={imbalance_ratio:.2f}x | Depth=${yes_depth:.0f} | LastTrade={last_trade_mins_ago:.1f}m | Tape={momentum_delta:+d}c | {ext_reason}]"
+            f"APPROVED [{tier_tag} | CONF={conf_score}/100 | Whale={imbalance_ratio:.2f}x | Depth=${yes_depth:.0f} | LastTrade={last_trade_mins_ago:.1f}m | Tape={momentum_delta:+d}c | {ext_reason}]"
         )
         return True, reason, conf_mult
 
@@ -3147,11 +3168,11 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             entry_order_side = "ask" if is_under_cand else "bid"
                             eff_yes_entry_c = max(1, min(99, 100 - bid_cents)) if is_under_cand else bid_cents
                             price_str = f"{eff_yes_entry_c / 100:.4f}"
-                            # ANTI-MARTINGALE 3-GEAR SIZING (Conservative When Losing / House-Money When Winning):
+                            # 3-TIER PLAY SIZING + 4-GEAR DAILY STREAK COMPOUNDING:
                             working_equity_cents = min(equity_cents, tier.get("working_cap_cents", equity_cents))
-                            streak_stake_c, streak_mode_label, _ = educator.get_streak_sizing(working_equity_cents, bid_cents)
+                            streak_stake_c, streak_mode_label, _ = educator.get_streak_sizing(working_equity_cents, bid_cents, ticker=t)
                             target_stake_cents = min(streak_stake_c, total_cents)
-                            eff_min_contracts = max(12, int(round((target_stake_cents * 0.75) // max(1, bid_cents))))
+                            eff_min_contracts = max(10, int(round((target_stake_cents * 0.72) // max(1, bid_cents))))
 
                             # Just-In-Time (JIT) Cross-Shard Liquidity Sweeper: pull cash from other shards if needed!
                             if shard_cents.get(shard_key, 0) < target_stake_cents:

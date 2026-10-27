@@ -778,6 +778,13 @@ class PreTradeEducator:
                         my_pts = _comp_window_pts(competitors[c_idx])
                         opp_pts = _comp_window_pts(competitors[1 - c_idx])
                         margin = my_pts - opp_pts
+                        # Time-in-Play Velocity Gate: In 1st Half (P1/P2), avoid Full-Game Spreads (which trap cash through
+                        # the 20-min Halftime break + 2nd Half) unless leading by +18+ above the spread! Use 1Q/2Q/1H instead!
+                        if req_periods is None and not is_soccer and live_period <= 2 and margin < (strike_val + 16.0):
+                            return False, (
+                                f"VETO [1H Time-in-Play Gate]: Full-game spread in P{live_period} {clock_disp} traps cash through Halftime "
+                                f"(use 1Q/2Q/1H spread instead!)"
+                            )
                         # Require team to ALREADY be covering the spread by at least +3.5 points (2+ possessions above the spread line!)
                         if margin <= 0 or margin < (strike_val + 3.5):
                             return False, (
@@ -1013,18 +1020,20 @@ class PreTradeEducator:
                                     f"in P{period_num} (requires 2+ goal lead or 3rd Period!)"
                                 )
                             elif series in ("KXNBAGAME", "KXNCAAMBGAME", "KXNCAAWBGAME"):
-                                min_bball_margin = 6 if period_num <= 2 else 4
+                                # Time-in-Play Velocity Gate: In P1/P2 (1st Half), require a massive +15 blowout to buy Full-Game ML
+                                # so we prioritize 1Q, 2Q, and 1H fast-settle lines instead of trapping cash through Halftime!
+                                min_bball_margin = 15 if (series == "KXNBAGAME" and period_num <= 2) else (6 if period_num <= 2 else 5)
                                 if margin < min_bball_margin:
                                     return False, (
-                                        f"VETO [Basketball 1-Possession Risk]: '{title}' only up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
-                                        f"(+{margin:.0f} < +{min_bball_margin} pt cushion in P{period_num})"
+                                        f"VETO [Basketball Cushion/Time Gate]: '{title}' up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
+                                        f"(+{margin:.0f} < +{min_bball_margin} pt min in P{period_num} — prioritizing 1Q/2Q/1H!)"
                                     )
                             elif series in ("KXNFLGAME", "KXNCAAFGAME"):
-                                min_fball_margin = 7 if period_num <= 2 else 4
+                                min_fball_margin = 14 if period_num <= 2 else 6
                                 if margin < min_fball_margin:
                                     return False, (
-                                        f"VETO [Football FG Risk]: '{title}' only up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
-                                        f"(+{margin:.0f} < +{min_fball_margin} pt cushion in P{period_num})"
+                                        f"VETO [Football Cushion/Time Gate]: '{title}' up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
+                                        f"(+{margin:.0f} < +{min_fball_margin} pt min in P{period_num} — prioritizing 1Q/2Q/1H!)"
                                     )
 
                             # Check Vegas Opening vs Closing Line Movement, Game Clock Period & Live Win Probability

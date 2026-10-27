@@ -2599,6 +2599,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     pk_c = peak_bids.get(t, avg_ent_c + 6)
                     if realized_pnl >= 0:
                         educator.memory.setdefault("harvested_tickers", []).append(t)
+                        educator.memory.setdefault("last_win_entry_cents", {})[t] = avg_ent_c
                         profit_dlr = realized_pnl if realized_pnl > 0 else max(0.01, round((cnt_int * 0.92) - stake_dlr, 2))
                         educator.record_trade_autopsy(
                             ticker=t,
@@ -2941,10 +2942,12 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     + list(tracked_open_positions.keys())
                 )
                 harvested_set = set(educator.memory.get("harvested_tickers", []))
-                # STRICT ANTI-DOUBLE-BOOKING & STOPPED-OUT GAME BAN (Rule 3):
+                last_win_entry_map = educator.memory.get("last_win_entry_cents", {})
+                # STRICT ANTI-DOUBLE-BOOKING, STOPPED-OUT GAME BAN & STAIR-STEP MULTI-SCALP ON THE WAY UP:
                 # 1) NEVER hold 2 concurrent positions/orders in the same game at the same time (`active_all_tickers`).
                 # 2) If a game EVER stops out/loses (`stopped_out_matchups`), permanently ban that entire game across ALL series forever!
-                # 3) If a fast Quarter/Period/Prop WINS and cashes out, allow rolling into the NEXT Quarter/Period/Late-Clock Under!
+                # 3) If a trade WINS and cashes out, allow rolling into the next Quarter/Period/Under OR re-scalping the same winner
+                #    ONLY if it has stepped UP >= +4c higher on the staircase (`side_ask >= last_win_entry + 4`, never on a pullback)!
                 active_matchups = (
                     set(stopped_out_matchups)
                     | {_matchup_slug(tk) for tk in active_all_tickers if not tk.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB", "KXINX", "KXNASDAQ", "KXWTI"))}
@@ -2952,11 +2955,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 active_events = (
                     set(stopped_out_events)
                     | {_entity_key(tk) for tk in active_all_tickers}
-                    | {
-                        _entity_key(tk)
-                        for tk in harvested_set
-                        if not any(k in tk for k in ("SPREAD", "TOTAL", "PTS", "REB", "AST", "3PT", "YDS", "REC", "GOAL", "SOA", "1Q", "2Q", "3Q", "4Q", "1P", "2P", "3P", "1H", "2H"))
-                    }
                 )
                 active_crypto_count = sum(
                     1
@@ -3027,24 +3025,23 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 mins_to_exp = (exp_dt - now_utc).total_seconds() / 60.0
                             except Exception:
                                 continue
-                            if -10080.0 <= mins_to_exp <= 360.0:
+                            if -10080.0 <= mins_to_exp <= 185.0:
                                 has_near_active = True
 
                             if (
                                 t in resting_buy_tickers
                                 or resting_sell_counts.get(t, 0) > 0
-                                or t in harvested_set
                                 or event_prefix in active_events
                                 or (not is_crypto_s and not is_index_s and mslug in active_matchups)
                             ):
                                 continue
 
-                            # Allow -7d to +6h on Live Sports so delayed/multi-day Tennis & Sports games are never skipped by Kalshi's stale schedule timestamp!
+                            # Allow -7d to +185m on Live Sports so delayed/multi-day Tennis & active live games are caught while filtering out games hours in the future!
                             if is_crypto_s or is_index_s:
                                 if not (5.0 <= mins_to_exp <= 25.0):
                                     continue
                             else:
-                                if not (-10080.0 <= mins_to_exp <= 360.0):
+                                if not (-10080.0 <= mins_to_exp <= 185.0):
                                     continue
 
                             bid_f = float(m.get("yes_bid_dollars") or 0)
@@ -3067,6 +3064,14 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 clean_title = raw_title
                             else:
                                 continue
+
+                            # Stair-Step Multi-Scalp on the Way Up:
+                            # If we already scalped `t` once for a win, only re-scalp it if its price has stepped UP >= +4c higher on the ladder!
+                            if t in harvested_set:
+                                eff_cand_ask = no_ask_c if is_under_candidate else ask_c
+                                prev_win_ent = int(last_win_entry_map.get(t, 99) or 99)
+                                if eff_cand_ask < (prev_win_ent + 4):
+                                    continue
 
                             eff_mins = max(0.0, mins_to_exp)
                             is_q_series = any(q in series for q in ("1Q", "2Q", "3Q", "4Q", "1P", "2P", "3P"))

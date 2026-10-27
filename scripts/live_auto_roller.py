@@ -600,10 +600,13 @@ class PreTradeEducator:
            - Tight ~12% stake (~$54 at $440 equity = ~65 contracts -> +$5.20/win, -$6.50 max risk at -10c stop).
            - Stricter Whale Imbalance (+0.20x boost required).
         2) STANDARD_BUILDER (1 Win in a row & positive House-Money Pool):
-           - ~19% stake (~$84 at $440 equity = ~102 contracts -> +$8.15/win, -$10.20 max risk at -10c stop).
-        3) HOUSE_MONEY_OFFENSE (2+ Wins in a row & >= $6.00 banked House-Money Pool):
-           - Reinvests House-Money Pool up to ~$115-$120 stake (~140 contracts -> +$11.20/win) to recover drawdown fast,
-             protected by the Tight -10c Stop-Loss and Global Same-Game Lockout!
+           - ~19% stake (~$85 at $440 equity = ~103 contracts -> +$8.25/win, -$10.30 max risk at -10c stop).
+        3) HOUSE_MONEY_OFFENSE (2-3 Wins in a row & >= $5.00 banked House-Money Pool):
+           - Reinvests House-Money Pool up to ~$130 stake (~158 contracts -> +$12.60/win).
+        4) DAILY_HEATER_SUPER_COMPOUNDER (4+ Wins in a row & >= $30.00 banked Daily Profit Pool):
+           - When up big on the day, scales with your Daily Profit Pool up to $150-$195 stake
+             (180-235 contracts -> +$14.50 to +$19.00 per win!), while -10c stop-loss (-$18 to -$23)
+             is still <50% of your banked daily winnings (0% of starting principal at risk!).
         """
         st_state = self.memory.setdefault(
             "streak_state",
@@ -614,15 +617,18 @@ class PreTradeEducator:
         hm_pool_dlr = float(st_state.get("house_money_pool_dlr", 0.0) or 0.0)
         hm_pool_cents = int(round(hm_pool_dlr * 100))
 
-        if w_strk >= 2 and hm_pool_dlr >= 5.0:
-            raw_target_c = min(12000, int(equity_cents * 0.26), int(equity_cents * 0.19) + int(hm_pool_cents * 0.65))
-            return raw_target_c, f"🔥 HOUSE-MONEY OFFENSE ({w_strk}W Streak, Pool=+${hm_pool_dlr:.2f})", 0.0
+        if w_strk >= 4 and hm_pool_dlr >= 30.0:
+            raw_target_c = min(19500, int(equity_cents * 0.36), int(equity_cents * 0.22) + int(hm_pool_cents * 0.85))
+            return raw_target_c, f"🚀 DAILY HEATER GEAR 4 ({w_strk}W Streak, Pool=+${hm_pool_dlr:.2f})", 0.0
+        elif w_strk >= 2 and hm_pool_dlr >= 5.0:
+            raw_target_c = min(13000, int(equity_cents * 0.28), int(equity_cents * 0.19) + int(hm_pool_cents * 0.75))
+            return raw_target_c, f"🔥 HOUSE-MONEY GEAR 3 ({w_strk}W Streak, Pool=+${hm_pool_dlr:.2f})", 0.0
         elif w_strk == 1 and hm_pool_dlr > 0.0:
             stake_c = min(8500, int(equity_cents * 0.19))
-            return stake_c, f"⚖️ STANDARD BUILDER (1W Streak, Pool=+${hm_pool_dlr:.2f})", 0.0
+            return stake_c, f"⚖️ STANDARD BUILDER GEAR 2 (1W Streak, Pool=+${hm_pool_dlr:.2f})", 0.0
         else:
             stake_c = min(5500, max(3000, int(equity_cents * 0.12)))
-            return stake_c, f"🛡️ CONSERVATIVE DEFENSE ({l_strk}L, Protected $54 Cap)", 0.20
+            return stake_c, f"🛡️ CONSERVATIVE DEFENSE GEAR 1 ({l_strk}L, Protected $54 Cap)", 0.20
 
     def get_daily_quota_status(self) -> dict:
         now_local = datetime.now()
@@ -2245,7 +2251,7 @@ def get_scaling_tier(equity_cents: int) -> dict:
             "min_contracts": dyn_min_contracts,
             "max_concurrent": 3,
             "min_depth_dlr": 300.0,
-            "iceberg_slice": 70,
+            "iceberg_slice": 240,
         }
     elif eq_dlr < 2000.0:
         dyn_max_stake_c = min(15000, max(6000, int(equity_cents * 0.11)))
@@ -2259,7 +2265,7 @@ def get_scaling_tier(equity_cents: int) -> dict:
             "min_contracts": dyn_min_contracts,
             "max_concurrent": 4,
             "min_depth_dlr": 450.0,
-            "iceberg_slice": 120,
+            "iceberg_slice": 280,
         }
     else:
         working_eq_dlr = min(eq_dlr, 5000.0)

@@ -1358,69 +1358,75 @@ class PreTradeEducator:
                                 f"+{pts_to_break_under:.0f} Goal Cushion at {clock_disp} | LATE-CLOCK)"
                             )
                         elif "NHL" in series:
-                            if live_period < 3 or cur_clk_m > 12.0:
+                            target_nhl_p = max(req_periods) if req_periods else 3
+                            max_nhl_clk = 10.0 if req_periods else 12.0
+                            if live_period != target_nhl_p or cur_clk_m > max_nhl_clk:
                                 return False, (
-                                    f"VETO [NHL Under Too Early]: P{live_period} {clock_disp} (requires P3 <=12:00 left for Late-Clock Under)"
+                                    f"VETO [NHL {period_tag} Under Too Early]: P{live_period} {clock_disp} (requires P{target_nhl_p} <={max_nhl_clk:.0f}:00 left)"
                                 )
-                            if gm_margin_tot == 0.0:
+                            if req_periods is None and gm_margin_tot == 0.0:
                                 return False, (
                                     f"VETO [NHL Tied Overtime Under Trap]: Game is TIED at P3 {clock_disp} "
                                     "(Overtime/Shootout guarantees an extra goal and kills Under!)"
                                 )
-                            min_nhl_under_buf = 3.0 if gm_margin_tot <= 1.0 else 2.0
+                            min_nhl_under_buf = 3.0 if (req_periods is None and gm_margin_tot <= 1.0) else 2.0
                             if pts_to_break_under < min_nhl_under_buf:
                                 return False, (
-                                    f"VETO [NHL Under Cushion <{min_nhl_under_buf:.0f} Goals]: {cur_pts:.0f} goals vs Under {target_val:.1f} "
-                                    f"at P3 {clock_disp} (margin={gm_margin_tot:.0f} — empty-netter/OT shield!)"
+                                    f"VETO [NHL {period_tag} Under Cushion <{min_nhl_under_buf:.0f} Goals]: {cur_pts:.0f} goals vs Under {target_val:.1f} "
+                                    f"at P{live_period} {clock_disp} (margin={gm_margin_tot:.0f} — empty-netter/OT shield!)"
                                 )
                             return True, (
-                                f"ESPN NHL Late-Clock UNDER Verified ({cur_pts:.0f} goals vs Under {target_val:.1f} = "
-                                f"+{pts_to_break_under:.0f} Goal Cushion at P3 {clock_disp} | LATE-CLOCK)"
+                                f"ESPN NHL {period_tag} Late-Clock UNDER Verified ({cur_pts:.0f} goals vs Under {target_val:.1f} = "
+                                f"+{pts_to_break_under:.0f} Goal Cushion at P{live_period} {clock_disp} | LATE-CLOCK)"
                             )
                         elif series.startswith(("KXNFL", "KXNCAAF")):
-                            if live_period < 4 or cur_clk_m > 10.0:
+                            target_fb_p = max(req_periods) if req_periods else 4
+                            if live_period != target_fb_p or cur_clk_m > 10.0:
                                 return False, (
-                                    f"VETO [Football Under Too Early]: P{live_period} {clock_disp} (requires P4 <=10:00 left for Late-Clock Under)"
+                                    f"VETO [Football {period_tag} Under Too Early]: P{live_period} {clock_disp} (requires P{target_fb_p} <=10:00 left)"
                                 )
-                            if gm_margin_tot < 9.0:
+                            if req_periods is None and gm_margin_tot < 9.0:
                                 return False, (
                                     f"VETO [Football 1-Score Overtime/Hurry-Up Under Trap]: Margin is only {gm_margin_tot:.0f} pts in P4 {clock_disp} "
                                     "(requires >=9 pt 2-score lead so game cannot tie/go to OT and leader runs the clock!)"
                                 )
                             if pts_to_break_under < 10.0:
                                 return False, (
-                                    f"VETO [Football Under <2-Score Cushion]: Only {pts_to_break_under:.0f} pts cushion on Under {target_val:.1f} "
-                                    f"(requires >=10 pts / 2-possession buffer in P4 {clock_disp}!)"
+                                    f"VETO [Football {period_tag} Under <2-Score Cushion]: Only {pts_to_break_under:.0f} pts cushion on Under {target_val:.1f} "
+                                    f"(requires >=10 pts / 2-possession buffer in P{live_period} {clock_disp}!)"
                                 )
                             return True, (
-                                f"ESPN Football Late-Clock UNDER Verified ({cur_pts:.0f} pts vs Under {target_val:.1f} = "
-                                f"+{pts_to_break_under:.0f} pt Cushion at P4 {clock_disp} | LATE-CLOCK)"
+                                f"ESPN Football {period_tag} Late-Clock UNDER Verified ({cur_pts:.0f} pts vs Under {target_val:.1f} = "
+                                f"+{pts_to_break_under:.0f} pt Cushion at P{live_period} {clock_disp} | LATE-CLOCK)"
                             )
                         else:
-                            # Basketball (NBA / NCAAMB) Late-Clock Under:
-                            final_reg_p = 2 if "NCAAMB" in series else 4
-                            if live_period < final_reg_p or cur_clk_m > 7.5 or cur_clk_m < 0.8:
+                            # Basketball (NBA / NCAAMB) Late-Clock Under (Supports 1Q/2Q/3Q/1H which have ZERO Overtime risk, plus Full-Game P4!):
+                            final_reg_p = max(req_periods) if req_periods else (2 if "NCAAMB" in series else 4)
+                            max_bb_clk = 6.0 if req_periods else 7.5
+                            if live_period != final_reg_p or cur_clk_m > max_bb_clk or cur_clk_m < 0.8:
                                 return False, (
-                                    f"VETO [Basketball Under Clock Window]: P{live_period} {clock_disp} "
-                                    f"(requires final period <=7:30 left for Late-Clock Under)"
+                                    f"VETO [Basketball {period_tag} Under Clock Window]: P{live_period} {clock_disp} "
+                                    f"(requires P{final_reg_p} <={max_bb_clk:.1f}m left for Late-Clock Under)"
                                 )
-                            if gm_margin_tot < 9.0:
+                            if req_periods is None and gm_margin_tot < 9.0:
                                 return False, (
                                     f"VETO [Basketball Overtime & Foul-Parade Under Trap]: Margin is only {gm_margin_tot:.0f} pts with {clock_disp} left "
                                     "(requires >=9 pt 3-possession lead so game cannot go to 25-pt Overtime or FT foul parade!)"
                                 )
                             p_len_m = 20.0 if "NCAAMB" in series else 12.0
-                            elapsed_gm_m = max(5.0, ((min(final_reg_p, live_period) - 1) * p_len_m) + max(0.0, p_len_m - cur_clk_m))
+                            num_p_in_win = len(req_periods) if req_periods else (2 if "NCAAMB" in series else 4)
+                            elapsed_gm_m = max(4.0, ((num_p_in_win - 1) * p_len_m) + max(0.0, p_len_m - cur_clk_m))
                             live_ppm = cur_pts / elapsed_gm_m
                             req_ppm_to_lose = pts_to_break_under / max(0.5, cur_clk_m)
-                            if pts_to_break_under < 14.0 or req_ppm_to_lose < (live_ppm * 1.45):
+                            min_bb_cush = 11.0 if req_periods else 14.0
+                            if pts_to_break_under < min_bb_cush or req_ppm_to_lose < (live_ppm * 1.40):
                                 return False, (
-                                    f"VETO [Basketball Under Pace Cushion]: Cushion={pts_to_break_under:.0f} pts in {clock_disp} "
-                                    f"(req_ppm={req_ppm_to_lose:.1f} vs live_ppm={live_ppm:.1f} — needs >=14pt buffer & >=1.45x pace gap!)"
+                                    f"VETO [Basketball {period_tag} Under Pace Cushion]: Cushion={pts_to_break_under:.0f} pts in {clock_disp} "
+                                    f"(req_ppm={req_ppm_to_lose:.1f} vs live_ppm={live_ppm:.1f} — needs >={min_bb_cush:.0f}pt buffer & >=1.40x pace gap!)"
                                 )
                             return True, (
-                                f"ESPN Basketball Late-Clock UNDER Verified ({cur_pts:.0f} pts vs Under {target_val:.1f} = "
-                                f"+{pts_to_break_under:.0f} pt Cushion in {clock_disp}, reqPPM={req_ppm_to_lose:.1f} vs live={live_ppm:.1f} | LATE-CLOCK)"
+                                f"ESPN Basketball {period_tag} Late-Clock UNDER Verified ({cur_pts:.0f} pts vs Under {target_val:.1f} = "
+                                f"+{pts_to_break_under:.0f} pt Cushion in P{live_period} {clock_disp}, reqPPM={req_ppm_to_lose:.1f} vs live={live_ppm:.1f} | LATE-CLOCK)"
                             )
 
                 if "BTTS" in series and len(competitors) >= 2:

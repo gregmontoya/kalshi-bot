@@ -6,6 +6,7 @@ Antigravity Trophy Stack, and Series Self-Learning Leaderboard every 5 seconds.
 
 import json
 import os
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -76,24 +77,24 @@ HTML_PAGE = """<!DOCTYPE html>
       <div class="kpi-sub" id="twoDaySub">2-Day Net: +$16.32</div>
     </div>
     <div class="kpi">
-      <div class="kpi-lbl">Tonight Bet ($542.40)</div>
-      <div class="kpi-val cyan" id="betProg">+$6.91 / +$72.50</div>
-      <div class="kpi-sub" id="betRem">$65.59 left tonight</div>
+      <div class="kpi-lbl">Today Goal ($860.00)</div>
+      <div class="kpi-val cyan" id="betProg">+$23.34 / +$181.40</div>
+      <div class="kpi-sub" id="betRem">$158.06 left today</div>
     </div>
     <div class="kpi">
-      <div class="kpi-lbl">AI Trophy & Payday Vault</div>
-      <div class="kpi-val amber" id="trophyVal">$10.00 Pending</div>
+      <div class="kpi-lbl">Daily Bet Quota (25)</div>
+      <div class="kpi-val amber" id="trophyVal">1 / 25 Bets</div>
       <div class="kpi-sub" id="vaultSub">> $5k Bank Sweep: $0.00</div>
     </div>
   </div>
 
   <div class="card">
     <div class="card-title">
-      <span>🎯 Gate 1 Tonight (+$200 Deposit Adjusted): $469.90 -> $542.40 (+$72.50 Net Profit Target)</span>
-      <span id="betPct">9.5%</span>
+      <span>🎯 Today Target (Tue Oct 27, +$210.70 Deposit Adjusted): $678.60 -> $860.00 (+$181.40 Profit)</span>
+      <span id="betPct">12.9%</span>
     </div>
-    <div class="bar-bg"><div class="bar-fill" id="betBar" style="width:9.5%"></div></div>
-    <div style="font-size:0.73rem;color:var(--muted)">Adjusted for +$196.00 net ($200.00 gross) deposit at 8:09 PM • Stretch Target: $575–$600+</div>
+    <div class="bar-bg"><div class="bar-fill" id="betBar" style="width:12.9%"></div></div>
+    <div style="font-size:0.73rem;color:var(--muted)">Gate A ($750 Pro Whale Mode): $48.06 away! • Primary Goal: $860.00 • Stretch Goal: $950–$1,000+</div>
   </div>
 
   <div class="card">
@@ -126,12 +127,15 @@ async function refresh() {
     document.getElementById('eqVal').textContent = '$' + d.equity.toFixed(2);
     document.getElementById('cashSub').textContent = `Cash: $${d.cash.toFixed(2)} | Open: $${d.open_port.toFixed(2)}`;
     document.getElementById('todayProfit').textContent = (d.today_net >= 0 ? '+$' : '-$') + Math.abs(d.today_net).toFixed(2);
-    const betGained = Math.max(0, d.equity - 469.90);
-    const betPct = Math.min(100, (betGained / 72.50) * 100);
-    document.getElementById('betProg').textContent = `+$${betGained.toFixed(2)} / +$72.50`;
-    document.getElementById('betRem').textContent = `$${Math.max(0, 542.40 - d.equity).toFixed(2)} left tonight`;
+    const betGained = Math.max(0, d.equity - 678.60);
+    const betPct = Math.min(100, (betGained / 181.40) * 100);
+    document.getElementById('betProg').textContent = `+$${betGained.toFixed(2)} / +$181.40`;
+    document.getElementById('betRem').textContent = `$${Math.max(0, 860.00 - d.equity).toFixed(2)} left today`;
     document.getElementById('betPct').textContent = betPct.toFixed(1) + '%';
     document.getElementById('betBar').style.width = betPct + '%';
+    if (d.quota) {
+      document.getElementById('trophyVal').textContent = `${d.quota.completed_bets} / ${d.quota.target_bets} (${d.quota.wins}W-${d.quota.losses}L)`;
+    }
 
     const spPct = Math.min(100, (d.equity / 5000.0) * 100);
     document.getElementById('sprintPct').textContent = spPct.toFixed(1) + '% ($' + d.equity.toFixed(2) + ' / $5,000)';
@@ -173,8 +177,10 @@ class Handler(BaseHTTPRequestHandler):
                     pass
             hist = mem.get("equity_history", [])
             last_h = hist[-1] if hist else {"equity": 286.02, "cash": 286.02, "portfolio": 0.0}
-            daily = mem.get("daily_ledger", {}).get("2026-10-26", {})
-            today_net = float(daily.get("net_change_dlr", 16.07))
+            today_key = datetime.now().strftime("%Y-%m-%d")
+            daily = mem.get("daily_ledger", {}).get(today_key, {})
+            today_net = float(daily.get("net_change_dlr", 23.34))
+            quota = mem.get("daily_quota_tracker", {}).get(today_key, {"target_bets": 25, "completed_bets": 1, "wins": 1, "losses": 0})
             s_stats = mem.get("series_stats", {})
             series_rows = [
                 {"name": k, "wins": v.get("wins", 0), "losses": v.get("losses", 0), "pnl": v.get("realized_pnl", 0.0)}
@@ -195,6 +201,7 @@ class Handler(BaseHTTPRequestHandler):
                 "cash": float(last_h.get("cash", 286.02)),
                 "open_port": float(last_h.get("portfolio", 0.0)),
                 "today_net": today_net,
+                "quota": quota,
                 "evaluated": mem.get("evaluated_plays", 0),
                 "vetoed": mem.get("vetoed_plays", 0),
                 "series": series_rows,

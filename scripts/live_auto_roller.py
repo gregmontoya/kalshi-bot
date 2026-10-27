@@ -963,6 +963,7 @@ class PreTradeEducator:
                         mins_played = "0"
                         player_team_abbr = ""
                         ath_ejected = False
+                        is_nfl_qb = False
                         fga_val = 0.0
                         fta_val = 0.0
                         tpt_made_val = 0.0
@@ -985,6 +986,9 @@ class PreTradeEducator:
                                     if name_matched:
                                         if ath.get("ejected") or ath.get("didNotPlay"):
                                             ath_ejected = True
+                                        pos_abbr = (ath.get("athlete", {}).get("position", {}).get("abbreviation") or "").upper()
+                                        if pos_abbr == "QB" or sg_name == "passing":
+                                            is_nfl_qb = True
                                         st_arr = ath.get("stats", [])
                                         if not st_arr:
                                             continue
@@ -1079,10 +1083,12 @@ class PreTradeEducator:
                             # Positive (+) means player's team is LEADING; Negative (-) means player's team is TRAILING!
                             player_team_margin = None
                             gm_margin = 0.0
+                            total_gm_pts = 0.0
                             if len(competitors) >= 2:
                                 sc0 = float(competitors[0].get("score", 0) or 0)
                                 sc1 = float(competitors[1].get("score", 0) or 0)
                                 gm_margin = abs(sc0 - sc1)
+                                total_gm_pts = sc0 + sc1
                                 tm0_abbr = (competitors[0].get("team", {}).get("abbreviation") or "").upper()
                                 tm1_abbr = (competitors[1].get("team", {}).get("abbreviation") or "").upper()
                                 if player_team_abbr == tm0_abbr:
@@ -1115,7 +1121,12 @@ class PreTradeEducator:
                                     f"— PG milks 24s shot clock (stalls assists at {found_stat:.0f}/{target_val:.0f})!"
                                 )
 
-                            # 2. NFL Signed Game-Script Engine (Leading vs. Trailing Play-Calling Asymmetry):
+                            # 1D. NBA Rebound Scarcity ("Hyper-Shooting / No Missed Shots" Drought) on `KXNBAREB`:
+                            # When both teams shoot 58%+ FG% (e.g. >135 pts by Halftime or >195 pts by Q3), available rebounds plummet by 30%!
+                            if series == "KXNBAREB" and ((live_period == 2 and total_gm_pts >= 134.0) or (live_period == 3 and total_gm_pts >= 195.0)):
+                                req_prop_pct += 6.0
+
+                            # 2. NFL Signed Game-Script Engine + QB Kneel-Down Negative Rushing Yards Shield:
                             if player_team_margin is not None and live_period >= 2:
                                 if series in ("KXNFLPASSYDS", "KXNFLPASSTD", "KXNFLRECYDS", "KXNFLREC"):
                                     # STALL VETO: Player's OWN team is leading by >=10 pts -> Coach runs the ball & milks the 40s play clock!
@@ -1129,6 +1140,13 @@ class PreTradeEducator:
                                         req_prop_pct = max(40.0, req_prop_pct - 4.0)
                                         script_prop_tag = f" | +HURRY-UP-PASS-BOOST({player_team_abbr} {player_team_margin:+.0f})"
                                 elif series == "KXNFLRUSHYDS":
+                                    # Unnatural Scenario: NFL Quarterback Victory-Formation Kneel-Down Negative Rushing Yards Trap!
+                                    # Each kneel-down officially deducts -1 to -2 rushing yards from the QB at the end of Q4!
+                                    if is_nfl_qb and player_team_margin > 0 and found_stat < (target_val + 4.5):
+                                        return False, (
+                                            f"VETO [NFL QB Kneel-Down Negative Rush Trap]: QB {title} is at {found_stat:.0f}/{target_val:.0f} yds "
+                                            f"while leading (+{player_team_margin:.0f}) — 3 kneel-downs deduct -3 to -5 yds in Q4!"
+                                        )
                                     # STALL VETO: RB's OWN team is trailing by >=10 pts -> Coach abandons the run!
                                     if player_team_margin <= -10.0 and prog_pct < 90.0:
                                         return False, (
@@ -1136,9 +1154,17 @@ class PreTradeEducator:
                                             f"— trailing team abandons the run (stalls RB rushing yards at {found_stat:.0f}/{target_val:.0f})!"
                                         )
                                     # ENHANCE BOOST: RB's OWN team is leading by +7 to +20 pts in 2nd Half -> Coach feeds workhorse RB to milk clock!
-                                    if live_period >= 3 and 7.0 <= player_team_margin <= 20.0:
+                                    if live_period >= 3 and 7.0 <= player_team_margin <= 20.0 and not is_nfl_qb:
                                         req_prop_pct = max(50.0, req_prop_pct - 4.0)
                                         script_prop_tag = f" | +CLOCK-KILLER-RB-BOOST({player_team_abbr} +{player_team_margin:.0f})"
+
+                            # 3. NHL Score-Effects Engine ("Turtle Veto" when leading +2+ vs. "Desperation SOG/Points Boost" when trailing 1-2):
+                            if series in nhl_prop_Set and player_team_margin is not None and live_period >= 2:
+                                if player_team_margin >= 2.0 and prog_pct < 90.0:
+                                    req_prop_pct += 8.0
+                                elif -2.0 <= player_team_margin <= -1.0:
+                                    req_prop_pct = max(50.0, req_prop_pct - 4.0)
+                                    script_prop_tag += f" | +NHL-SCORE-EFFECTS-BOOST({player_team_abbr} {player_team_margin:+.0f})"
 
                             if prog_pct < req_prop_pct:
                                 return False, (
@@ -1247,12 +1273,16 @@ class PreTradeEducator:
                             if series in ("KXWTAMATCH", "KXATPMATCH"):
                                 if sets_won[idx] < sets_won[opp_idx]:
                                     return False, f"VETO [ESPN Tennis]: '{title}' is trailing in sets ({sets_won[idx]}-{sets_won[opp_idx]})"
-                                # Require EITHER a 1-Set lead (and not down a break in current set) OR a confirmed break of serve (+2 games and >=3 games won)!
+                                # WTA vs. ATP Service-Break Volatility Shield:
+                                # On the WTA tour (`KXWTAMATCH`), single breaks are broken back 45%+ of the time — require a Double Break (+3 games) in Set 1,
+                                # or a 1-Set lead while on-serve (`game_diff >= 0`)!
                                 game_diff = cur_set_games[idx] - cur_set_games[opp_idx]
-                                if sets_won[idx] == sets_won[opp_idx] and (game_diff < 2 or cur_set_games[idx] < 3):
-                                    return False, f"VETO [ESPN Tennis On-Serve Risk]: '{title}' tied {sets_won[idx]}-{sets_won[opp_idx]} in sets and only {cur_set_games[idx]:.0f}-{cur_set_games[opp_idx]:.0f} (needs confirmed break!)"
-                                if sets_won[idx] > sets_won[opp_idx] and game_diff < -1:
-                                    return False, f"VETO [ESPN Tennis Momentum]: '{title}' down a break ({cur_set_games[idx]:.0f}-{cur_set_games[opp_idx]:.0f}) in current set"
+                                min_set1_break = 3 if series == "KXWTAMATCH" else 2
+                                min_set2_diff = 0 if series == "KXWTAMATCH" else -1
+                                if sets_won[idx] == sets_won[opp_idx] and (game_diff < min_set1_break or cur_set_games[idx] < 3):
+                                    return False, f"VETO [ESPN Tennis Break Risk]: '{title}' tied {sets_won[idx]}-{sets_won[opp_idx]} in sets and {cur_set_games[idx]:.0f}-{cur_set_games[opp_idx]:.0f} (needs +{min_set1_break} game lead!)"
+                                if sets_won[idx] > sets_won[opp_idx] and game_diff < min_set2_diff:
+                                    return False, f"VETO [ESPN Tennis Momentum]: '{title}' down in current set ({cur_set_games[idx]:.0f}-{cur_set_games[opp_idx]:.0f}) despite set lead"
 
                             # Anti-Fluke / Multi-Possession Cushion Shield on Full-Game Moneylines (Soccer, NHL, NBA, NFL)
                             st_obj = comp.get("status", {})

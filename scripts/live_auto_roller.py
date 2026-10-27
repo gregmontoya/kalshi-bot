@@ -506,6 +506,14 @@ class PreTradeEducator:
                 except Exception:
                     pass
 
+                # Psychological Round-Number Stop-Hunt / Liquidity-Sweep Shield:
+                # When a strike sits right at a major psychological round number ($1,000 BTC or $100 ETH),
+                # leveraged perpetual stop-hunts frequently wick through the level — require +25% wider volatility buffer!
+                if ("BTC" in series and strike > 0 and (strike % 1000.0 == 0 or abs(strike - round(strike, -3)) / strike <= 0.0015)) or (
+                    "ETH" in series and strike > 0 and (strike % 100.0 == 0 or abs(strike - round(strike, -2)) / strike <= 0.0015)
+                ):
+                    min_required_cushion = round(min_required_cushion * 1.25, 2)
+
                 if cushion_pct < min_required_cushion:
                     return False, (
                         f"VETO [{oracle_src}]: {pair} spot (${spot:,.2f}) cushion {cushion_pct:+.2f}% < "
@@ -771,6 +779,20 @@ class PreTradeEducator:
                     else:
                         req_tot_pct = {1: 36.0, 2: 56.0, 3: 66.0}.get(live_period, 76.0)
 
+                    # Point Trap 0 (Overtime Sudden-Death & Short-Period Impossible-Total Trap):
+                    # - NHL Overtime (P4+): Sudden-death 3-on-3 or Shootout means AT MOST 1.0 goal can be scored in the entire rest of the game!
+                    # - NFL Overtime (P5+): A sudden-death Field Goal (3 pts) or walk-off TD (6 pts, no PAT kicked!) ends the game immediately!
+                    if "NHL" in series and live_period >= 4 and pts_needed > 1.0:
+                        return False, (
+                            f"VETO [NHL Sudden-Death OT Impossible Total]: Needs {pts_needed:.1f} goals in OT (P{live_period}), "
+                            f"but sudden-death OT/SO can only add max 1 goal!"
+                        )
+                    if series.startswith(("KXNFL", "KXNCAAF")) and live_period >= 5 and pts_needed > 3.0:
+                        return False, (
+                            f"VETO [Football Sudden-Death OT Cap]: Needs {pts_needed:.1f} pts in OT (P{live_period}), "
+                            f"where a 3-pt Field Goal ends the game!"
+                        )
+
                     # Point Trap A (Football Discrete 3/7-pt Scoring & 4Q Victory-Formation / Kneel-Down Clock-Chew Trap):
                     # 1. Inside final 6:00 of P4 with >=9 pt (2-score) lead, teams kneel down in the red zone instead of kicking FGs or scoring TDs!
                     # 2. In P4 with >3.0 pts needed (a FG won't win it — needs a full TD!) and >=13 pt margin or <8:00 left, VETO!
@@ -833,6 +855,9 @@ class PreTradeEducator:
                         my_pts = _comp_window_pts(competitors[c_idx])
                         opp_pts = _comp_window_pts(competitors[1 - c_idx])
                         margin = my_pts - opp_pts
+                        # Overtime Spread Distortion Gate: In a 5-min OT (P5+), teams start tied and rarely cover >=5.5 spreads!
+                        if req_periods is None and live_period >= 5 and strike_val >= 5.5 and margin < (strike_val + 4.5):
+                            return False, f"VETO [Overtime Spread Trap]: -{strike_val:.1f} spread in OT (P{live_period}) is nearly impossible to cover!"
                         # Time-in-Play Velocity Gate:
                         # - In NBA/NFL/College 1st Half (P1/P2), avoid Full-Game Spreads (traps cash through 20-min Halftime) unless up +16 above spread
                         # - In NHL (3 periods), avoid Full-Game Puck Lines in P1/P2 unless up +2.5 goals above spread (use 1P/2P instead!)
@@ -855,6 +880,11 @@ class PreTradeEducator:
                             req_spread_buf = 3.5
                         else:
                             req_spread_buf = 7.5 if live_period <= 3 else 5.0
+                        # Opponent Red-Zone Threat Shield on Football Spreads:
+                        # If the trailing opponent currently has the ball inside the Red Zone (about to score 7 pts!), require +7.0 extra cushion!
+                        sit_sp = comp.get("situation") or {}
+                        if series.startswith(("KXNFL", "KXNCAAF")) and sit_sp.get("isRedZone") and str(sit_sp.get("possession") or "") == str(competitors[1 - c_idx].get("id") or ""):
+                            req_spread_buf += 7.0
                         if margin <= 0 or margin < (strike_val + req_spread_buf):
                             return False, (
                                 f"VETO [ESPN {period_tag} Spread Cushion]: {tm_prefix} margin is {margin:+.0f} ({my_pts:.0f}-{opp_pts:.0f}) "
@@ -932,6 +962,11 @@ class PreTradeEducator:
                         fouls_val = 0
                         mins_played = "0"
                         player_team_abbr = ""
+                        ath_ejected = False
+                        fga_val = 0.0
+                        fta_val = 0.0
+                        tpt_made_val = 0.0
+                        pts_scored_val = 0.0
                         for team_blk in bs_players:
                             tm_blk_abbr = (team_blk.get("team", {}).get("abbreviation") or "").upper()
                             for sg in team_blk.get("statistics", []):
@@ -948,6 +983,8 @@ class PreTradeEducator:
                                         or (player_last == a_last and (not player_first or not a_first or player_first[0] == a_first[0]))
                                     )
                                     if name_matched:
+                                        if ath.get("ejected") or ath.get("didNotPlay"):
+                                            ath_ejected = True
                                         st_arr = ath.get("stats", [])
                                         if not st_arr:
                                             continue
@@ -963,6 +1000,15 @@ class PreTradeEducator:
                                             stl = float(s_map.get("STL", "0") or 0)
                                             tpt_raw = str(s_map.get("3PT", "0-0")).split("-")[0]
                                             tpt = float(tpt_raw or 0)
+                                            try:
+                                                fg_parts = str(s_map.get("FG", "0-0")).split("-")
+                                                fga_val = float(fg_parts[1] if len(fg_parts) > 1 else 0)
+                                                ft_parts = str(s_map.get("FT", "0-0")).split("-")
+                                                fta_val = float(ft_parts[1] if len(ft_parts) > 1 else 0)
+                                            except Exception:
+                                                pass
+                                            tpt_made_val = tpt
+                                            pts_scored_val = pts
                                             if series == "KXNBAPTS": found_stat = pts
                                             elif series == "KXNBAREB": found_stat = reb
                                             elif series == "KXNBAAST": found_stat = ast
@@ -997,19 +1043,37 @@ class PreTradeEducator:
                                             elif series == "KXNHLAST": found_stat = max(found_stat or 0.0, a_val)
                                             elif series == "KXNHLSOG": found_stat = max(found_stat or 0.0, sog_val)
                         if found_stat is not None:
+                            prog_pct = (found_stat / target_val) * 100.0
+                            if ath_ejected and prog_pct < 100.0:
+                                return False, f"VETO [ESPN Ejection/DNP Shield]: {title} is flagged EJECTED/DNP in boxscore!"
                             # Period-Aware NBA Starter Foul-Trouble Bench Shield:
                             # 3 fouls in Q1 or 4 fouls in Q2 forces coaches to bench starters for the rest of the half!
                             max_allowed_fouls = {1: 3, 2: 4}.get(live_period, 5)
-                            if fouls_val >= max_allowed_fouls:
+                            if fouls_val >= max_allowed_fouls and prog_pct < 95.0:
                                 return False, (
                                     f"VETO [ESPN Foul-Trouble Bench Shield]: {title} has {fouls_val} fouls in P{live_period} "
                                     f"(>={max_allowed_fouls} max — starter bench risk!)"
                                 )
-                            prog_pct = (found_stat / target_val) * 100.0
                             try:
                                 clk_m = float(str(clock_disp).split(":")[0]) if ":" in str(clock_disp) else 5.0
                             except Exception:
                                 clk_m = 5.0
+                            try:
+                                mins_float = float(str(mins_played).split(":")[0] or 0)
+                            except Exception:
+                                mins_float = 15.0
+
+                            # Unnatural Scenario: In-Game Injury / Locker-Room "Ghost Minutes" Stall Shield:
+                            # If a player racked up early stats in Q1, tweaked an ankle/hamstring, and went to the locker room,
+                            # his minutes played (`mins_float`) will lag far behind the elapsed game clock!
+                            if series in nba_prop_Set and prog_pct < 92.0:
+                                if (live_period == 2 and clk_m < 5.0 and mins_float <= 8.0) or (
+                                    live_period == 3 and clk_m < 5.0 and mins_float <= 15.0
+                                ) or (live_period >= 4 and mins_float <= 20.0):
+                                    return False, (
+                                        f"VETO [Injury / Locker-Room Ghost-Minutes Stall]: {title} has only played {mins_played} MIN "
+                                        f"by P{live_period} {clock_disp} (injury/locker-room/bench restriction risk!)"
+                                    )
 
                             # Compute Signed Team Score Differential for this specific player's team (`player_team_margin`):
                             # Positive (+) means player's team is LEADING; Negative (-) means player's team is TRAILING!
@@ -1034,6 +1098,22 @@ class PreTradeEducator:
                             # Coaches sub out primary starters from 12:00 down to ~7:30 of Q2 and Q4 (4.5 mins of dead bench clock!).
                             if series in nba_prop_Set and live_period in (2, 4) and 7.5 <= clk_m <= 11.8 and prog_pct < 92.0:
                                 req_prop_pct += 8.0
+
+                            # 1B. NBA "Low-Volume 3PT Fluke Heater" vs. "High-Usage Free-Throw Merchant Floor":
+                            if series == "KXNBAPTS" and live_period <= 3:
+                                if pts_scored_val >= 9.0 and (tpt_made_val * 3.0) >= (pts_scored_val * 0.80) and fga_val <= 6.0 and fta_val == 0.0:
+                                    req_prop_pct += 8.0
+                                elif fta_val >= 6.0 or fga_val >= 12.0:
+                                    req_prop_pct = max(40.0, req_prop_pct - 3.0)
+                                    script_prop_tag += f" | +FT-VOLUME-FLOOR(FGA={fga_val:.0f},FTA={fta_val:.0f})"
+
+                            # 1C. NBA Point Guard Late-4Q "Dribble-Out the Clock" Assist Stall (`KXNBAAST`):
+                            # When leading by >=9 pts in the final 6:00 of Q4, the PG dribbles 20s off the shot clock and runs ISO instead of passing!
+                            if series == "KXNBAAST" and live_period >= 4 and clk_m < 6.0 and player_team_margin is not None and player_team_margin >= 9.0 and prog_pct < 90.0:
+                                return False, (
+                                    f"VETO [NBA 4Q Lead Assist-Stall]: {player_team_abbr} up +{player_team_margin:.0f} in P4 {clock_disp} "
+                                    f"— PG milks 24s shot clock (stalls assists at {found_stat:.0f}/{target_val:.0f})!"
+                                )
 
                             # 2. NFL Signed Game-Script Engine (Leading vs. Trailing Play-Calling Asymmetry):
                             if player_team_margin is not None and live_period >= 2:
@@ -1183,10 +1263,11 @@ class PreTradeEducator:
                                     clk_min = float(str(clock_disp).replace("'", "").split("+")[0] or 0)
                                 except Exception:
                                     clk_min = 0.0
-                                if period_num < 2 or clk_min < 72.0:
+                                # Stoppage-Time Siege & Early-Game 1-Goal Draw Shield:
+                                if period_num < 2 or clk_min < 74.0 or "+" in str(clock_disp):
                                     return False, (
-                                        f"VETO [Soccer 1-Goal Draw Risk]: '{title}' only leading {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
-                                        f"at {clock_disp} (requires 2+ goal cushion or 72'+ late clock!)"
+                                        f"VETO [Soccer 1-Goal / Stoppage-Time Risk]: '{title}' only leading {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
+                                        f"at {clock_disp} (requires 2+ goal cushion or 74'-89' regulation window!)"
                                     )
                             elif series == "KXNHLGAME" and margin < 2 and period_num < 3:
                                 return False, (
@@ -1215,10 +1296,15 @@ class PreTradeEducator:
                                     )
                             elif series in ("KXNFLGAME", "KXNCAAFGAME"):
                                 min_fball_margin = 14 if period_num <= 2 else (10 if period_num == 3 else 7)
+                                # Opponent Driving in Red Zone Threat Shield:
+                                # If the trailing opponent has possession inside the Red Zone (about to score 7 pts!), add +7 pts to required cushion!
+                                sit_fb = comp.get("situation") or {}
+                                if sit_fb.get("isRedZone") and str(sit_fb.get("possession") or "") == str(competitors[opp_idx].get("id") or ""):
+                                    min_fball_margin += 7
                                 if margin < min_fball_margin:
                                     return False, (
-                                        f"VETO [Football Cushion/Time Gate]: '{title}' up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
-                                        f"(+{margin:.0f} < +{min_fball_margin} pt min in P{period_num} — avoiding single-TD flips!)"
+                                        f"VETO [Football Cushion / Red-Zone Gate]: '{title}' up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
+                                        f"(+{margin:.0f} < +{min_fball_margin} pt min in P{period_num} — avoiding single-TD / Red-Zone flips!)"
                                     )
 
                             # Check Vegas Opening vs Closing Line Movement, Game Clock Period & Live Win Probability

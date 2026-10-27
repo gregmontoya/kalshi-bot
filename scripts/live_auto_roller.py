@@ -1851,11 +1851,11 @@ def get_scaling_tier(equity_cents: int) -> dict:
         }
     elif eq_dlr < 750.0:
         # Continuous Micro-Compounding inside Tier 3 ($200-$750): scales smoothly with every +$25 gained!
-        # Raised iceberg_slice from 110 -> 260 and max_stake to 44% of equity so $475+ accounts deploy 200-255 contracts ($170-$215/leg = +$18 to +$23/win!)
-        dyn_min_contracts = min(100, max(35, int(eq_dlr * 0.14)))
-        dyn_max_stake_c = min(26000, max(12500, int(equity_cents * 0.44)))
+        # Supports up to $310/leg (350-contract front-of-queue slice = +$26 to +$32/win at $690 equity after +$200 deposit!)
+        dyn_min_contracts = min(120, max(35, int(eq_dlr * 0.14)))
+        dyn_max_stake_c = min(31000, max(12500, int(equity_cents * 0.44)))
         return {
-            "name": "TIER 3 ($500 Pro Mode)",
+            "name": "TIER 3 ($500-$750 Pro Mode)",
             "base_pct": 0.32,
             "boost_pct": 0.40,
             "min_stake_cents": 4500,
@@ -1863,22 +1863,22 @@ def get_scaling_tier(equity_cents: int) -> dict:
             "min_contracts": dyn_min_contracts,
             "max_concurrent": 5,
             "min_depth_dlr": 300.0,
-            "iceberg_slice": 260,
+            "iceberg_slice": 350,
         }
     elif eq_dlr < 2000.0:
-        # TIER 4 ($750-$2,000 Pro/Whale Scaling): deploys $150-$440 per play across up to 7 concurrent winners!
-        dyn_min_contracts = min(160, max(75, int(eq_dlr * 0.09)))
-        dyn_max_stake_c = min(45000, max(22000, int(equity_cents * 0.26)))
+        # TIER 4 ($750-$2,000 Pro/Whale Scaling): deploys $260-$480 per play (320-450 contracts = +$28 to +$40/win!)
+        dyn_min_contracts = min(180, max(90, int(eq_dlr * 0.12)))
+        dyn_max_stake_c = min(48000, max(28000, int(equity_cents * 0.40)))
         return {
             "name": "TIER 4 ($1k-$2k Pro Whale Mode)",
-            "base_pct": 0.20,
-            "boost_pct": 0.26,
+            "base_pct": 0.30,
+            "boost_pct": 0.38,
             "min_stake_cents": 7500,
             "max_stake_cents": dyn_max_stake_c,
             "min_contracts": dyn_min_contracts,
             "max_concurrent": 7,
-            "min_depth_dlr": 500.0,
-            "iceberg_slice": 150,
+            "min_depth_dlr": 450.0,
+            "iceberg_slice": 400,
         }
     else:
         # TIER 5 ($2,000 to $5,000 Sweet-Spot Plateau Mode):

@@ -771,28 +771,48 @@ class PreTradeEducator:
                     else:
                         req_tot_pct = {1: 36.0, 2: 56.0, 3: 66.0}.get(live_period, 76.0)
 
-                    # Point Trap A (Football Discrete 3/7-pt Scoring & 4Q Clock-Chew Trap):
-                    # In NFL/College Football Q4, if a Team Total or Game Total still needs >3.0 pts (a FG won't win it — needs a full TD!)
-                    # while a team is leading by >=13 pts (running out the clock!) or <8:00 left in Q4, VETO!
-                    if series.startswith(("KXNFL", "KXNCAAF")) and live_period >= 4 and pts_needed > 3.0 and (gm_margin_tot >= 13.0 or cur_clk_m < 8.0):
+                    # Point Trap A (Football Discrete 3/7-pt Scoring & 4Q Victory-Formation / Kneel-Down Clock-Chew Trap):
+                    # 1. Inside final 6:00 of P4 with >=9 pt (2-score) lead, teams kneel down in the red zone instead of kicking FGs or scoring TDs!
+                    # 2. In P4 with >3.0 pts needed (a FG won't win it — needs a full TD!) and >=13 pt margin or <8:00 left, VETO!
+                    if series.startswith(("KXNFL", "KXNCAAF")) and live_period >= 4:
+                        if pts_needed > 0.0 and cur_clk_m < 6.0 and gm_margin_tot >= 9.0:
+                            return False, (
+                                f"VETO [Football 4Q Kneel-Down / Victory Formation]: Needs {pts_needed:.1f} more pts in P4 {clock_disp} "
+                                f"with {gm_margin_tot:.0f}-pt 2-score lead (teams kneel/run clock instead of scoring!)"
+                            )
+                        if pts_needed > 3.0 and (gm_margin_tot >= 13.0 or cur_clk_m < 8.0):
+                            return False, (
+                                f"VETO [Football 4Q Clock-Chew / TD Trap]: Needs {pts_needed:.1f} more pts (>3pt FG) in P4 {clock_disp} "
+                                f"with {gm_margin_tot:.0f}-pt margin (clock-chew risk!)"
+                            )
+                    # Point Trap B (Soccer Late Corner-Flag Time-Wasting / Park-the-Bus Trap):
+                    # After 75' in Soccer, if the Over is not already 100% banked (pts_needed > 0), leading teams sub in defenders and waste time at the corner flag!
+                    if is_soccer and live_period >= 2 and cur_clk_m >= 75.0 and pts_needed > 0.0:
                         return False, (
-                            f"VETO [Football 4Q Clock-Chew / TD Trap]: Needs {pts_needed:.1f} more pts (>3pt FG) in P4 {clock_disp} "
-                            f"with {gm_margin_tot:.0f}-pt margin (clock-chew risk!)"
+                            f"VETO [Soccer >75' Time-Wasting Trap]: Still needs {pts_needed:.1f} goal(s) at {clock_disp} "
+                            f"(corner-flag stall / park-the-bus risk!)"
                         )
-                    # Point Trap B (NBA 4Q Blowout Bench Dribble-Out Trap):
-                    # In NBA Q4, if margin >= 16 pts (starters benched, deep bench dribbling out shot clock) or <4:00 left, require >=90% banked!
-                    if series.startswith(("KXNBA", "KXNCAAMB")) and live_period >= 4 and (gm_margin_tot >= 16.0 or cur_clk_m < 4.0) and prog_pct < 90.0:
-                        return False, (
-                            f"VETO [Basketball 4Q Dribble-Out Trap]: {cur_pts:.0f}/{target_val:.1f} ({prog_pct:.0f}% < 90% min) "
-                            f"in P4 {clock_disp} (margin={gm_margin_tot:.0f} pts)"
-                        )
+                    # Point Trap C (NBA 4Q Blowout Bench Dribble-Out Trap vs. Close-Game Intentional Foul Parade Boost):
+                    script_tot_tag = ""
+                    if series.startswith(("KXNBA", "KXNCAAMB")) and live_period >= 4:
+                        if (gm_margin_tot >= 16.0 or cur_clk_m < 4.0) and not (1.0 <= gm_margin_tot <= 7.0 and cur_clk_m <= 3.0) and prog_pct < 90.0:
+                            return False, (
+                                f"VETO [Basketball 4Q Dribble-Out Trap]: {cur_pts:.0f}/{target_val:.1f} ({prog_pct:.0f}% < 90% min) "
+                                f"in P4 {clock_disp} (margin={gm_margin_tot:.0f} pts)"
+                            )
+                        if 1.0 <= gm_margin_tot <= 7.0 and cur_clk_m <= 3.0:
+                            req_tot_pct = max(72.0, req_tot_pct - 4.0)
+                            script_tot_tag = " | +FOUL-PARADE-BOOST"
+                    elif "NHL" in series and live_period == 3 and cur_clk_m <= 3.5 and 1.0 <= gm_margin_tot <= 2.0:
+                        req_tot_pct = max(75.0, req_tot_pct - 4.0)
+                        script_tot_tag = " | +EMPTY-NET-BOOST"
 
                     if prog_pct < req_tot_pct:
                         return False, (
                             f"VETO [ESPN {period_tag} Total]: Only {cur_pts:.0f}/{target_val:.1f} pts scored "
                             f"({prog_pct:.0f}% < {req_tot_pct:.0f}% min for P{live_period} {clock_disp})"
                         )
-                    lock_tag = (" | PROP-LOCK" if prog_pct >= (req_tot_pct + 12.0) else "") + vegas_steam_tag
+                    lock_tag = (" | PROP-LOCK" if prog_pct >= (req_tot_pct + 12.0) else "") + script_tot_tag + vegas_steam_tag
                     return True, f"ESPN {period_tag} Total Verified ({cur_pts:.0f}/{target_val:.1f} = {prog_pct:.0f}% banked{lock_tag} | P{live_period} {clock_disp})"
 
                 if "BTTS" in series and len(competitors) >= 2:
@@ -911,7 +931,9 @@ class PreTradeEducator:
                         found_stat = None
                         fouls_val = 0
                         mins_played = "0"
+                        player_team_abbr = ""
                         for team_blk in bs_players:
+                            tm_blk_abbr = (team_blk.get("team", {}).get("abbreviation") or "").upper()
                             for sg in team_blk.get("statistics", []):
                                 sg_name = (sg.get("name") or "").lower()
                                 labels = [lbl.upper() for lbl in sg.get("labels", [])]
@@ -929,6 +951,7 @@ class PreTradeEducator:
                                         st_arr = ath.get("stats", [])
                                         if not st_arr:
                                             continue
+                                        player_team_abbr = tm_blk_abbr or player_team_abbr
                                         if series in nba_prop_Set and len(st_arr) == len(labels):
                                             s_map = dict(zip(labels, st_arr))
                                             mins_played = s_map.get("MIN", "0")
@@ -983,20 +1006,66 @@ class PreTradeEducator:
                                     f"(>={max_allowed_fouls} max — starter bench risk!)"
                                 )
                             prog_pct = (found_stat / target_val) * 100.0
-                            # Period-Aware Hot-Hand Player Prop Pace Curve:
-                            # Catch hot starters in Q1 (>=42% = 168% pace) & Q2 (>=56% = 112%+ pace), while requiring >=68% in Q3 & >=78% in Q4!
-                            req_prop_pct = {1: 42.0, 2: 56.0, 3: 68.0}.get(live_period, 78.0)
-                            if prog_pct < req_prop_pct:
-                                return False, (
-                                    f"VETO [ESPN Boxscore]: {title} at {found_stat:.0f}/{target_val:.0f} "
-                                    f"({prog_pct:.0f}% < {req_prop_pct:.0f}% P{live_period} hot-pace min)"
-                                )
-                            # Late-Clock Crunch Veto: Never buy a prop in the final 3 mins of Q4 if still <84% of target!
-                            # Late-Clock Crunch Veto: Never buy a prop in the final 5 mins of Q4 if <85% (or final 3 mins if <90%)!
                             try:
                                 clk_m = float(str(clock_disp).split(":")[0]) if ":" in str(clock_disp) else 5.0
                             except Exception:
                                 clk_m = 5.0
+
+                            # Compute Signed Team Score Differential for this specific player's team (`player_team_margin`):
+                            # Positive (+) means player's team is LEADING; Negative (-) means player's team is TRAILING!
+                            player_team_margin = None
+                            gm_margin = 0.0
+                            if len(competitors) >= 2:
+                                sc0 = float(competitors[0].get("score", 0) or 0)
+                                sc1 = float(competitors[1].get("score", 0) or 0)
+                                gm_margin = abs(sc0 - sc1)
+                                tm0_abbr = (competitors[0].get("team", {}).get("abbreviation") or "").upper()
+                                tm1_abbr = (competitors[1].get("team", {}).get("abbreviation") or "").upper()
+                                if player_team_abbr == tm0_abbr:
+                                    player_team_margin = sc0 - sc1
+                                elif player_team_abbr == tm1_abbr:
+                                    player_team_margin = sc1 - sc0
+
+                            # Period-Aware Hot-Hand Player Prop Pace Curve + Coaching Game-Script ("Enhance vs. Stall") Adjustments:
+                            req_prop_pct = {1: 42.0, 2: 56.0, 3: 68.0}.get(live_period, 78.0)
+                            script_prop_tag = ""
+
+                            # 1. NBA Early-Q2 / Early-Q4 Mandatory Starter Bench-Rotation Stall Shield:
+                            # Coaches sub out primary starters from 12:00 down to ~7:30 of Q2 and Q4 (4.5 mins of dead bench clock!).
+                            if series in nba_prop_Set and live_period in (2, 4) and 7.5 <= clk_m <= 11.8 and prog_pct < 92.0:
+                                req_prop_pct += 8.0
+
+                            # 2. NFL Signed Game-Script Engine (Leading vs. Trailing Play-Calling Asymmetry):
+                            if player_team_margin is not None and live_period >= 2:
+                                if series in ("KXNFLPASSYDS", "KXNFLPASSTD", "KXNFLRECYDS", "KXNFLREC"):
+                                    # STALL VETO: Player's OWN team is leading by >=10 pts -> Coach runs the ball & milks the 40s play clock!
+                                    if player_team_margin >= 10.0 and prog_pct < 90.0:
+                                        return False, (
+                                            f"VETO [NFL Leading Clock-Milk Pass Stall]: {player_team_abbr} is UP +{player_team_margin:.0f} pts in P{live_period} "
+                                            f"— coach runs the ball & milks play clock (stalls QB/WR stats at {found_stat:.0f}/{target_val:.0f})!"
+                                        )
+                                    # ENHANCE BOOST: Player's OWN team is trailing by 6 to 16 pts -> Hurry-up pass-every-down script!
+                                    if -16.0 <= player_team_margin <= -6.0:
+                                        req_prop_pct = max(40.0, req_prop_pct - 4.0)
+                                        script_prop_tag = f" | +HURRY-UP-PASS-BOOST({player_team_abbr} {player_team_margin:+.0f})"
+                                elif series == "KXNFLRUSHYDS":
+                                    # STALL VETO: RB's OWN team is trailing by >=10 pts -> Coach abandons the run!
+                                    if player_team_margin <= -10.0 and prog_pct < 90.0:
+                                        return False, (
+                                            f"VETO [NFL Trailing Abandon-Run Trap]: {player_team_abbr} is DOWN {player_team_margin:+.0f} pts in P{live_period} "
+                                            f"— trailing team abandons the run (stalls RB rushing yards at {found_stat:.0f}/{target_val:.0f})!"
+                                        )
+                                    # ENHANCE BOOST: RB's OWN team is leading by +7 to +20 pts in 2nd Half -> Coach feeds workhorse RB to milk clock!
+                                    if live_period >= 3 and 7.0 <= player_team_margin <= 20.0:
+                                        req_prop_pct = max(50.0, req_prop_pct - 4.0)
+                                        script_prop_tag = f" | +CLOCK-KILLER-RB-BOOST({player_team_abbr} +{player_team_margin:.0f})"
+
+                            if prog_pct < req_prop_pct:
+                                return False, (
+                                    f"VETO [ESPN Boxscore]: {title} at {found_stat:.0f}/{target_val:.0f} "
+                                    f"({prog_pct:.0f}% < {req_prop_pct:.0f}% P{live_period} script-adjusted min)"
+                                )
+                            # Late-Clock Crunch Veto: Never buy a prop in the final 5 mins of Q4 if <85% (or final 3 mins if <90%)!
                             if live_period >= 4 and clk_m < 5.0:
                                 req_late_prop = 90.0 if clk_m < 3.0 else 85.0
                                 if prog_pct < req_late_prop:
@@ -1004,11 +1073,9 @@ class PreTradeEducator:
                                         f"VETO [Late Clock Crunch]: Only {clock_disp} left in P{live_period} and {title} is at "
                                         f"{found_stat:.0f}/{target_val:.0f} ({prog_pct:.0f}% < {req_late_prop:.0f}% min)"
                                     )
-                            # NFL 2-Score (13+ pt) Clock-Chew / Run-Heavy Script Shield (Prevents Dak Prescott 2H Pass-Stall Trap!):
-                            # When an NFL game has a >=13 pt margin from P2 onward, the leading team runs the ball 80% of the time!
+                            # Fallback NFL 2-Score Run-Script & Garbage-Time Blowout Bench Shield:
                             if len(competitors) >= 2 and prog_pct < 90.0:
-                                gm_margin = abs(float(competitors[0].get("score", 0) or 0) - float(competitors[1].get("score", 0) or 0))
-                                if series in ("KXNFLPASSYDS", "KXNFLPASSTD", "KXNFLRECYDS", "KXNFLREC") and live_period >= 2 and gm_margin >= 13.0:
+                                if series in ("KXNFLPASSYDS", "KXNFLPASSTD", "KXNFLRECYDS", "KXNFLREC") and live_period >= 2 and gm_margin >= 14.0 and not script_prop_tag:
                                     return False, (
                                         f"VETO [NFL 2-Score Run-Script Trap]: NFL margin is {gm_margin:.0f} pts in P{live_period} "
                                         f"— winning team runs the clock (stalls QB/WR passing stats)!"
@@ -1020,7 +1087,7 @@ class PreTradeEducator:
                                             f"VETO [Blowout Bench Risk]: Game margin is {gm_margin:.0f} pts in P{live_period} "
                                             f"— starters risk getting benched in garbage time!"
                                         )
-                            lock_tag = " | PROP-LOCK" if prog_pct >= (req_prop_pct + 12.0) else ""
+                            lock_tag = (" | PROP-LOCK" if prog_pct >= (req_prop_pct + 12.0) else "") + script_prop_tag
                             if str(clock_disp).strip() in ("0:00", "0.0", ""):
                                 lock_tag += " | CLOCK-FROZEN"
                             return True, f"ESPN Boxscore Verified ({found_stat:.0f}/{target_val:.0f} = {prog_pct:.0f}% banked in P{live_period}{lock_tag} | MIN={mins_played} | PF={fouls_val})"

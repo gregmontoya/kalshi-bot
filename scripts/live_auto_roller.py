@@ -752,11 +752,14 @@ class PreTradeEducator:
                     prog_pct = (cur_pts / target_val) * 100.0
                     # Period-Aware Scoring Pace Curve:
                     # - Quarter/Half Totals (req_periods is not None): require >= 60% of that Quarter/Half total banked
-                    # - Full-Game Totals: P1 >= 36% (144% pace), P2 >= 56% (112% pace), P3 >= 66%, P4 >= 76%
+                    # - NHL Full-Game Totals (3 periods): P1 >= 45%, P2 >= 68%, P3 >= 80%
+                    # - NBA/NFL/NCAAF Full-Game Totals (4 quarters): P1 >= 36%, P2 >= 56%, P3 >= 66%, P4 >= 76%
                     if req_periods is not None:
                         req_tot_pct = 60.0
                     elif is_soccer:
                         req_tot_pct = 55.0 if live_period == 1 else 68.0
+                    elif "NHL" in series:
+                        req_tot_pct = {1: 45.0, 2: 68.0}.get(live_period, 80.0)
                     else:
                         req_tot_pct = {1: 36.0, 2: 56.0, 3: 66.0}.get(live_period, 76.0)
                     if prog_pct < req_tot_pct:
@@ -766,6 +769,13 @@ class PreTradeEducator:
                         )
                     lock_tag = (" | PROP-LOCK" if prog_pct >= (req_tot_pct + 12.0) else "") + vegas_steam_tag
                     return True, f"ESPN {period_tag} Total Verified ({cur_pts:.0f}/{target_val:.1f} = {prog_pct:.0f}% banked{lock_tag} | P{live_period} {clock_disp})"
+
+                if "BTTS" in series and len(competitors) >= 2:
+                    sc0 = _comp_window_pts(competitors[0])
+                    sc1 = _comp_window_pts(competitors[1])
+                    if sc0 >= 1 and sc1 >= 1:
+                        return True, f"ESPN BTTS LOCKED ({sc0:.0f}-{sc1:.0f}, both teams already scored!)"
+                    return False, f"VETO [ESPN BTTS]: Score is {sc0:.0f}-{sc1:.0f} (waiting for both teams or stronger setup)"
 
                 if "SPREAD" in series and len(competitors) >= 2 and m_suf and m_suf.group(1):
                     tm_prefix, num_str = m_suf.group(1), m_suf.group(2)
@@ -778,13 +788,17 @@ class PreTradeEducator:
                         my_pts = _comp_window_pts(competitors[c_idx])
                         opp_pts = _comp_window_pts(competitors[1 - c_idx])
                         margin = my_pts - opp_pts
-                        # Time-in-Play Velocity Gate: In 1st Half (P1/P2), avoid Full-Game Spreads (which trap cash through
-                        # the 20-min Halftime break + 2nd Half) unless leading by +18+ above the spread! Use 1Q/2Q/1H instead!
-                        if req_periods is None and not is_soccer and live_period <= 2 and margin < (strike_val + 16.0):
-                            return False, (
-                                f"VETO [1H Time-in-Play Gate]: Full-game spread in P{live_period} {clock_disp} traps cash through Halftime "
-                                f"(use 1Q/2Q/1H spread instead!)"
-                            )
+                        # Time-in-Play Velocity Gate:
+                        # - In NBA/NFL/College 1st Half (P1/P2), avoid Full-Game Spreads (traps cash through 20-min Halftime) unless up +16 above spread
+                        # - In NHL (3 periods), avoid Full-Game Puck Lines in P1/P2 unless up +2.5 goals above spread (use 1P/2P instead!)
+                        if req_periods is None and not is_soccer:
+                            if "NHL" in series and live_period <= 2 and margin < (strike_val + 2.5):
+                                return False, f"VETO [NHL Intermission Gate]: Full-game puck line in P{live_period} traps cash through intermission (use 1P/2P/3P!)"
+                            elif "NHL" not in series and live_period <= 2 and margin < (strike_val + 16.0):
+                                return False, (
+                                    f"VETO [1H Time-in-Play Gate]: Full-game spread in P{live_period} {clock_disp} traps cash through Halftime "
+                                    f"(use 1Q/2Q/1H spread instead!)"
+                                )
                         # Require team to ALREADY be covering the spread:
                         # - NHL/Soccer: +0.5 goals
                         # - Fast Quarters/Halves (req_periods is not None): +3.5 points
@@ -818,27 +832,42 @@ class PreTradeEducator:
                                 f"VETO [ESPN {period_tag} Winner]: {suffix} is NOT leading {period_tag} "
                                 f"({my_pts:.0f}-{opp_pts:.0f} in P{live_period} {clock_disp})"
                             )
-                        # Multi-Possession / Anti-Single-Goal Shield for Quarter & Half Winners
+                        try:
+                            p_clk_m = float(str(clock_disp).replace("'", "").split(":")[0].split("+")[0] or 0)
+                        except Exception:
+                            p_clk_m = 6.0
+                        # Clock-Aware Multi-Possession Shield for Quarter, Period & Half Winners across ALL leagues:
                         if is_soccer and margin < 2:
-                            try:
-                                clk_min = float(str(clock_disp).replace("'", "").split("+")[0] or 0)
-                            except Exception:
-                                clk_min = 0.0
-                            if clk_min < 38.0:
+                            if p_clk_m < 38.0:
                                 return False, f"VETO [Soccer 1H 1-Goal Risk]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} at {clock_disp} (<38' or <2 goal cushion)"
-                        elif series.startswith(("KXNBA", "KXNFL")) and margin < 6:
-                            return False, f"VETO [ESPN {period_tag} Cushion]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} (+{margin:.0f} < +6 pt multi-possession min)"
+                        elif "NHL" in series:
+                            req_nhl_p_cush = 1 if p_clk_m < 7.0 else 2
+                            if margin < req_nhl_p_cush:
+                                return False, f"VETO [NHL {period_tag} Cushion]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} with {clock_disp} left (needs +{req_nhl_p_cush} goals)"
+                        elif series.startswith(("KXNFL", "KXNCAAF")):
+                            if margin < 7:
+                                return False, f"VETO [Football {period_tag} Cushion]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} (+{margin:.0f} < +7 pt full-TD min)"
+                        elif series.startswith(("KXNBA", "KXNCAAMB", "KXNCAAWB")):
+                            req_bb_p_cush = 6 if p_clk_m < 5.0 else 8
+                            if margin < req_bb_p_cush:
+                                return False, f"VETO [Basketball {period_tag} Cushion]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} (+{margin:.0f} < +{req_bb_p_cush} pt min with {clock_disp} left)"
                         lock_tag = " | PROP-LOCK" if margin >= 8 or (is_soccer and margin >= 2) else ""
                         return True, f"ESPN {period_tag} Leader Verified ({suffix} leading {my_pts:.0f}-{opp_pts:.0f}{lock_tag} | P{live_period} {clock_disp})"
 
-                # 3. Deep Player Prop Box Score Check via ESPN Summary API (/summary?event={id})
-                nba_prop_Set = {"KXNBAPTS", "KXNBAREB", "KXNBAAST", "KXNBA3PT", "KXNBAPRA", "KXNBABLK", "KXNBASTL"}
-                nfl_prop_Set = {"KXNFLPASSYDS", "KXNFLRUSHYDS", "KXNFLRECYDS", "KXNFLREC"}
-                if (series in nba_prop_Set or series in nfl_prop_Set) and ":" in title and len(parts) >= 4:
+                # 3. Deep Player Prop Box Score Check via ESPN Summary API (/summary?event={id}) — 100% FAIL-CLOSED!
+                nba_prop_Set = {
+                    "KXNBAPTS", "KXNBAREB", "KXNBAAST", "KXNBA3PT", "KXNBAPRA",
+                    "KXNBAPR", "KXNBAPA", "KXNBADD2", "KXNBATD3", "KXNBABLK", "KXNBASTL",
+                }
+                nfl_prop_Set = {"KXNFLPASSYDS", "KXNFLPASSTD", "KXNFLRUSHYDS", "KXNFLRECYDS", "KXNFLREC"}
+                nhl_prop_Set = {"KXNHLPTS", "KXNHLGOAL", "KXNHLAST", "KXNHLSOG"}
+                if (series in nba_prop_Set or series in nfl_prop_Set or series in nhl_prop_Set) and ":" in title and len(parts) >= 4:
                     player_target_name = title.split(":")[0].strip().lower()
-                    player_last = player_target_name.split()[-1] if player_target_name else ""
+                    name_tokens = player_target_name.split()
+                    player_first = name_tokens[0] if name_tokens else ""
+                    player_last = name_tokens[-1] if name_tokens else ""
                     try:
-                        target_val = float(parts[-1])
+                        target_val = 1.0 if series in ("KXNBADD2", "KXNBATD3", "KXNHLGOAL") else float(parts[-1])
                     except Exception:
                         target_val = 0.0
 
@@ -859,7 +888,15 @@ class PreTradeEducator:
                                 labels = [lbl.upper() for lbl in sg.get("labels", [])]
                                 for ath in sg.get("athletes", []):
                                     a_name = (ath.get("athlete", {}).get("displayName") or "").lower()
-                                    if player_last in a_name:
+                                    a_tokens = a_name.split()
+                                    a_first = a_tokens[0] if a_tokens else ""
+                                    a_last = a_tokens[-1] if a_tokens else ""
+                                    # Exact First-Initial + Last-Name Match (Prevents Jalen Williams vs Jaylin Williams collisions!)
+                                    name_matched = (
+                                        (player_target_name == a_name)
+                                        or (player_last == a_last and (not player_first or not a_first or player_first[0] == a_first[0]))
+                                    )
+                                    if name_matched:
                                         st_arr = ath.get("stats", [])
                                         if not st_arr:
                                             continue
@@ -879,18 +916,34 @@ class PreTradeEducator:
                                             elif series == "KXNBAAST": found_stat = ast
                                             elif series == "KXNBA3PT": found_stat = tpt
                                             elif series == "KXNBAPRA": found_stat = pts + reb + ast
+                                            elif series == "KXNBAPR": found_stat = pts + reb
+                                            elif series == "KXNBAPA": found_stat = pts + ast
                                             elif series == "KXNBABLK": found_stat = blk
                                             elif series == "KXNBASTL": found_stat = stl
+                                            elif series == "KXNBADD2":
+                                                cats = sorted([pts, reb, ast, blk, stl], reverse=True)
+                                                found_stat = (min(10.0, cats[0]) + min(10.0, cats[1])) / 20.0
                                         elif series in nfl_prop_Set and len(st_arr) == len(labels):
                                             s_map = dict(zip(labels, st_arr))
                                             if series == "KXNFLPASSYDS" and sg_name == "passing":
                                                 found_stat = float(s_map.get("YDS", "0") or 0)
+                                            elif series == "KXNFLPASSTD" and sg_name == "passing":
+                                                found_stat = float(s_map.get("TD", "0") or 0)
                                             elif series == "KXNFLRUSHYDS" and sg_name == "rushing":
                                                 found_stat = float(s_map.get("YDS", "0") or 0)
                                             elif series == "KXNFLRECYDS" and sg_name == "receiving":
                                                 found_stat = float(s_map.get("YDS", "0") or 0)
                                             elif series == "KXNFLREC" and sg_name == "receiving":
                                                 found_stat = float(s_map.get("REC", "0") or 0)
+                                        elif series in nhl_prop_Set and len(st_arr) == len(labels):
+                                            s_map = dict(zip(labels, st_arr))
+                                            g_val = float(s_map.get("G", "0") or 0)
+                                            a_val = float(s_map.get("A", "0") or 0)
+                                            sog_val = float(s_map.get("S", s_map.get("SOG", "0")) or 0)
+                                            if series == "KXNHLPTS": found_stat = max(found_stat or 0.0, g_val + a_val)
+                                            elif series == "KXNHLGOAL": found_stat = max(found_stat or 0.0, g_val)
+                                            elif series == "KXNHLAST": found_stat = max(found_stat or 0.0, a_val)
+                                            elif series == "KXNHLSOG": found_stat = max(found_stat or 0.0, sog_val)
                         if found_stat is not None:
                             # Period-Aware NBA Starter Foul-Trouble Bench Shield:
                             # 3 fouls in Q1 or 4 fouls in Q2 forces coaches to bench starters for the rest of the half!
@@ -932,8 +985,9 @@ class PreTradeEducator:
                             if str(clock_disp).strip() in ("0:00", "0.0", ""):
                                 lock_tag += " | CLOCK-FROZEN"
                             return True, f"ESPN Boxscore Verified ({found_stat:.0f}/{target_val:.0f} = {prog_pct:.0f}% banked in P{live_period}{lock_tag} | MIN={mins_played} | PF={fouls_val})"
+                        return False, f"VETO [ESPN Boxscore]: Player '{player_target_name}' has 0 stats or not active in boxscore yet (P{live_period} {clock_disp})"
 
-                return True, f"ESPN Matchup Live ({event_slug} active in P{live_period} {clock_disp})"
+                return False, f"VETO [Fail-Closed Boxscore Gate]: Could not explicitly verify boxscore stat/line for {ticker} ({series}) in P{live_period}"
             except Exception as e:
                 return False, f"VETO [ESPN API Error]: League live check failed ({e})"
 
@@ -1007,8 +1061,12 @@ class PreTradeEducator:
                             if series in ("KXWTAMATCH", "KXATPMATCH"):
                                 if sets_won[idx] < sets_won[opp_idx]:
                                     return False, f"VETO [ESPN Tennis]: '{title}' is trailing in sets ({sets_won[idx]}-{sets_won[opp_idx]})"
-                                if sets_won[idx] == sets_won[opp_idx] and cur_set_games[idx] <= cur_set_games[opp_idx]:
-                                    return False, f"VETO [ESPN Tennis]: '{title}' not leading current set ({cur_set_games[idx]:.0f}-{cur_set_games[opp_idx]:.0f})"
+                                # Require EITHER a 1-Set lead (and not down a break in current set) OR a confirmed break of serve (+2 games and >=3 games won)!
+                                game_diff = cur_set_games[idx] - cur_set_games[opp_idx]
+                                if sets_won[idx] == sets_won[opp_idx] and (game_diff < 2 or cur_set_games[idx] < 3):
+                                    return False, f"VETO [ESPN Tennis On-Serve Risk]: '{title}' tied {sets_won[idx]}-{sets_won[opp_idx]} in sets and only {cur_set_games[idx]:.0f}-{cur_set_games[opp_idx]:.0f} (needs confirmed break!)"
+                                if sets_won[idx] > sets_won[opp_idx] and game_diff < -1:
+                                    return False, f"VETO [ESPN Tennis Momentum]: '{title}' down a break ({cur_set_games[idx]:.0f}-{cur_set_games[opp_idx]:.0f}) in current set"
 
                             # Anti-Fluke / Multi-Possession Cushion Shield on Full-Game Moneylines (Soccer, NHL, NBA, NFL)
                             st_obj = comp.get("status", {})
@@ -1482,8 +1540,10 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             age_sec = (now_utc - c_dt).total_seconds()
                         except Exception:
                             age_sec = 999.0
-                    # Auto-cancel resting buy orders unfilled after 40s (true UTC age) for ultra-fast cash reallocation!
-                    if age_sec > 40.0:
+                    # Auto-cancel resting buy orders unfilled after 40s (or 110s if already partially filling!)
+                    filled_so_far = float(o.get("fill_count_fp", "0") or 0)
+                    max_wait_sec = 110.0 if filled_so_far >= 1.0 else 40.0
+                    if age_sec > max_wait_sec:
                         stale_buys_to_cancel.append(
                             {
                                 "order_id": oid,

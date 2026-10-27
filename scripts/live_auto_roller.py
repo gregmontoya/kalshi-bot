@@ -2317,7 +2317,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
     peak_bids: dict[str, int] = {}
     tracked_open_positions: dict[str, dict] = educator.memory.setdefault("tracked_open_positions", {})
     stopped_out_events: set[str] = {"KXLIGAMXGAME-26OCT25TIJSLA", "KXSERIEATOTAL-26OCT27ROMCAG", "KXSERIEAGAME-26OCT27ROMCAG"}
-    traded_matchups: set[str] = set(educator.memory.setdefault("traded_matchups", ["26OCT27ROMCAG", "26OCT25TIJSLA"]))
+    stopped_out_matchups: set[str] = set(educator.memory.setdefault("stopped_out_matchups", ["26OCT27ROMCAG", "26OCT25TIJSLA"]))
     series_shard_cache: dict[str, int] = {}
     cold_series_until: dict[str, float] = {}
 
@@ -2434,10 +2434,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 cnt = abs(raw_cnt)
                 exp = float(pos.get("market_exposure_dollars", "0") or 0)
                 if cnt >= 1.0:
-                    mslug = _matchup_slug(t)
-                    if not t.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB", "KXINX", "KXNASDAQ", "KXWTI")):
-                        traded_matchups.add(mslug)
-                        educator.memory["traded_matchups"] = list(traded_matchups)
                     prev_tr = tracked_open_positions.get(t, {})
                     max_c = max(int(cnt), int(prev_tr.get("max_count", 0) or 0))
                     max_s = max(exp, float(prev_tr.get("max_stake", 0.0) or 0.0))
@@ -2466,10 +2462,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     educator.save_memory()
                 elif cnt < 1.0 and t in tracked_open_positions:
                     prev = tracked_open_positions.pop(t)
-                    stopped_out_events.add(_entity_key(t))
-                    if not t.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB", "KXINX", "KXNASDAQ", "KXWTI")):
-                        traded_matchups.add(_matchup_slug(t))
-                        educator.memory["traded_matchups"] = list(traded_matchups)
                     realized_pnl = float(pos.get("realized_pnl_dollars", "0") or 0)
                     stake_dlr = prev.get("max_stake") or prev["stake"]
                     cnt_int = max(1, int(prev.get("max_count") or prev["count"]))
@@ -2499,6 +2491,10 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             ),
                         )
                     else:
+                        stopped_out_events.add(_entity_key(t))
+                        if not t.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB", "KXINX", "KXNASDAQ", "KXWTI")):
+                            stopped_out_matchups.add(_matchup_slug(t))
+                            educator.memory["stopped_out_matchups"] = list(stopped_out_matchups)
                         educator.record_trade_autopsy(
                             ticker=t,
                             entry_cents=avg_ent_c,
@@ -2613,8 +2609,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     )
                     stopped_out_events.add(_entity_key(ticker))
                     if not ticker.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB", "KXINX", "KXNASDAQ", "KXWTI")):
-                        traded_matchups.add(_matchup_slug(ticker))
-                        educator.memory["traded_matchups"] = list(traded_matchups)
+                        stopped_out_matchups.add(_matchup_slug(ticker))
+                        educator.memory["stopped_out_matchups"] = list(stopped_out_matchups)
                     to_cancel = [
                         {
                             "order_id": so["order_id"],
@@ -2814,18 +2810,22 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     + list(tracked_open_positions.keys())
                 )
                 harvested_set = set(educator.memory.get("harvested_tickers", []))
-                # GLOBAL SAME-GAME LOCKOUT (Rule 3):
-                # Once any game (`26OCT27ROMCAG`) is traded once (active, harvested, or stopped out), lock out that
-                # entire matchup slug across ALL series (Moneyline, Total, Spread, Halftime, Quarters, Props)!
+                # STRICT ANTI-DOUBLE-BOOKING & STOPPED-OUT GAME BAN (Rule 3):
+                # 1) NEVER hold 2 concurrent positions/orders in the same game at the same time (`active_all_tickers`).
+                # 2) If a game EVER stops out/loses (`stopped_out_matchups`), permanently ban that entire game across ALL series forever!
+                # 3) If a fast Quarter/Period/Prop WINS and cashes out, allow rolling into the NEXT Quarter/Period/Late-Clock Under!
                 active_matchups = (
-                    set(traded_matchups)
+                    set(stopped_out_matchups)
                     | {_matchup_slug(tk) for tk in active_all_tickers if not tk.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB", "KXINX", "KXNASDAQ", "KXWTI"))}
-                    | {_matchup_slug(tk) for tk in harvested_set if not tk.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB", "KXINX", "KXNASDAQ", "KXWTI"))}
                 )
                 active_events = (
                     set(stopped_out_events)
                     | {_entity_key(tk) for tk in active_all_tickers}
-                    | {_entity_key(tk) for tk in harvested_set}
+                    | {
+                        _entity_key(tk)
+                        for tk in harvested_set
+                        if not any(k in tk for k in ("SPREAD", "TOTAL", "PTS", "REB", "AST", "3PT", "YDS", "REC", "GOAL", "SOA", "1Q", "2Q", "3Q", "4Q", "1P", "2P", "3P", "1H", "2H"))
+                    }
                 )
                 active_crypto_count = sum(
                     1
@@ -3078,10 +3078,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                     resting_buy_tickers.add(t)
                                     active_events.add(event_prefix)
                                     active_matchups.add(matchup_slug)
-                                    if not is_crypto_t and not is_index_t:
-                                        traded_matchups.add(matchup_slug)
-                                        educator.memory["traded_matchups"] = list(traded_matchups)
-                                        educator.save_memory()
                                     locked_buy_shards.add(shard_key)
                                     if is_crypto_t:
                                         active_crypto_count += 1

@@ -1408,27 +1408,30 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         "stage1_alerted": stage1_alerted,
                     }
                     educator.save_memory()
-                elif cnt == 0.0 and t in tracked_open_positions:
+                elif cnt < 1.0 and t in tracked_open_positions:
                     prev = tracked_open_positions.pop(t)
                     stopped_out_events.add(_entity_key(t) if "_entity_key" in locals() else "-".join(t.split("-")[:2]))
-                    educator.memory.setdefault("harvested_tickers", []).append(t)
-                    educator.save_memory()
-                    stake_dlr = prev.get("max_stake") or prev["stake"]
-                    cnt_int = prev.get("max_count") or prev["count"]
                     realized_pnl = float(pos.get("realized_pnl_dollars", "0") or 0)
-                    profit_dlr = realized_pnl if realized_pnl > 0 else max(0.01, round((cnt_int * 0.94) - stake_dlr, 2))
-                    payout_dlr = round(stake_dlr + profit_dlr, 2)
-                    roi_pct = round((profit_dlr / max(0.01, stake_dlr)) * 100, 1)
-                    await send_phone_alert(
-                        client,
-                        "💰 TRADE WON & CASHED OUT!",
-                        (
-                            f"Play: {t}\n"
-                            f"Action: Sold {cnt_int}x (${payout_dlr:.2f} payout on ${stake_dlr:.2f} stake)\n"
-                            f"Net Realized Profit: +${profit_dlr:.2f} (+{roi_pct}% ROI)\n"
-                            f"New Account Equity: ${equity_cents/100:.2f}"
-                        ),
-                    )
+                    if realized_pnl >= 0:
+                        educator.memory.setdefault("harvested_tickers", []).append(t)
+                        educator.save_memory()
+                        stake_dlr = prev.get("max_stake") or prev["stake"]
+                        cnt_int = prev.get("max_count") or prev["count"]
+                        profit_dlr = realized_pnl if realized_pnl > 0 else max(0.01, round((cnt_int * 0.94) - stake_dlr, 2))
+                        payout_dlr = round(stake_dlr + profit_dlr, 2)
+                        roi_pct = round((profit_dlr / max(0.01, stake_dlr)) * 100, 1)
+                        await send_phone_alert(
+                            client,
+                            "💰 TRADE WON & CASHED OUT!",
+                            (
+                                f"Play: {t}\n"
+                                f"Action: Sold {cnt_int}x (${payout_dlr:.2f} payout on ${stake_dlr:.2f} stake)\n"
+                                f"Net Realized Profit: +${profit_dlr:.2f} (+{roi_pct}% ROI)\n"
+                                f"New Account Equity: ${equity_cents/100:.2f}"
+                            ),
+                        )
+                    else:
+                        educator.save_memory()
 
             orders_resp = await client.request("GET", "/portfolio/orders", authenticated=True)
             open_orders = [

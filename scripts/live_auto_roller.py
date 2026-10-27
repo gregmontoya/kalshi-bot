@@ -1740,8 +1740,9 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     if idx in shard_cents:
                         shard_cents[idx] = int(float(b_item.get("balance", "0") or 0) * 100)
 
-                # Pre-warm any dry trading shard (0, 2, 3) via Intra Account Transfer API if total cash permits
-                for dst_shard in (0, 2, 3):
+                # Pre-warm dry trading shards ONLY when cash > $260 and no resting buy orders are reserving shard margin
+                # (otherwise let the JIT Cross-Shard Sweeper concentrate cash on whichever shard has the approved A+ play!)
+                for dst_shard in ((0, 2, 3) if (total_cents >= 26000 and not resting_buy_tickers) else ()):
                     if shard_cents.get(dst_shard, 0) < min_stake_c:
                         donor_shard = max((0, 2, 3), key=lambda s: shard_cents.get(s, 0))
                         if donor_shard != dst_shard and shard_cents.get(donor_shard, 0) >= (min_stake_c * 2):

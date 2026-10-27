@@ -299,8 +299,10 @@ WATCH_SERIES = [
     "KXNCAAMBGAME",
     "KXNCAAWBGAME",
     "KXNHLGAME",
+    "KXMLBGAME",
     "KXWTAMATCH",
     "KXATPMATCH",
+    "KXATPCHALLENGERMATCH",
     "KXUCLGAME",
     "KXMLSGAME",
     "KXLIGAMXGAME",
@@ -1828,12 +1830,14 @@ class PreTradeEducator:
         espn_map = {
             "KXWTAMATCH": "tennis/wta/scoreboard",
             "KXATPMATCH": "tennis/atp/scoreboard",
+            "KXATPCHALLENGERMATCH": "tennis/atp/scoreboard",
             "KXNBAGAME": "basketball/nba/scoreboard",
             "KXNFLGAME": "football/nfl/scoreboard",
             "KXNCAAFGAME": "football/college-football/scoreboard?groups=80&limit=200",
             "KXNCAAMBGAME": "basketball/mens-college-basketball/scoreboard?groups=50&limit=200",
             "KXNCAAWBGAME": "basketball/womens-college-basketball/scoreboard?groups=50&limit=200",
             "KXNHLGAME": "hockey/nhl/scoreboard",
+            "KXMLBGAME": "baseball/mlb/scoreboard",
             "KXUCLGAME": "soccer/uefa.champions/scoreboard",
             "KXMLSGAME": "soccer/usa.1/scoreboard",
             "KXLIGAMXGAME": "soccer/mex.1/scoreboard",
@@ -1843,6 +1847,7 @@ class PreTradeEducator:
             "KXBUNDESLIGAGAME": "soccer/ger.1/scoreboard",
             "KXLIGUE1GAME": "soccer/fra.1/scoreboard",
         }
+        is_tennis_s = series in ("KXWTAMATCH", "KXATPMATCH", "KXATPCHALLENGERMATCH")
         if series in espn_map:
             sport_path = espn_map[series]
             target_name = title.replace(" wins", "").strip().lower()
@@ -1865,7 +1870,7 @@ class PreTradeEducator:
                             n = (c.get("athlete", {}).get("displayName") or c.get("team", {}).get("displayName") or "").lower()
                             names.append(n)
                             ls = c.get("linescores", [])
-                            if series in ("KXWTAMATCH", "KXATPMATCH") and ls:
+                            if is_tennis_s and ls:
                                 scores.append(sum(float(x.get("value", 0) or 0) for x in ls))
                                 sets_won.append(sum(1 for x in ls if x.get("winner") is True))
                                 cur_set_games.append(float(ls[-1].get("value", 0) or 0))
@@ -1888,27 +1893,48 @@ class PreTradeEducator:
                             idx = 0 if last_word in names[0] else 1
                             opp_idx = 1 - idx
                             margin = scores[idx] - scores[opp_idx]
-                            if margin <= 0:
-                                return False, f"VETO [ESPN API]: '{title}' is NOT LEADING on live scoreboard ({scores[idx]:.0f} vs {scores[opp_idx]:.0f})"
-                            if series in ("KXWTAMATCH", "KXATPMATCH"):
+                            endgame_snipe_tag = ""
+                            if is_tennis_s:
+                                game_diff = cur_set_games[idx] - cur_set_games[opp_idx]
                                 if sets_won[idx] < sets_won[opp_idx]:
                                     return False, f"VETO [ESPN Tennis]: '{title}' is trailing in sets ({sets_won[idx]}-{sets_won[opp_idx]})"
-                                # WTA vs. ATP Service-Break Volatility Shield:
-                                # On the WTA tour (`KXWTAMATCH`), single breaks are broken back 45%+ of the time — require a Double Break (+3 games) in Set 1,
-                                # or a 1-Set lead while on-serve (`game_diff >= 0`)!
-                                game_diff = cur_set_games[idx] - cur_set_games[opp_idx]
                                 min_set1_break = 3 if series == "KXWTAMATCH" else 2
                                 min_set2_diff = 0 if series == "KXWTAMATCH" else -1
                                 if sets_won[idx] == sets_won[opp_idx] and (game_diff < min_set1_break or cur_set_games[idx] < 3):
                                     return False, f"VETO [ESPN Tennis Break Risk]: '{title}' tied {sets_won[idx]}-{sets_won[opp_idx]} in sets and {cur_set_games[idx]:.0f}-{cur_set_games[opp_idx]:.0f} (needs +{min_set1_break} game lead!)"
                                 if sets_won[idx] > sets_won[opp_idx] and game_diff < min_set2_diff:
                                     return False, f"VETO [ESPN Tennis Momentum]: '{title}' down in current set ({cur_set_games[idx]:.0f}-{cur_set_games[opp_idx]:.0f}) despite set lead"
+                                # True Endgame Sniper Detection for Tennis (e.g., Flavio Cobolli leading 5-3 in 3rd Set or up 1 Set + 4-2 in Set 2!):
+                                if (sets_won[idx] > sets_won[opp_idx] and cur_set_games[idx] >= 4 and game_diff >= 2) or (
+                                    sets_won[idx] == sets_won[opp_idx] and sets_won[idx] >= 1 and cur_set_games[idx] >= 5 and game_diff >= 2
+                                ):
+                                    endgame_snipe_tag = f" | ENDGAME-SNIPE(Sets {sets_won[idx]}-{sets_won[opp_idx]}, Game {cur_set_games[idx]:.0f}-{cur_set_games[opp_idx]:.0f})"
+                            else:
+                                if margin <= 0:
+                                    return False, f"VETO [ESPN API]: '{title}' is NOT LEADING on live scoreboard ({scores[idx]:.0f} vs {scores[opp_idx]:.0f})"
+                                # Active Opponent Scoring-Run Veto (Never buy into a team whose lead is actively shrinking!):
+                                m_hist_map = getattr(self, "_live_margin_hist", None)
+                                if m_hist_map is None:
+                                    m_hist_map = {}
+                                    self._live_margin_hist = m_hist_map
+                                now_m_ts = time.time()
+                                m_hist = [pt for pt in m_hist_map.get(ticker, []) if (now_m_ts - pt[0]) <= 180.0]
+                                m_hist.append((now_m_ts, margin))
+                                m_hist_map[ticker] = m_hist
+                                recent_peak_margin = max(pt[1] for pt in m_hist)
+                                margin_drop = recent_peak_margin - margin
+                                max_allow_drop = 5.0 if series in ("KXNBAGAME", "KXNCAAMBGAME", "KXNCAAWBGAME", "KXNFLGAME", "KXNCAAFGAME") else 1.0
+                                if margin_drop >= max_allow_drop:
+                                    return False, (
+                                        f"VETO [Opponent Active Scoring Run]: '{title}' lead shrank from +{recent_peak_margin:.0f} down to +{margin:.0f} "
+                                        "in last 3m — waiting for opponent's run to stop!"
+                                    )
 
                             # Anti-Fluke / Multi-Possession Cushion Shield + Standings Quality Tier (`GOOD` vs `MEDIUM` vs `BAD`) on Full-Game Moneylines:
                             st_obj = comp.get("status", {})
                             period_num = int(st_obj.get("period", 1) or 1)
                             clock_disp = st_obj.get("displayClock", "")
-                            ml_st_edge, ml_st_tag = (0.0, "") if series in ("KXWTAMATCH", "KXATPMATCH") else _team_standings_edge(competitors[idx], competitors[opp_idx])
+                            ml_st_edge, ml_st_tag = (0.0, "") if is_tennis_s else _team_standings_edge(competitors[idx], competitors[opp_idx])
                             if "soccer/" in sport_path and margin < 2:
                                 return False, (
                                     f"VETO [Soccer 1-Goal Lead Ban]: '{title}' only leading {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
@@ -1919,11 +1945,12 @@ class PreTradeEducator:
                                     f"VETO [NHL 1-Goal Lead Ban]: '{title}' only up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
                                     f"in P{period_num} — STRICT 2+ GOAL CUSHION REQUIRED on all NHL Moneylines{ml_st_tag}!"
                                 )
+                            elif series == "KXMLBGAME" and (period_num < 6 or margin < 2):
+                                return False, (
+                                    f"VETO [MLB Inning/Run Cushion]: '{title}' up {scores[idx]:.0f}-{scores[opp_idx]:.0f} in Inning {period_num} "
+                                    "(requires >=6th Inning & >=2-run cushion!)"
+                                )
                             elif series in ("KXNBAGAME", "KXNCAAMBGAME", "KXNCAAWBGAME"):
-                                # Strict Multi-Possession Full-Game Moneyline Cushion:
-                                # - P1/P2 (1st Half): +15 pts (prioritize 1Q/2Q/1H fast-settle lines!)
-                                # - P3 (3rd Quarter): +12 pts (a 5-pt Q3 lead is <2 three-pointers and caused both MINCLE & DALMIA wipeouts!)
-                                # - P4 (4th Quarter): +8 pts (or +5 pts inside final 3:00 of Q4)
                                 try:
                                     q4_clk_m = float(str(clock_disp).split(":")[0]) if ":" in str(clock_disp) else 6.0
                                 except Exception:
@@ -1941,12 +1968,12 @@ class PreTradeEducator:
                                         f"VETO [Basketball Cushion/Time Gate]: '{title}' up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
                                         f"(+{margin:.0f} < +{min_bball_margin} pt min in P{period_num} {clock_disp}{ml_st_tag} — avoiding fragile Q3/Q4 leads!)"
                                     )
+                                if period_num >= 4 and q4_clk_m <= 4.0 and margin >= min_bball_margin:
+                                    endgame_snipe_tag = f" | ENDGAME-SNIPE(P{period_num} {clock_disp}, +{margin:.0f}pts)"
                             elif series in ("KXNFLGAME", "KXNCAAFGAME"):
                                 min_fball_margin = 14 if period_num <= 2 else (10 if period_num == 3 else 7)
                                 if ml_st_edge <= -0.10:
                                     min_fball_margin += 4
-                                # Opponent Driving in Red Zone Threat Shield:
-                                # If the trailing opponent has possession inside the Red Zone (about to score 7 pts!), add +7 pts to required cushion!
                                 sit_fb = comp.get("situation") or {}
                                 if sit_fb.get("isRedZone") and str(sit_fb.get("possession") or "") == str(competitors[opp_idx].get("id") or ""):
                                     min_fball_margin += 7
@@ -1955,9 +1982,18 @@ class PreTradeEducator:
                                         f"VETO [Football Cushion / Red-Zone Gate]: '{title}' up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
                                         f"(+{margin:.0f} < +{min_fball_margin} pt min in P{period_num}{ml_st_tag} — avoiding single-TD / Red-Zone flips!)"
                                     )
+                                if period_num >= 4 and margin >= 9:
+                                    endgame_snipe_tag = f" | ENDGAME-SNIPE(P{period_num} {clock_disp}, +{margin:.0f}pts)"
+                            if not endgame_snipe_tag:
+                                if series == "KXNHLGAME" and period_num >= 3 and margin >= 2:
+                                    endgame_snipe_tag = f" | ENDGAME-SNIPE(NHL P3 {clock_disp}, +{margin:.0f}G)"
+                                elif "soccer/" in sport_path and period_num >= 2 and margin >= 2:
+                                    endgame_snipe_tag = f" | ENDGAME-SNIPE(Soccer 2H {clock_disp}, +{margin:.0f}G)"
+                                elif series == "KXMLBGAME" and period_num >= 8 and margin >= 2:
+                                    endgame_snipe_tag = f" | ENDGAME-SNIPE(MLB Inn {period_num}, +{margin:.0f}R)"
 
                             # Check Vegas Opening vs Closing Line Movement, Game Clock Period & Live Win Probability
-                            vegas_note = ml_st_tag
+                            vegas_note = ml_st_tag + endgame_snipe_tag
                             try:
                                 is_4q_sport = series in ("KXNBAGAME", "KXNFLGAME", "KXNCAAFGAME", "KXNCAAWBGAME")
                                 is_late_clock = (period_num >= 3) if is_4q_sport else (period_num >= 2)
@@ -2168,17 +2204,9 @@ class PreTradeEducator:
                             f"{momentum_delta:+d}c net move, efficiency={eff_ratio:.0%})!"
                         ), 0.0
 
-                    # Gate 2D: Sustained Plateau & Trend Hold Filter (Prevents Buying 5-Second Flash Pops That Drop -1c to -2c!)
-                    # Require that the last 4 prints have stayed supported within <=3c of `newest_c`, AND if the contract
-                    # climbed >= +6c recently, require at least >=25s of sustained plateau hold time across the last 4 trades!
+                    # Check External Real-World API Research FIRST so True Endgame Snipes (like 5-3 Tennis 3rd Set, <4m Quarter/Under Locks)
+                    # can fast-track past slow plateau waits and snipe up to 90c!
                     last_4_p = t_prices[:min(4, len(t_prices))]
-                    if min(last_4_p) < (newest_c - 3):
-                        self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
-                        self.save_memory()
-                        return False, (
-                            f"VETO [Unheld Flash Pop — No Plateau Support]: Last 4 prints ({last_4_p}) haven't stabilized within 3c of {newest_c}c yet "
-                            "— waiting for price to hold steady so it doesn't dip 1-2% after entry!"
-                        ), 0.0
                     plateau_dwell_sec = 60.0
                     if len(trades) >= 4:
                         try:
@@ -2186,15 +2214,12 @@ class PreTradeEducator:
                             plateau_dwell_sec = max(0.0, (now_utc - t4_dt).total_seconds())
                         except Exception:
                             plateau_dwell_sec = 60.0
-                    if momentum_delta >= 6 and plateau_dwell_sec < 25.0 and not is_quarter_mkt:
-                        self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
-                        self.save_memory()
-                        return False, (
-                            f"VETO [Too-Fast Pop Without Plateau Hold]: Climbed +{momentum_delta}c in only {plateau_dwell_sec:.0f}s "
-                            "— waiting >=25s at plateau to confirm support!"
-                        ), 0.0
                     if 0 <= momentum_delta <= 14 and pullback_from_peak_c <= 1 and min(last_4_p) >= (newest_c - 2):
                         tape_velocity_tag = f" | +PLATEAU-HOLD({plateau_dwell_sec:.0f}s, Eff={eff_ratio:.0%})"
+                else:
+                    last_4_p = [80]
+                    plateau_dwell_sec = 60.0
+                    newest_c = 80
         except Exception as e:
             return False, f"VETO: Trade tape unavailable ({e})", 0.0
 
@@ -2205,6 +2230,37 @@ class PreTradeEducator:
             self.save_memory()
             return False, ext_reason, 0.0
 
+        is_endgame_snipe = (
+            "ENDGAME-SNIPE" in ext_reason
+            or "PROP-LOCK" in ext_reason
+            or is_under_no
+            or is_quarter_mkt
+        )
+        live_side_ask = (ob.best_no_ask or 99) if is_under_no else (ob.best_yes_ask or 99)
+        if live_side_ask > 87 and not is_endgame_snipe:
+            self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+            self.save_memory()
+            return False, (
+                f"VETO [88-90c Reserved for Endgame Snipes]: Ask={live_side_ask}c > 87c and not in final-minutes ENDGAME-SNIPE window"
+            ), 0.0
+
+        # Gate 2D: Sustained Plateau & Trend Hold Filter (Applied to Mid-Game Plays; Bypassed on Verified Endgame Snipes!)
+        if not is_endgame_snipe and len(trades) >= 3:
+            if min(last_4_p) < (newest_c - 3):
+                self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+                self.save_memory()
+                return False, (
+                    f"VETO [Unheld Flash Pop — No Plateau Support]: Last 4 prints ({last_4_p}) haven't stabilized within 3c of {newest_c}c yet "
+                    "— waiting for price to hold steady so it doesn't dip 1-2% after entry!"
+                ), 0.0
+            if momentum_delta >= 6 and plateau_dwell_sec < 25.0:
+                self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+                self.save_memory()
+                return False, (
+                    f"VETO [Too-Fast Pop Without Plateau Hold]: Climbed +{momentum_delta}c in only {plateau_dwell_sec:.0f}s "
+                    "— waiting >=25s at plateau to confirm support!"
+                ), 0.0
+
         # 3B. Live Pinnacle / Sharp Book Multiplicative De-Vig Check (The Odds API v4) + Stair-Step Tape Velocity Tag
         pin_note = await self.verify_pinnacle_sharp_odds(client, series, ticker, title)
         if pin_note:
@@ -2214,6 +2270,8 @@ class PreTradeEducator:
 
         # 4. Institutional 0-100 Team/Player Pedigree & Trend Confidence Score + Minimum 75/100 Gate:
         conf_score = 76
+        if "ENDGAME-SNIPE" in ext_reason:
+            conf_score += 8   # Verified Final-Minutes / Match-Point Endgame Snipe boost!
         if "STANDINGS[ELITE" in ext_reason or "STANDINGS[#" in ext_reason or "FANTASY-ALPHA" in ext_reason:
             conf_score += 10
         elif "STANDINGS[GOOD" in ext_reason or "STARTER#1" in ext_reason:
@@ -2608,9 +2666,9 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             age_sec = (now_utc - c_dt).total_seconds()
                         except Exception:
                             age_sec = 999.0
-                    # Auto-cancel resting buy orders unfilled after 40s (or 110s if already partially filling!)
+                    # Auto-cancel resting buy orders unfilled after 25s (or 55s if already partially filling!) so we never get toxic-filled on stale bids!
                     filled_so_far = float(o.get("fill_count_fp", "0") or 0)
-                    max_wait_sec = 110.0 if filled_so_far >= 1.0 else 40.0
+                    max_wait_sec = 55.0 if filled_so_far >= 1.0 else 25.0
                     if age_sec > max_wait_sec:
                         stale_buys_to_cancel.append(
                             {
@@ -2625,7 +2683,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         locked_buy_shards.add(int(o.get("exchange_index", 0) or 0))
 
             if stale_buys_to_cancel:
-                logger.info(f"Auto-canceling {len(stale_buys_to_cancel)} unfilled resting buy order(s) (>40s UTC age) to free cash.")
+                logger.info(f"Auto-canceling {len(stale_buys_to_cancel)} unfilled resting buy order(s) (>25s UTC age) to prevent stale fills and free cash.")
                 try:
                     await client.request(
                         "DELETE",
@@ -2747,10 +2805,10 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 if uncovered >= 1:
                     undercut_ask = max(cur_bid + 1, cur_ask - 1)
                     if undercut_ask >= avg_entry_cents + 6:
-                        fast_tp = min(avg_entry_cents + 7, undercut_ask)
+                        fast_tp = min(96, avg_entry_cents + 7, undercut_ask)
                     else:
-                        fast_tp = max(cur_bid + 1, min(93, avg_entry_cents + 6))
-                    wave_tp = max(fast_tp + 3, min(96, avg_entry_cents + 11))
+                        fast_tp = max(cur_bid + 1, min(95, avg_entry_cents + 6))
+                    wave_tp = max(fast_tp + 2, min(98, avg_entry_cents + 10))
 
                     if uncovered >= 4:
                         s1_ratio = 0.60 if pos_conf_score >= 82 else 0.70
@@ -2792,7 +2850,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
             min_stake_c = tier["min_stake_cents"]
             quota_st = educator.get_daily_quota_status()
             min_leader_ask = 76
-            max_leader_ask = 87
+            max_leader_ask = 90
             logger.info(
                 f"Heartbeat [{tier['name']}] | Cash: ${total_cents/100:.2f} | Portfolio: ${port_cents/100:.2f} | Total Equity: ${equity_cents/100:.2f} (Floor=${daily_floor_c/100:.2f}) | Daily Quota: {quota_st['completed_bets']}/{quota_st['target_bets']} ({quota_st['wins']}W-{quota_st['losses']}L, Pace={quota_st['expected_by_now']})"
             )
@@ -2969,7 +3027,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 mins_to_exp = (exp_dt - now_utc).total_seconds() / 60.0
                             except Exception:
                                 continue
-                            if -180.0 <= mins_to_exp <= 210.0:
+                            if -10080.0 <= mins_to_exp <= 360.0:
                                 has_near_active = True
 
                             if (
@@ -2981,12 +3039,12 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             ):
                                 continue
 
-                            # Strict <= 90-Minute Fast-Turnover Window for Live Sports; 5-25m for Crypto/Indices
+                            # Allow -7d to +6h on Live Sports so delayed/multi-day Tennis & Sports games are never skipped by Kalshi's stale schedule timestamp!
                             if is_crypto_s or is_index_s:
                                 if not (5.0 <= mins_to_exp <= 25.0):
                                     continue
                             else:
-                                if not (-180.0 <= mins_to_exp <= 90.0):
+                                if not (-10080.0 <= mins_to_exp <= 360.0):
                                     continue
 
                             bid_f = float(m.get("yes_bid_dollars") or 0)

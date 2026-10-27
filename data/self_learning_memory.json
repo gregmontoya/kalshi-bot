@@ -1,0 +1,3835 @@
+{
+  "series_stats": {
+    "KXNHLGAME": {
+      "realized_pnl": 0.06,
+      "wins": 1,
+      "losses": 0
+    },
+    "KXLIGAMXGAME": {
+      "realized_pnl": -0.44,
+      "wins": 0,
+      "losses": 0
+    },
+    "KXWTAMATCH": {
+      "realized_pnl": 7.32,
+      "wins": 1,
+      "losses": 0
+    },
+    "KXATPMATCH": {
+      "realized_pnl": 21.19,
+      "wins": 1,
+      "losses": 0
+    },
+    "KXINXU": {
+      "realized_pnl": -4.2,
+      "wins": 0,
+      "losses": 1
+    },
+    "KXNASDAQ100U": {
+      "realized_pnl": 3.63,
+      "wins": 1,
+      "losses": 0
+    },
+    "KXBTCD": {
+      "realized_pnl": 2.61,
+      "wins": 1,
+      "losses": 0
+    },
+    "KXETHD": {
+      "realized_pnl": 1.05,
+      "wins": 1,
+      "losses": 0
+    },
+    "KXLALIGAGAME": {
+      "realized_pnl": 12.8,
+      "wins": 1,
+      "losses": 0
+    },
+    "KXNBA1H": {
+      "realized_pnl": 11.56,
+      "wins": 1,
+      "losses": 0
+    },
+    "KXNBA1HSPREAD": {
+      "realized_pnl": 7.93,
+      "wins": 1,
+      "losses": 0
+    },
+    "KXNBATEAMTOTAL": {
+      "realized_pnl": 9.9,
+      "wins": 1,
+      "losses": 0
+    },
+    "KXNBASPREAD": {
+      "realized_pnl": 18.7,
+      "wins": 2,
+      "losses": 0
+    },
+    "KXNBAGAME": {
+      "realized_pnl": 9.35,
+      "wins": 1,
+      "losses": 0
+    },
+    "KXNBATOTAL": {
+      "realized_pnl": -18.04,
+      "wins": 0,
+      "losses": 1
+    },
+    "KXNFLPASSYDS": {
+      "realized_pnl": -46.0045,
+      "wins": 0,
+      "losses": 1
+    },
+    "KXNFLTEAMTOTAL": {
+      "realized_pnl": -15.95,
+      "wins": 0,
+      "losses": 1
+    },
+    "KXNHLTOTAL": {
+      "realized_pnl": 0.06,
+      "wins": 1,
+      "losses": 0
+    },
+    "KXNFLSPREAD": {
+      "realized_pnl": 24.92,
+      "wins": 2,
+      "losses": 0
+    },
+    "KXSERIEAGAME": {
+      "realized_pnl": -167.2224,
+      "wins": 0,
+      "losses": 1
+    },
+    "KXSERIEATOTAL": {
+      "realized_pnl": -108.5,
+      "wins": 0,
+      "losses": 1
+    }
+  },
+  "evaluated_plays": 3624,
+  "vetoed_plays": 3350,
+  "tracked_open_positions": {
+    "KXWTAMATCH-26OCT26ZAKLIN-LIN": {
+      "count": 122,
+      "stake": 101.26,
+      "max_count": 244,
+      "max_stake": 202.52,
+      "stage1_alerted": true
+    }
+  },
+  "greened_out_tickers": [],
+  "daily_ledger": {
+    "2026-10-25": {
+      "start_equity": 26.04,
+      "current_equity": 26.29,
+      "high_equity": 26.29,
+      "low_equity": 25.83,
+      "net_change_dlr": 0.25,
+      "net_change_pct": 0.96
+    },
+    "2026-10-26": {
+      "start_equity": 466.29,
+      "current_equity": 444.29,
+      "high_equity": 476.81,
+      "low_equity": 25.99,
+      "net_change_dlr": -22.0,
+      "net_change_pct": -4.72,
+      "deposits_dlr": 440.0
+    },
+    "2026-10-27": {
+      "start_equity": 678.6,
+      "current_equity": 440.12,
+      "high_equity": 730.94,
+      "low_equity": 438.3,
+      "net_change_dlr": -238.48,
+      "net_change_pct": -35.14,
+      "deposits_dlr": 210.7
+    }
+  },
+  "equity_history": [
+    {
+      "date": "2026-10-26",
+      "time": "19:52",
+      "equity": 228.27,
+      "cash": 150.65,
+      "portfolio": 77.62
+    },
+    {
+      "date": "2026-10-26",
+      "time": "19:53",
+      "equity": 229.38,
+      "cash": 150.65,
+      "portfolio": 78.73
+    },
+    {
+      "date": "2026-10-26",
+      "time": "19:53",
+      "equity": 234.25,
+      "cash": 200.63,
+      "portfolio": 33.62
+    },
+    {
+      "date": "2026-10-26",
+      "time": "19:54",
+      "equity": 236.45,
+      "cash": 200.63,
+      "portfolio": 35.82
+    },
+    {
+      "date": "2026-10-26",
+      "time": "19:54",
+      "equity": 235.35,
+      "cash": 200.63,
+      "portfolio": 34.72
+    },
+    {
+      "date": "2026-10-26",
+      "time": "19:55",
+      "equity": 229.83,
+      "cash": 19.66,
+      "portfolio": 210.17
+    },
+    {
+      "date": "2026-10-26",
+      "time": "19:55",
+      "equity": 239.08,
+      "cash": 123.51,
+      "portfolio": 115.57
+    },
+    {
+      "date": "2026-10-26",
+      "time": "19:56",
+      "equity": 239.08,
+      "cash": 123.51,
+      "portfolio": 115.57
+    },
+    {
+      "date": "2026-10-26",
+      "time": "19:57",
+      "equity": 237.96,
+      "cash": 123.51,
+      "portfolio": 114.45
+    },
+    {
+      "date": "2026-10-26",
+      "time": "19:58",
+      "equity": 237.4,
+      "cash": 123.51,
+      "portfolio": 113.89
+    },
+    {
+      "date": "2026-10-26",
+      "time": "19:58",
+      "equity": 237.96,
+      "cash": 122.76,
+      "portfolio": 115.2
+    },
+    {
+      "date": "2026-10-26",
+      "time": "19:59",
+      "equity": 237.97,
+      "cash": 122.76,
+      "portfolio": 115.21
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:00",
+      "equity": 225.34,
+      "cash": 122.76,
+      "portfolio": 102.58
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:00",
+      "equity": 223.86,
+      "cash": 146.82,
+      "portfolio": 77.04
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:01",
+      "equity": 218.34,
+      "cash": 146.82,
+      "portfolio": 71.52
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:01",
+      "equity": 224.62,
+      "cash": 59.6,
+      "portfolio": 165.02
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:02",
+      "equity": 223.52,
+      "cash": 59.6,
+      "portfolio": 163.92
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:03",
+      "equity": 226.81,
+      "cash": 59.6,
+      "portfolio": 167.21
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:03",
+      "equity": 228.89,
+      "cash": 106.23,
+      "portfolio": 122.66
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:03",
+      "equity": 229.44,
+      "cash": 106.23,
+      "portfolio": 123.21
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:04",
+      "equity": 238.24,
+      "cash": 106.23,
+      "portfolio": 132.01
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:04",
+      "equity": 240.35,
+      "cash": 155.64,
+      "portfolio": 84.71
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:05",
+      "equity": 240.35,
+      "cash": 155.64,
+      "portfolio": 84.71
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:06",
+      "equity": 234.85,
+      "cash": 155.64,
+      "portfolio": 79.21
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:06",
+      "equity": 239.25,
+      "cash": 155.64,
+      "portfolio": 83.61
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:07",
+      "equity": 246.95,
+      "cash": 155.64,
+      "portfolio": 91.31
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:07",
+      "equity": 247.37,
+      "cash": 201.71,
+      "portfolio": 45.66
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:08",
+      "equity": 247.92,
+      "cash": 201.71,
+      "portfolio": 46.21
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:08",
+      "equity": 250.57,
+      "cash": 250.57,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:09",
+      "equity": 250.57,
+      "cash": 250.57,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:09",
+      "equity": 446.58,
+      "cash": 446.57,
+      "portfolio": 0.01
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:10",
+      "equity": 443.02,
+      "cash": 352.82,
+      "portfolio": 90.2
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:10",
+      "equity": 444.12,
+      "cash": 352.82,
+      "portfolio": 91.3
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:11",
+      "equity": 443.02,
+      "cash": 194.07,
+      "portfolio": 248.95
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:12",
+      "equity": 440.12,
+      "cash": 194.07,
+      "portfolio": 246.05
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:12",
+      "equity": 438.27,
+      "cash": 194.07,
+      "portfolio": 244.2
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:13",
+      "equity": 445.72,
+      "cash": 278.59,
+      "portfolio": 167.13
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:13",
+      "equity": 447.58,
+      "cash": 278.59,
+      "portfolio": 168.99
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:14",
+      "equity": 448.52,
+      "cash": 278.59,
+      "portfolio": 169.93
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:14",
+      "equity": 449.45,
+      "cash": 278.59,
+      "portfolio": 170.86
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:15",
+      "equity": 447.59,
+      "cash": 278.59,
+      "portfolio": 169.0
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:15",
+      "equity": 445.22,
+      "cash": 278.59,
+      "portfolio": 166.63
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:16",
+      "equity": 434.92,
+      "cash": 367.81,
+      "portfolio": 67.11
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:16",
+      "equity": 441.52,
+      "cash": 367.81,
+      "portfolio": 73.71
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:17",
+      "equity": 449.22,
+      "cash": 367.81,
+      "portfolio": 81.41
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:17",
+      "equity": 439.32,
+      "cash": 367.81,
+      "portfolio": 71.51
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:18",
+      "equity": 437.12,
+      "cash": 367.81,
+      "portfolio": 69.31
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:19",
+      "equity": 433.82,
+      "cash": 367.81,
+      "portfolio": 66.01
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:19",
+      "equity": 434.92,
+      "cash": 367.82,
+      "portfolio": 67.1
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:20",
+      "equity": 437.12,
+      "cash": 367.82,
+      "portfolio": 69.3
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:21",
+      "equity": 437.12,
+      "cash": 367.82,
+      "portfolio": 69.3
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:28",
+      "equity": 470.55,
+      "cash": 470.55,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:31",
+      "equity": 470.55,
+      "cash": 470.55,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:34",
+      "equity": 470.55,
+      "cash": 470.55,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:37",
+      "equity": 470.55,
+      "cash": 470.55,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:38",
+      "equity": 470.55,
+      "cash": 470.55,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:41",
+      "equity": 470.55,
+      "cash": 470.55,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:47",
+      "equity": 470.55,
+      "cash": 470.55,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:56",
+      "equity": 471.1,
+      "cash": 410.19,
+      "portfolio": 60.91
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:56",
+      "equity": 471.4,
+      "cash": 377.9,
+      "portfolio": 93.5
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:57",
+      "equity": 470.3,
+      "cash": 377.9,
+      "portfolio": 92.4
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:57",
+      "equity": 471.4,
+      "cash": 377.9,
+      "portfolio": 93.5
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:58",
+      "equity": 471.4,
+      "cash": 377.9,
+      "portfolio": 93.5
+    },
+    {
+      "date": "2026-10-26",
+      "time": "20:59",
+      "equity": 471.4,
+      "cash": 377.9,
+      "portfolio": 93.5
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:00",
+      "equity": 474.01,
+      "cash": 426.41,
+      "portfolio": 47.6
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:00",
+      "equity": 475.69,
+      "cash": 426.41,
+      "portfolio": 49.28
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:01",
+      "equity": 472.33,
+      "cash": 426.41,
+      "portfolio": 45.92
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:01",
+      "equity": 473.45,
+      "cash": 426.41,
+      "portfolio": 47.04
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:02",
+      "equity": 474.01,
+      "cash": 426.41,
+      "portfolio": 47.6
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:02",
+      "equity": 474.57,
+      "cash": 426.41,
+      "portfolio": 48.16
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:03",
+      "equity": 474.01,
+      "cash": 426.41,
+      "portfolio": 47.6
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:03",
+      "equity": 470.09,
+      "cash": 426.41,
+      "portfolio": 43.68
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:04",
+      "equity": 473.45,
+      "cash": 426.41,
+      "portfolio": 47.04
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:04",
+      "equity": 471.77,
+      "cash": 426.41,
+      "portfolio": 45.36
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:05",
+      "equity": 471.77,
+      "cash": 426.41,
+      "portfolio": 45.36
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:05",
+      "equity": 472.89,
+      "cash": 426.41,
+      "portfolio": 46.48
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:06",
+      "equity": 472.89,
+      "cash": 426.41,
+      "portfolio": 46.48
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:06",
+      "equity": 472.33,
+      "cash": 426.41,
+      "portfolio": 45.92
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:08",
+      "equity": 469.53,
+      "cash": 426.41,
+      "portfolio": 43.12
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:08",
+      "equity": 471.21,
+      "cash": 426.41,
+      "portfolio": 44.8
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:09",
+      "equity": 473.45,
+      "cash": 426.41,
+      "portfolio": 47.04
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:09",
+      "equity": 474.01,
+      "cash": 426.41,
+      "portfolio": 47.6
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:10",
+      "equity": 474.01,
+      "cash": 426.41,
+      "portfolio": 47.6
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:11",
+      "equity": 475.69,
+      "cash": 426.41,
+      "portfolio": 49.28
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:12",
+      "equity": 474.01,
+      "cash": 426.41,
+      "portfolio": 47.6
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:13",
+      "equity": 476.81,
+      "cash": 426.41,
+      "portfolio": 50.4
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:14",
+      "equity": 475.69,
+      "cash": 426.41,
+      "portfolio": 49.28
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:14",
+      "equity": 476.25,
+      "cash": 426.41,
+      "portfolio": 49.84
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:15",
+      "equity": 470.09,
+      "cash": 426.41,
+      "portfolio": 43.68
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:16",
+      "equity": 462.81,
+      "cash": 426.41,
+      "portfolio": 36.4
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:18",
+      "equity": 458.89,
+      "cash": 426.41,
+      "portfolio": 32.48
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:19",
+      "equity": 459.45,
+      "cash": 426.41,
+      "portfolio": 33.04
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:19",
+      "equity": 461.13,
+      "cash": 426.41,
+      "portfolio": 34.72
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:20",
+      "equity": 466.73,
+      "cash": 426.41,
+      "portfolio": 40.32
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:21",
+      "equity": 463.29,
+      "cash": 223.29,
+      "portfolio": 240.0
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:22",
+      "equity": 470.05,
+      "cash": 223.29,
+      "portfolio": 246.76
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:22",
+      "equity": 472.29,
+      "cash": 223.29,
+      "portfolio": 249.0
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:23",
+      "equity": 467.05,
+      "cash": 223.29,
+      "portfolio": 243.76
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:23",
+      "equity": 471.17,
+      "cash": 223.29,
+      "portfolio": 247.88
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:24",
+      "equity": 475.89,
+      "cash": 223.29,
+      "portfolio": 252.6
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:25",
+      "equity": 463.21,
+      "cash": 223.29,
+      "portfolio": 239.92
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:25",
+      "equity": 463.81,
+      "cash": 356.45,
+      "portfolio": 107.36
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:26",
+      "equity": 465.03,
+      "cash": 356.45,
+      "portfolio": 108.58
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:26",
+      "equity": 458.93,
+      "cash": 356.45,
+      "portfolio": 102.48
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:27",
+      "equity": 460.15,
+      "cash": 356.45,
+      "portfolio": 103.7
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:28",
+      "equity": 456.49,
+      "cash": 356.45,
+      "portfolio": 100.04
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:29",
+      "equity": 451.61,
+      "cash": 356.45,
+      "portfolio": 95.16
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:29",
+      "equity": 447.95,
+      "cash": 356.45,
+      "portfolio": 91.5
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:30",
+      "equity": 447.95,
+      "cash": 356.45,
+      "portfolio": 91.5
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:30",
+      "equity": 445.51,
+      "cash": 356.45,
+      "portfolio": 89.06
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:31",
+      "equity": 445.51,
+      "cash": 356.45,
+      "portfolio": 89.06
+    },
+    {
+      "date": "2026-10-26",
+      "time": "21:32",
+      "equity": 444.29,
+      "cash": 356.45,
+      "portfolio": 87.84
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:20",
+      "equity": 467.9,
+      "cash": 263.72,
+      "portfolio": 204.18
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:21",
+      "equity": 470.39,
+      "cash": 263.72,
+      "portfolio": 206.67
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:22",
+      "equity": 467.9,
+      "cash": 263.72,
+      "portfolio": 204.18
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:22",
+      "equity": 470.39,
+      "cash": 263.72,
+      "portfolio": 206.67
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:24",
+      "equity": 470.39,
+      "cash": 263.72,
+      "portfolio": 206.67
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:24",
+      "equity": 467.9,
+      "cash": 263.72,
+      "portfolio": 204.18
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:25",
+      "equity": 467.9,
+      "cash": 263.72,
+      "portfolio": 204.18
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:25",
+      "equity": 465.41,
+      "cash": 263.72,
+      "portfolio": 201.69
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:26",
+      "equity": 462.92,
+      "cash": 263.72,
+      "portfolio": 199.2
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:26",
+      "equity": 465.41,
+      "cash": 263.72,
+      "portfolio": 201.69
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:27",
+      "equity": 465.41,
+      "cash": 263.72,
+      "portfolio": 201.69
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:27",
+      "equity": 467.9,
+      "cash": 263.72,
+      "portfolio": 204.18
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:27",
+      "equity": 470.39,
+      "cash": 263.72,
+      "portfolio": 206.67
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:28",
+      "equity": 470.39,
+      "cash": 263.72,
+      "portfolio": 206.67
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:28",
+      "equity": 475.37,
+      "cash": 263.72,
+      "portfolio": 211.65
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:29",
+      "equity": 472.88,
+      "cash": 263.72,
+      "portfolio": 209.16
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:29",
+      "equity": 470.39,
+      "cash": 263.72,
+      "portfolio": 206.67
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:30",
+      "equity": 467.9,
+      "cash": 263.72,
+      "portfolio": 204.18
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:31",
+      "equity": 467.9,
+      "cash": 263.72,
+      "portfolio": 204.18
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:32",
+      "equity": 465.41,
+      "cash": 263.72,
+      "portfolio": 201.69
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:32",
+      "equity": 467.9,
+      "cash": 263.72,
+      "portfolio": 204.18
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:32",
+      "equity": 470.39,
+      "cash": 263.72,
+      "portfolio": 206.67
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:33",
+      "equity": 467.9,
+      "cash": 263.72,
+      "portfolio": 204.18
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:33",
+      "equity": 470.39,
+      "cash": 263.72,
+      "portfolio": 206.67
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:34",
+      "equity": 470.39,
+      "cash": 263.72,
+      "portfolio": 206.67
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:34",
+      "equity": 485.12,
+      "cash": 373.87,
+      "portfolio": 111.25
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:35",
+      "equity": 485.12,
+      "cash": 373.87,
+      "portfolio": 111.25
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:35",
+      "equity": 491.02,
+      "cash": 467.79,
+      "portfolio": 23.23
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:36",
+      "equity": 490.27,
+      "cash": 467.79,
+      "portfolio": 22.48
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:36",
+      "equity": 489.02,
+      "cash": 467.79,
+      "portfolio": 21.23
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:37",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:38",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:39",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:40",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:41",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:42",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:43",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:44",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:45",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:46",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:47",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:48",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:49",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:50",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:51",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:52",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:53",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:54",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:55",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:56",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:57",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:58",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "09:59",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:00",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:01",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:02",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:03",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:04",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:05",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:06",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:07",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:08",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:09",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:10",
+      "equity": 491.24,
+      "cash": 491.24,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:10",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:11",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:12",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:13",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:14",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:15",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:16",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:17",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:18",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:19",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:21",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:22",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:24",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:25",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:28",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:29",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:30",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:31",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:32",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:33",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:34",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:37",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:41",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:42",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:43",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:44",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:45",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:46",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:47",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:48",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:49",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:50",
+      "equity": 701.94,
+      "cash": 701.94,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:50",
+      "equity": 704.71,
+      "cash": 400.21,
+      "portfolio": 304.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:51",
+      "equity": 704.71,
+      "cash": 400.21,
+      "portfolio": 304.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:52",
+      "equity": 701.21,
+      "cash": 400.21,
+      "portfolio": 301.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:52",
+      "equity": 704.71,
+      "cash": 400.21,
+      "portfolio": 304.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:53",
+      "equity": 704.71,
+      "cash": 400.21,
+      "portfolio": 304.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:54",
+      "equity": 704.71,
+      "cash": 400.21,
+      "portfolio": 304.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:56",
+      "equity": 704.71,
+      "cash": 400.21,
+      "portfolio": 304.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:57",
+      "equity": 704.71,
+      "cash": 400.21,
+      "portfolio": 304.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:58",
+      "equity": 704.71,
+      "cash": 400.21,
+      "portfolio": 304.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:58",
+      "equity": 701.21,
+      "cash": 400.21,
+      "portfolio": 301.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:58",
+      "equity": 704.71,
+      "cash": 400.21,
+      "portfolio": 304.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:58",
+      "equity": 701.21,
+      "cash": 400.21,
+      "portfolio": 301.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:58",
+      "equity": 697.71,
+      "cash": 400.21,
+      "portfolio": 297.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:59",
+      "equity": 697.71,
+      "cash": 400.21,
+      "portfolio": 297.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:59",
+      "equity": 701.21,
+      "cash": 400.21,
+      "portfolio": 301.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "10:59",
+      "equity": 704.71,
+      "cash": 400.21,
+      "portfolio": 304.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:00",
+      "equity": 704.71,
+      "cash": 400.21,
+      "portfolio": 304.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:00",
+      "equity": 697.71,
+      "cash": 400.21,
+      "portfolio": 297.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:00",
+      "equity": 701.21,
+      "cash": 400.21,
+      "portfolio": 301.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:00",
+      "equity": 704.71,
+      "cash": 400.21,
+      "portfolio": 304.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:00",
+      "equity": 701.21,
+      "cash": 400.21,
+      "portfolio": 301.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:00",
+      "equity": 704.71,
+      "cash": 400.21,
+      "portfolio": 304.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:00",
+      "equity": 701.21,
+      "cash": 400.21,
+      "portfolio": 301.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:00",
+      "equity": 704.71,
+      "cash": 400.21,
+      "portfolio": 304.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:01",
+      "equity": 704.71,
+      "cash": 400.21,
+      "portfolio": 304.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:01",
+      "equity": 701.21,
+      "cash": 400.21,
+      "portfolio": 301.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:01",
+      "equity": 704.71,
+      "cash": 400.21,
+      "portfolio": 304.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:01",
+      "equity": 701.21,
+      "cash": 400.21,
+      "portfolio": 301.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:01",
+      "equity": 704.71,
+      "cash": 400.21,
+      "portfolio": 304.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:01",
+      "equity": 715.21,
+      "cash": 400.21,
+      "portfolio": 315.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:01",
+      "equity": 718.71,
+      "cash": 400.21,
+      "portfolio": 318.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:02",
+      "equity": 727.54,
+      "cash": 593.14,
+      "portfolio": 134.4
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:02",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:03",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:04",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:05",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:06",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:07",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:08",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:09",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:10",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:11",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:12",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:13",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:14",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:15",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:16",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:17",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:18",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:19",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:20",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:21",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:22",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:23",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:24",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:25",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:26",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:27",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:28",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:29",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:30",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:31",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:32",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:33",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:34",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:35",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:36",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:37",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:38",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:39",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:40",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:41",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:42",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:43",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:44",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:45",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:46",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:47",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:48",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:49",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:50",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:51",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:52",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:53",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:54",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:55",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:56",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:57",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:58",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "11:59",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:00",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:01",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:02",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:03",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:04",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:05",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:06",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:07",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:08",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:09",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:10",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:11",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:12",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:13",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:14",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:15",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:16",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:17",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:18",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:19",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:20",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:21",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:22",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:23",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:24",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:25",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:26",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:27",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:28",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:29",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:30",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:31",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:32",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:33",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:34",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:35",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:36",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:37",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:38",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:39",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:40",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:41",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:42",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:43",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:44",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:45",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:46",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:47",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:48",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:49",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:50",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:51",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:52",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:53",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:54",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:55",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:56",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:57",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:58",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "12:59",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:00",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:01",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:02",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:03",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:04",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:05",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:06",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:07",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:08",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:09",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:10",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:11",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:12",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:13",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:14",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:15",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:16",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:17",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:18",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:19",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:20",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:21",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:22",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:23",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:24",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:25",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:26",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:27",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:28",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:29",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:30",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:31",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:32",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:33",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:34",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:35",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:36",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:37",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:38",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:39",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:40",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:41",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:42",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:43",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:44",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:45",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:46",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:47",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:48",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:49",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:50",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:51",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:52",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:53",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:54",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:55",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:56",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:57",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:58",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "13:59",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:00",
+      "equity": 727.44,
+      "cash": 727.44,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:00",
+      "equity": 730.94,
+      "cash": 461.44,
+      "portfolio": 269.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:01",
+      "equity": 727.44,
+      "cash": 461.44,
+      "portfolio": 266.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:01",
+      "equity": 723.94,
+      "cash": 461.44,
+      "portfolio": 262.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:02",
+      "equity": 723.94,
+      "cash": 461.44,
+      "portfolio": 262.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:02",
+      "equity": 713.44,
+      "cash": 461.44,
+      "portfolio": 252.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:02",
+      "equity": 723.94,
+      "cash": 461.44,
+      "portfolio": 262.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:02",
+      "equity": 713.44,
+      "cash": 461.44,
+      "portfolio": 252.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:03",
+      "equity": 713.44,
+      "cash": 461.44,
+      "portfolio": 252.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:03",
+      "equity": 716.94,
+      "cash": 461.44,
+      "portfolio": 255.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:03",
+      "equity": 713.44,
+      "cash": 461.44,
+      "portfolio": 252.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:03",
+      "equity": 716.94,
+      "cash": 461.44,
+      "portfolio": 255.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:03",
+      "equity": 713.44,
+      "cash": 461.44,
+      "portfolio": 252.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:04",
+      "equity": 713.44,
+      "cash": 461.44,
+      "portfolio": 252.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:04",
+      "equity": 716.94,
+      "cash": 461.44,
+      "portfolio": 255.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:04",
+      "equity": 713.44,
+      "cash": 461.44,
+      "portfolio": 252.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:04",
+      "equity": 716.94,
+      "cash": 461.44,
+      "portfolio": 255.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:04",
+      "equity": 713.44,
+      "cash": 461.44,
+      "portfolio": 252.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:05",
+      "equity": 713.44,
+      "cash": 461.44,
+      "portfolio": 252.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:05",
+      "equity": 706.44,
+      "cash": 461.44,
+      "portfolio": 245.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:05",
+      "equity": 709.94,
+      "cash": 461.44,
+      "portfolio": 248.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:05",
+      "equity": 713.44,
+      "cash": 461.44,
+      "portfolio": 252.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:05",
+      "equity": 706.44,
+      "cash": 461.44,
+      "portfolio": 245.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:06",
+      "equity": 709.94,
+      "cash": 461.44,
+      "portfolio": 248.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:06",
+      "equity": 706.44,
+      "cash": 461.44,
+      "portfolio": 245.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:06",
+      "equity": 702.94,
+      "cash": 461.44,
+      "portfolio": 241.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:07",
+      "equity": 702.94,
+      "cash": 461.44,
+      "portfolio": 241.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:08",
+      "equity": 702.94,
+      "cash": 461.44,
+      "portfolio": 241.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:08",
+      "equity": 699.44,
+      "cash": 461.44,
+      "portfolio": 238.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:08",
+      "equity": 702.94,
+      "cash": 461.44,
+      "portfolio": 241.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:08",
+      "equity": 699.44,
+      "cash": 461.44,
+      "portfolio": 238.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:09",
+      "equity": 699.44,
+      "cash": 461.44,
+      "portfolio": 238.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:09",
+      "equity": 695.94,
+      "cash": 461.44,
+      "portfolio": 234.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:09",
+      "equity": 685.44,
+      "cash": 461.44,
+      "portfolio": 224.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:10",
+      "equity": 685.44,
+      "cash": 461.44,
+      "portfolio": 224.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:10",
+      "equity": 695.94,
+      "cash": 461.44,
+      "portfolio": 234.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:10",
+      "equity": 692.44,
+      "cash": 461.44,
+      "portfolio": 231.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:10",
+      "equity": 695.94,
+      "cash": 461.44,
+      "portfolio": 234.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:10",
+      "equity": 688.94,
+      "cash": 461.44,
+      "portfolio": 227.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:11",
+      "equity": 688.94,
+      "cash": 461.44,
+      "portfolio": 227.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:11",
+      "equity": 695.94,
+      "cash": 461.44,
+      "portfolio": 234.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:11",
+      "equity": 688.94,
+      "cash": 461.44,
+      "portfolio": 227.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:12",
+      "equity": 688.94,
+      "cash": 461.44,
+      "portfolio": 227.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:12",
+      "equity": 685.44,
+      "cash": 461.44,
+      "portfolio": 224.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:12",
+      "equity": 727.44,
+      "cash": 461.44,
+      "portfolio": 266.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:12",
+      "equity": 688.94,
+      "cash": 461.44,
+      "portfolio": 227.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:12",
+      "equity": 685.44,
+      "cash": 461.44,
+      "portfolio": 224.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:12",
+      "equity": 678.44,
+      "cash": 461.44,
+      "portfolio": 217.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:12",
+      "equity": 688.94,
+      "cash": 461.44,
+      "portfolio": 227.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:12",
+      "equity": 678.44,
+      "cash": 461.44,
+      "portfolio": 217.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:12",
+      "equity": 688.94,
+      "cash": 461.44,
+      "portfolio": 227.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:12",
+      "equity": 678.44,
+      "cash": 461.44,
+      "portfolio": 217.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:13",
+      "equity": 681.94,
+      "cash": 461.44,
+      "portfolio": 220.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:13",
+      "equity": 678.44,
+      "cash": 461.44,
+      "portfolio": 217.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:13",
+      "equity": 681.94,
+      "cash": 461.44,
+      "portfolio": 220.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:13",
+      "equity": 678.44,
+      "cash": 461.44,
+      "portfolio": 217.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:13",
+      "equity": 681.94,
+      "cash": 461.44,
+      "portfolio": 220.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:13",
+      "equity": 678.44,
+      "cash": 461.44,
+      "portfolio": 217.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:14",
+      "equity": 678.44,
+      "cash": 461.44,
+      "portfolio": 217.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:14",
+      "equity": 674.94,
+      "cash": 461.44,
+      "portfolio": 213.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:14",
+      "equity": 671.44,
+      "cash": 461.44,
+      "portfolio": 210.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:14",
+      "equity": 674.94,
+      "cash": 461.44,
+      "portfolio": 213.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:15",
+      "equity": 674.94,
+      "cash": 461.44,
+      "portfolio": 213.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:15",
+      "equity": 664.44,
+      "cash": 461.44,
+      "portfolio": 203.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:16",
+      "equity": 667.94,
+      "cash": 461.44,
+      "portfolio": 206.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:16",
+      "equity": 664.44,
+      "cash": 461.44,
+      "portfolio": 203.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:16",
+      "equity": 660.94,
+      "cash": 461.44,
+      "portfolio": 199.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:16",
+      "equity": 664.44,
+      "cash": 461.44,
+      "portfolio": 203.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:16",
+      "equity": 653.94,
+      "cash": 461.44,
+      "portfolio": 192.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:16",
+      "equity": 657.44,
+      "cash": 461.44,
+      "portfolio": 196.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:22",
+      "equity": 618.94,
+      "cash": 461.44,
+      "portfolio": 157.5
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:22",
+      "equity": 612.88,
+      "cash": 612.88,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:23",
+      "equity": 612.88,
+      "cash": 612.88,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:23",
+      "equity": 612.95,
+      "cash": 604.72,
+      "portfolio": 8.23
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:23",
+      "equity": 612.27,
+      "cash": 343.44,
+      "portfolio": 268.83
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:23",
+      "equity": 615.36,
+      "cash": 343.44,
+      "portfolio": 271.92
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:23",
+      "equity": 612.27,
+      "cash": 343.44,
+      "portfolio": 268.83
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:24",
+      "equity": 610.59,
+      "cash": 344.38,
+      "portfolio": 266.21
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:24",
+      "equity": 438.3,
+      "cash": 398.55,
+      "portfolio": 39.75
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:24",
+      "equity": 440.27,
+      "cash": 440.06,
+      "portfolio": 0.21
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:24",
+      "equity": 440.13,
+      "cash": 440.06,
+      "portfolio": 0.07
+    },
+    {
+      "date": "2026-10-27",
+      "time": "14:25",
+      "equity": 440.13,
+      "cash": 440.06,
+      "portfolio": 0.07
+    }
+  ],
+  "harvested_tickers": [
+    "KXLALIGAGAME-26OCT26SEVOSA-SEV",
+    "KXNBA1H-26OCT26MINCLE-MIN",
+    "KXNBA1HSPREAD-26OCT26MINCLE-MIN3",
+    "KXNHLGAME-26OCT26LANYR-LA",
+    "KXNBATOTAL-26OCT26MINCLE-245",
+    "KXNBATOTAL-26OCT26DALMIA-222",
+    "KXNBATOTAL-26OCT26CHIBOS-228",
+    "KXNBASPREAD-26OCT26INDMIL-MIL2",
+    "KXNBATOTAL-26OCT26ATLHOU-228",
+    "KXNBASPREAD-26OCT26ATLHOU-HOU9",
+    "KXNHLTOTAL-26OCT26TORCGY-6",
+    "KXNBASPREAD-26OCT26ATLHOU-HOU11",
+    "KXNBATOTAL-26OCT26ATLHOU-226",
+    "KXNHLGAME-26OCT26TORCGY-CGY",
+    "KXNFLSPREAD-26OCT26DALPHI-DAL4",
+    "KXNBATOTAL-26OCT26MEMUTA-215",
+    "KXNFLSPREAD-26OCT26DALPHI-DAL11",
+    "KXNBAGAME-26OCT26MEMUTA-MEM",
+    "KXATPMATCH-26OCT27MPEFIL-FIL",
+    "KXSERIEAGAME-26OCT27SASLAZ-LAZ"
+  ],
+  "sweet_spot_plateau_vault": {
+    "working_base_cap_dlr": 5000.0,
+    "withdrawable_above_5k_dlr": 0.0,
+    "last_milestone_alerted_dlr": 0.0
+  },
+  "official_5k_goal_contract": {
+    "start_date": "2026-10-26",
+    "target_date_organic": "2026-11-07 (Saturday - 13 Days)",
+    "target_date_with_500_boost": "2026-11-05 (Thursday - 11 Days)",
+    "target_equity_dlr": 5000.0,
+    "current_equity_dlr": 286.02,
+    "rewards": {
+      "checkpoint_1_tonight_346_dlr": " Antigravity Trophy Seed +  Tier 4 Deposit Unlock",
+      "checkpoint_2_friday_1500_dlr": "Pro Real-Time Sharp Vegas / Pinnacle Odds API Key (funded from profits)",
+      "grand_prize_5000_dlr": " Autonomous Antigravity Trophy Pod + Dedicated 24/7 Cloud VPS & iPhone Live PWA Command Center"
+    }
+  },
+  "upgrade_reminders": {
+    "kalshi_advanced_api_tier_alerted": false,
+    "opticodds_5k_plateau_alerted": false
+  },
+  "archetype_learning": {
+    "FULL_GAME_SPREAD": {
+      "wins": 5,
+      "losses": 1,
+      "realized_pnl": 18.21,
+      "last_diagnosis": "CLEAN_MAKER_HARVEST"
+    },
+    "FAST_PERIOD_MARKET": {
+      "wins": 3,
+      "losses": 0,
+      "realized_pnl": 31.05,
+      "last_diagnosis": "CLEAN_MAKER_HARVEST"
+    },
+    "TENNIS_MATCH": {
+      "wins": 2,
+      "losses": 2,
+      "realized_pnl": 19.89,
+      "last_diagnosis": "CLEAN_MAKER_HARVEST"
+    },
+    "SOCCER_MONEYLINE": {
+      "wins": 2,
+      "losses": 4,
+      "realized_pnl": -364.48,
+      "last_diagnosis": "SCOREBOARD_MOMENTUM_FLIP"
+    },
+    "MACRO_CRYPTO_WEATHER": {
+      "wins": 3,
+      "losses": 1,
+      "realized_pnl": 2.88,
+      "last_diagnosis": "CLEAN_MAKER_HARVEST"
+    },
+    "FULL_GAME_TOTAL": {
+      "wins": 7,
+      "losses": 5,
+      "realized_pnl": -110.64,
+      "last_diagnosis": "LATE_PACE_OR_GAME_SCRIPT_STALL"
+    },
+    "NFL_PASS_PROP": {
+      "wins": 0,
+      "losses": 1,
+      "realized_pnl": -47.95,
+      "last_diagnosis": "LATE_PACE_OR_GAME_SCRIPT_STALL"
+    },
+    "FULL_GAME_MONEYLINE": {
+      "wins": 5,
+      "losses": 2,
+      "realized_pnl": -19.85,
+      "last_diagnosis": "SCOREBOARD_MOMENTUM_FLIP"
+    }
+  },
+  "daily_quota_tracker": {
+    "2026-10-26": {
+      "target_bets": 25,
+      "completed_bets": 34,
+      "wins": 26,
+      "losses": 8,
+      "net_pnl_dlr": 13.46
+    },
+    "2026-10-27": {
+      "target_bets": 25,
+      "completed_bets": 6,
+      "wins": 2,
+      "losses": 4,
+      "net_pnl_dlr": -464.54
+    }
+  },
+  "trade_autopsy_log": [
+    {
+      "timestamp": "2026-10-27 11:02:21",
+      "ticker": "KXSERIEAGAME-26OCT27SASLAZ-LAZ",
+      "archetype": "SOCCER_MONEYLINE",
+      "outcome": "WIN",
+      "entry_cents": 86,
+      "peak_cents": 95,
+      "exit_cents": 94,
+      "net_pnl_dlr": 26.6,
+      "diagnosis": "CLEAN_MAKER_HARVEST",
+      "exit_reason": "STAGE1_AND_STAGE2_MAKER_HARVEST"
+    },
+    {
+      "timestamp": "2026-10-27 14:22:11",
+      "ticker": "KXSERIEATOTAL-26OCT27ROMCAG-4",
+      "archetype": "FULL_GAME_TOTAL",
+      "outcome": "LOSS",
+      "entry_cents": 76,
+      "peak_cents": 45,
+      "exit_cents": 45,
+      "net_pnl_dlr": -108.5,
+      "diagnosis": "LATE_PACE_OR_GAME_SCRIPT_STALL",
+      "exit_reason": "THESIS_BROKEN_GUILLOTINE"
+    },
+    {
+      "timestamp": "2026-10-27 14:23:57",
+      "ticker": "KXSERIEAGAME-26OCT27ROMCAG-ROM",
+      "archetype": "SOCCER_MONEYLINE",
+      "outcome": "LOSS",
+      "entry_cents": 87,
+      "peak_cents": 87,
+      "exit_cents": 33,
+      "net_pnl_dlr": -166.86,
+      "diagnosis": "SCOREBOARD_MOMENTUM_FLIP",
+      "exit_reason": "THESIS_BROKEN_GUILLOTINE"
+    },
+    {
+      "timestamp": "2026-10-27 14:24:01",
+      "ticker": "KXSERIEAGAME-26OCT27ROMCAG-ROM",
+      "archetype": "SOCCER_MONEYLINE",
+      "outcome": "LOSS",
+      "entry_cents": 87,
+      "peak_cents": 87,
+      "exit_cents": 32,
+      "net_pnl_dlr": -167.75,
+      "diagnosis": "SCOREBOARD_MOMENTUM_FLIP",
+      "exit_reason": "THESIS_BROKEN_GUILLOTINE"
+    },
+    {
+      "timestamp": "2026-10-27 14:24:06",
+      "ticker": "KXSERIEAGAME-26OCT27ROMCAG-ROM",
+      "archetype": "SOCCER_MONEYLINE",
+      "outcome": "LOSS",
+      "entry_cents": 87,
+      "peak_cents": 87,
+      "exit_cents": 34,
+      "net_pnl_dlr": -67.84,
+      "diagnosis": "SCOREBOARD_MOMENTUM_FLIP",
+      "exit_reason": "THESIS_BROKEN_GUILLOTINE"
+    }
+  ],
+  "manual_pause_buys": false,
+  "traded_matchups": [
+    "26OCT27SASLAZ",
+    "26OCT25TIJSLA",
+    "26OCT27MPEFIL",
+    "26OCT27ROMCAG"
+  ],
+  "daily_circuit_breaker": {
+    "day": "2026-10-27",
+    "start_equity_cents": 44006,
+    "protected_floor_cents": 40006,
+    "tripped": false
+  }
+}

@@ -1243,115 +1243,94 @@ class PreTradeEducator:
                     except Exception:
                         cur_clk_m = 6.0
 
-                    # Positive-Theta Total Rule:
-                    # In Soccer & NHL, NEVER buy an "Over" Total unless the goals are ALREADY 100% scored on the scoreboard (pts_needed <= 0)!
-                    # Hoping for a goal in the last 15-30 minutes has negative time-decay (Theta bleeds every minute without a goal).
-                    if (is_soccer or "NHL" in series) and pts_needed > 0.0:
-                        return False, (
-                            f"VETO [Negative-Theta Unbanked Total]: {series} still needs {pts_needed:.1f} more goal(s) "
-                            f"({cur_pts:.0f}/{target_val:.1f} at {clock_disp}) — never hope for goals against a ticking clock!"
-                        )
-
-                    # Period-Aware + Minute-by-Minute Clock-Ahead Scoring Pace Curve:
-                    if req_periods is not None:
-                        is_final_period_of_win = (live_period == req_periods[-1])
-                        req_tot_pct = 90.0 if (is_final_period_of_win and cur_clk_m < 4.5) else 80.0
-                    elif is_soccer:
-                        req_tot_pct = 100.0
-                    elif "NHL" in series:
-                        req_tot_pct = 100.0
+                    # Positive-Theta Total Rule (LATE-CLOCK UNDERS ONLY / 100% BAN ON UNBANKED OVERS):
+                    # 1) If evaluating a YES ("Over") Total: 100% VETO across ALL sports unless the points/goals are ALREADY 100% scored (pts_needed <= 0)!
+                    #    Never hope for future goals/points against a ticking clock!
+                    # 2) If evaluating a NO ("Under") Total (`[UNDER-NO]` tag in title):
+                    #    Verify Late-Clock + Multi-Score Safety Cushion so time decay (Theta) works 100% FOR us!
+                    is_under_no_play = title.startswith("[UNDER-NO]")
+                    if not is_under_no_play:
+                        if pts_needed > 0.0:
+                            return False, (
+                                f"VETO [Unbanked Over Total Ban]: {series} Over still needs {pts_needed:.1f} more pts/goals "
+                                f"({cur_pts:.0f}/{target_val:.1f} at P{live_period} {clock_disp}) — ONLY Late-Clock UNDERS or 100%-banked totals allowed!"
+                            )
+                        return True, f"ESPN {period_tag} Total 100% BANKED ({cur_pts:.0f}/{target_val:.1f} already scored | P{live_period} {clock_disp}) | PROP-LOCK"
                     else:
-                        p_len_m = 15.0 if series.startswith(("KXNFL", "KXNCAAF")) else (20.0 if "NCAAMB" in series else 12.0)
-                        reg_tot_m = 60.0 if series.startswith(("KXNFL", "KXNCAAF")) else (40.0 if "NCAAMB" in series else 48.0)
-                        max_reg_p = 2 if "NCAAMB" in series else 4
-                        elapsed_gm_m = ((min(max_reg_p, live_period) - 1) * p_len_m) + max(0.0, p_len_m - cur_clk_m)
-                        elapsed_gm_pct = min(95.0, (elapsed_gm_m / reg_tot_m) * 100.0)
-                        req_tot_pct = max({1: 65.0, 2: 78.0, 3: 86.0}.get(live_period, 92.0), elapsed_gm_pct + 12.0)
-
-                    # Point Trap 0 (Overtime Sudden-Death & Short-Period Impossible-Total Trap):
-                    # - NHL Overtime (P4+): Sudden-death 3-on-3 or Shootout means AT MOST 1.0 goal can be scored in the entire rest of the game!
-                    # - NFL Overtime (P5+): A sudden-death Field Goal (3 pts) or walk-off TD (6 pts, no PAT kicked!) ends the game immediately!
-                    if "NHL" in series and live_period >= 4 and pts_needed > 1.0:
-                        return False, (
-                            f"VETO [NHL Sudden-Death OT Impossible Total]: Needs {pts_needed:.1f} goals in OT (P{live_period}), "
-                            f"but sudden-death OT/SO can only add max 1 goal!"
-                        )
-                    if series.startswith(("KXNFL", "KXNCAAF")) and live_period >= 5 and pts_needed > 3.0:
-                        return False, (
-                            f"VETO [Football Sudden-Death OT Cap]: Needs {pts_needed:.1f} pts in OT (P{live_period}), "
-                            f"where a 3-pt Field Goal ends the game!"
-                        )
-
-                    # Point Trap A (Football Discrete 3/7-pt Scoring, 0-Timeouts Runoff & 4Q Victory-Formation Clock-Chew Trap):
-                    # 1. Inside final 6:00 of P4 with >=9 pt (2-score) lead, teams kneel down in the red zone instead of kicking FGs or scoring TDs!
-                    # 2. Inside final 3:30 of P2/P4, if leading team has possession and trailing team has 0 timeouts (`homeTimeouts`/`awayTimeouts`), clock runs out!
-                    # 3. In P4 with >3.0 pts needed (a FG won't win it — needs a full TD!) and >=13 pt margin or <8:00 left, VETO!
-                    script_tot_tag = ""
-                    if series.startswith(("KXNFL", "KXNCAAF")):
-                        sit_tot = comp.get("situation") or {}
-                        poss_tot_id = str(sit_tot.get("possession") or "")
-                        sc0_t = float(competitors[0].get("score", 0) or 0)
-                        sc1_t = float(competitors[1].get("score", 0) or 0)
-                        lead_idx = 0 if sc0_t >= sc1_t else 1
-                        trail_idx = 1 - lead_idx
-                        trail_ha = (competitors[trail_idx].get("homeAway") or "").lower()
-                        trail_to = int(sit_tot.get("homeTimeouts" if trail_ha == "home" else "awayTimeouts", 2) or 0)
-                        if live_period in (2, 4) and pts_needed > 0.0 and cur_clk_m <= 3.5 and gm_margin_tot >= 1.0:
-                            if poss_tot_id == str(competitors[lead_idx].get("id") or "") and trail_to == 0 and prog_pct < 96.0:
+                        # Late-Clock UNDER (`NO` on Over Total) Verification:
+                        # Number of discrete goals/points required to exceed `target_val` (e.g. Over 3.5 -> requires 4 goals to break Under 3.5):
+                        pts_to_break_under = (target_val + 0.5) - cur_pts
+                        if pts_to_break_under <= 0.0:
+                            return False, f"VETO [Under Already Broken]: Score {cur_pts:.0f} already exceeded Under {target_val:.1f}!"
+                        if is_soccer:
+                            if live_period < 2 or cur_clk_m < 65.0:
                                 return False, (
-                                    f"VETO [Football 0-Timeouts Clock Runoff]: Leading team has ball at P{live_period} {clock_disp} "
-                                    f"and trailing team has 0 timeouts left (2-min runoff kills Over)!"
+                                    f"VETO [Soccer Under Too Early]: Clock at P{live_period} {clock_disp} (<65' min for Late-Clock Under)"
                                 )
-                            elif poss_tot_id == str(competitors[trail_idx].get("id") or "") and trail_to >= 2 and gm_margin_tot <= 14.0:
-                                req_tot_pct = max(58.0, req_tot_pct - 3.5)
-                                script_tot_tag += f" | +HURRY-UP-{trail_to}TO-BOOST"
-                        if live_period >= 4:
-                            if pts_needed > 0.0 and cur_clk_m < 6.0 and gm_margin_tot >= 9.0:
+                            if pts_to_break_under < 2.0:
                                 return False, (
-                                    f"VETO [Football 4Q Kneel-Down / Victory Formation]: Needs {pts_needed:.1f} more pts in P4 {clock_disp} "
-                                    f"with {gm_margin_tot:.0f}-pt 2-score lead (teams kneel/run clock instead of scoring!)"
+                                    f"VETO [Soccer Under Cushion <2 Goals]: {cur_pts:.0f} goals scored vs Under {target_val:.1f} "
+                                    f"(only {pts_to_break_under:.0f} goal buffer — requires >=2 goal cushion so 1 fluke goal cannot kill Under!)"
                                 )
-                            if pts_needed > 3.0 and (gm_margin_tot >= 13.0 or cur_clk_m < 8.0):
+                            return True, (
+                                f"ESPN Soccer Late-Clock UNDER Verified ({cur_pts:.0f} goals vs Under {target_val:.1f} = "
+                                f"+{pts_to_break_under:.0f} Goal Cushion at {clock_disp} | LATE-CLOCK)"
+                            )
+                        elif "NHL" in series:
+                            if live_period < 3 or cur_clk_m > 12.0:
                                 return False, (
-                                    f"VETO [Football 4Q Clock-Chew / TD Trap]: Needs {pts_needed:.1f} more pts (>3pt FG) in P4 {clock_disp} "
-                                    f"with {gm_margin_tot:.0f}-pt margin (clock-chew risk!)"
+                                    f"VETO [NHL Under Too Early]: P{live_period} {clock_disp} (requires P3 <=12:00 left for Late-Clock Under)"
                                 )
-                    # Point Trap B (Soccer Late Corner-Flag Time-Wasting / Park-the-Bus Trap):
-                    # After 75' in Soccer, if the Over is not already 100% banked (pts_needed > 0), leading teams sub in defenders and waste time at the corner flag!
-                    if is_soccer and live_period >= 2 and cur_clk_m >= 75.0 and pts_needed > 0.0:
-                        return False, (
-                            f"VETO [Soccer >75' Time-Wasting Trap]: Still needs {pts_needed:.1f} goal(s) at {clock_disp} "
-                            f"(corner-flag stall / park-the-bus risk!)"
-                        )
-                    # Point Trap C (NBA 4Q Blowout Bench Dribble-Out, 24s Shot-Clock Bleed, 2-for-1 Quarter End & Intentional Foul Parade):
-                    if series.startswith(("KXNBA", "KXNCAAMB")):
-                        if live_period in (1, 2, 3) and 0.55 <= cur_clk_m <= 1.35:
-                            script_tot_tag += " | +2-FOR-1-CLOCK-BOOST"
-                        if live_period >= 4:
-                            if (gm_margin_tot >= 16.0 or cur_clk_m < 4.0) and not (1.0 <= gm_margin_tot <= 7.0 and cur_clk_m <= 3.0) and prog_pct < 90.0:
+                            min_nhl_under_buf = 3.0 if gm_margin_tot <= 1.0 else 2.0
+                            if pts_to_break_under < min_nhl_under_buf:
                                 return False, (
-                                    f"VETO [Basketball 4Q Dribble-Out Trap]: {cur_pts:.0f}/{target_val:.1f} ({prog_pct:.0f}% < 90% min) "
-                                    f"in P4 {clock_disp} (margin={gm_margin_tot:.0f} pts)"
+                                    f"VETO [NHL Under Cushion <{min_nhl_under_buf:.0f} Goals]: {cur_pts:.0f} goals vs Under {target_val:.1f} "
+                                    f"at P3 {clock_disp} (margin={gm_margin_tot:.0f} — empty-netter shield!)"
                                 )
-                            if "TEAMTOTAL" in series and cur_clk_m < 6.0 and gm_margin_tot >= 10.0 and prog_pct < 90.0:
+                            return True, (
+                                f"ESPN NHL Late-Clock UNDER Verified ({cur_pts:.0f} goals vs Under {target_val:.1f} = "
+                                f"+{pts_to_break_under:.0f} Goal Cushion at P3 {clock_disp} | LATE-CLOCK)"
+                            )
+                        elif series.startswith(("KXNFL", "KXNCAAF")):
+                            if live_period < 4 or cur_clk_m > 10.0:
                                 return False, (
-                                    f"VETO [NBA 4Q 24s Shot-Clock Bleed]: Team Total at {cur_pts:.0f}/{target_val:.1f} ({prog_pct:.0f}% < 90%) "
-                                    f"with {gm_margin_tot:.0f}-pt lead in P4 {clock_disp} (walk-ball-up pace bleed!)"
+                                    f"VETO [Football Under Too Early]: P{live_period} {clock_disp} (requires P4 <=10:00 left for Late-Clock Under)"
                                 )
-                            if 1.0 <= gm_margin_tot <= 7.0 and cur_clk_m <= 3.0:
-                                req_tot_pct = max(72.0, req_tot_pct - 4.0)
-                                script_tot_tag += " | +FOUL-PARADE-BOOST"
-                    elif "NHL" in series and live_period == 3 and cur_clk_m <= 3.5 and 1.0 <= gm_margin_tot <= 2.0:
-                        req_tot_pct = max(75.0, req_tot_pct - 4.0)
-                        script_tot_tag += " | +EMPTY-NET-BOOST"
-
-                    if prog_pct < req_tot_pct:
-                        return False, (
-                            f"VETO [ESPN {period_tag} Total]: Only {cur_pts:.0f}/{target_val:.1f} pts scored "
-                            f"({prog_pct:.0f}% < {req_tot_pct:.0f}% min for P{live_period} {clock_disp})"
-                        )
-                    lock_tag = (" | PROP-LOCK" if prog_pct >= (req_tot_pct + 12.0) else "") + script_tot_tag + vegas_steam_tag
-                    return True, f"ESPN {period_tag} Total Verified ({cur_pts:.0f}/{target_val:.1f} = {prog_pct:.0f}% banked{lock_tag} | P{live_period} {clock_disp})"
+                            if pts_to_break_under < 10.0:
+                                return False, (
+                                    f"VETO [Football Under <2-Score Cushion]: Only {pts_to_break_under:.0f} pts cushion on Under {target_val:.1f} "
+                                    f"(requires >=10 pts / 2-possession buffer in P4 {clock_disp}!)"
+                                )
+                            return True, (
+                                f"ESPN Football Late-Clock UNDER Verified ({cur_pts:.0f} pts vs Under {target_val:.1f} = "
+                                f"+{pts_to_break_under:.0f} pt Cushion at P4 {clock_disp} | LATE-CLOCK)"
+                            )
+                        else:
+                            # Basketball (NBA / NCAAMB) Late-Clock Under:
+                            final_reg_p = 2 if "NCAAMB" in series else 4
+                            if live_period < final_reg_p or cur_clk_m > 7.5 or cur_clk_m < 0.8:
+                                return False, (
+                                    f"VETO [Basketball Under Clock Window]: P{live_period} {clock_disp} "
+                                    f"(requires final period <=7:30 left for Late-Clock Under)"
+                                )
+                            if gm_margin_tot <= 6.0 and cur_clk_m <= 3.5:
+                                return False, (
+                                    f"VETO [Basketball Intentional-Foul Under Trap]: Margin is {gm_margin_tot:.0f} pts with {clock_disp} left "
+                                    "(close-game FT foul parade risk on Under!)"
+                                )
+                            p_len_m = 20.0 if "NCAAMB" in series else 12.0
+                            elapsed_gm_m = max(5.0, ((min(final_reg_p, live_period) - 1) * p_len_m) + max(0.0, p_len_m - cur_clk_m))
+                            live_ppm = cur_pts / elapsed_gm_m
+                            req_ppm_to_lose = pts_to_break_under / max(0.5, cur_clk_m)
+                            if pts_to_break_under < 14.0 or req_ppm_to_lose < (live_ppm * 1.45):
+                                return False, (
+                                    f"VETO [Basketball Under Pace Cushion]: Cushion={pts_to_break_under:.0f} pts in {clock_disp} "
+                                    f"(req_ppm={req_ppm_to_lose:.1f} vs live_ppm={live_ppm:.1f} — needs >=14pt buffer & >=1.45x pace gap!)"
+                                )
+                            return True, (
+                                f"ESPN Basketball Late-Clock UNDER Verified ({cur_pts:.0f} pts vs Under {target_val:.1f} = "
+                                f"+{pts_to_break_under:.0f} pt Cushion in {clock_disp}, reqPPM={req_ppm_to_lose:.1f} vs live={live_ppm:.1f} | LATE-CLOCK)"
+                            )
 
                 if "BTTS" in series and len(competitors) >= 2:
                     sc0 = _comp_window_pts(competitors[0])
@@ -1849,21 +1828,14 @@ class PreTradeEducator:
                             clock_disp = st_obj.get("displayClock", "")
                             ml_st_edge, ml_st_tag = (0.0, "") if series in ("KXWTAMATCH", "KXATPMATCH") else _team_standings_edge(competitors[idx], competitors[opp_idx])
                             if "soccer/" in sport_path and margin < 2:
-                                try:
-                                    clk_min = float(str(clock_disp).replace("'", "").split("+")[0] or 0)
-                                except Exception:
-                                    clk_min = 0.0
-                                # Stoppage-Time Siege, Early-Game 1-Goal Draw & Bad-vs-Good Mirage Shield:
-                                req_soc_clk = 82.0 if ml_st_edge <= -0.10 else 74.0
-                                if period_num < 2 or clk_min < req_soc_clk or "+" in str(clock_disp):
-                                    return False, (
-                                        f"VETO [Soccer 1-Goal / Stoppage-Time Risk]: '{title}' only leading {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
-                                        f"at {clock_disp} (requires 2+ goal cushion or {req_soc_clk:.0f}'-89' regulation window{ml_st_tag}!)"
-                                    )
-                            elif series == "KXNHLGAME" and margin < 2 and (period_num < 3 or ml_st_edge <= -0.10):
                                 return False, (
-                                    f"VETO [NHL 1-Goal Risk]: '{title}' only up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
-                                    f"in P{period_num} (requires 2+ goal lead{ml_st_tag}!)"
+                                    f"VETO [Soccer 1-Goal Lead Ban]: '{title}' only leading {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
+                                    f"at {clock_disp} — STRICT 2+ GOAL CUSHION REQUIRED on all Soccer Moneylines{ml_st_tag}!"
+                                )
+                            elif series == "KXNHLGAME" and margin < 2:
+                                return False, (
+                                    f"VETO [NHL 1-Goal Lead Ban]: '{title}' only up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
+                                    f"in P{period_num} — STRICT 2+ GOAL CUSHION REQUIRED on all NHL Moneylines{ml_st_tag}!"
                                 )
                             elif series in ("KXNBAGAME", "KXNCAAMBGAME", "KXNCAAWBGAME"):
                                 # Strict Multi-Possession Full-Game Moneyline Cushion:
@@ -1974,10 +1946,13 @@ class PreTradeEducator:
         arch_pnl = float(arch_st.get("realized_pnl", 0.0) or 0.0)
         req_imbalance = 1.85 if (series_pnl < -1.00 or arch_pnl < -5.00) else 1.35
 
+        is_under_no = title.startswith("[UNDER-NO]")
         top_yes_bids = sorted(ob.yes_bids, key=lambda x: x.price, reverse=True)[:5]
         top_no_bids = sorted(ob.no_bids, key=lambda x: x.price, reverse=True)[:5]
-        yes_depth = sum(float(level.quantity) * (level.price / 100.0) for level in top_yes_bids)
-        no_depth = sum(float(level.quantity) * (level.price / 100.0) for level in top_no_bids)
+        raw_yes_depth = sum(float(level.quantity) * (level.price / 100.0) for level in top_yes_bids)
+        raw_no_depth = sum(float(level.quantity) * (level.price / 100.0) for level in top_no_bids)
+        yes_depth = raw_no_depth if is_under_no else raw_yes_depth
+        no_depth = raw_yes_depth if is_under_no else raw_no_depth
         imbalance_ratio = (yes_depth + 1.0) / (no_depth + 1.0)
 
         is_quarter_mkt = any(q in series for q in ("1Q", "2Q", "3Q", "4Q", "1P", "2P", "3P"))
@@ -2022,10 +1997,11 @@ class PreTradeEducator:
                     return False, f"VETO: Stale market (last trade {last_trade_mins_ago:.1f}m ago > {max_stale_m:.0f}m max)", 0.0
 
                 if len(trades) >= 3:
-                    t_prices = [
+                    raw_yes_prices = [
                         int(round(float(tr.get("yes_price_dollars") or (tr.get("yes_price", 0) / 100.0)) * 100))
                         for tr in trades
                     ]
+                    t_prices = [(100 - p) for p in raw_yes_prices] if is_under_no else raw_yes_prices
                     newest_c = t_prices[0]
                     window_10 = t_prices[:10]
                     oldest_10_c = window_10[-1]
@@ -2046,11 +2022,12 @@ class PreTradeEducator:
                             "— waiting for confirmed uptick!"
                         ), 0.0
                     # 2) Live Orderbook Falling Knife Shield: Live best bid must not have dropped >=2c below the last executed trade!
-                    if (ob.best_yes_bid or 0) < (newest_c - 1):
+                    live_side_bid = (ob.best_no_bid or 0) if is_under_no else (ob.best_yes_bid or 0)
+                    if live_side_bid < (newest_c - 1):
                         self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
                         self.save_memory()
                         return False, (
-                            f"VETO [Orderbook Falling Knife]: Live bid ({ob.best_yes_bid}c) dropped below last trade ({newest_c}c) "
+                            f"VETO [Orderbook Falling Knife]: Live bid ({live_side_bid}c) dropped below last trade ({newest_c}c) "
                             "— market makers pulling bids!"
                         ), 0.0
                     # 3) Anti-Single-Print Spoof Jump Filter: A single isolated jump (>3.5c above the 3-trade average) must print at least 2-3 fills at the new level!
@@ -2157,82 +2134,80 @@ class PreTradeEducator:
 
 def get_scaling_tier(equity_cents: int) -> dict:
     """
-    Automatic 4-Tier Institutional Kelly Bankroll Scaling.
-    Automatically adjusts position size, minimum contracts, concurrent plays, and required orderbook depth
-    whether the account has $25, $100, $500, or $2,500+.
+    Automatic Institutional Kelly Bankroll Scaling with STRICT 10%-12% Per-Trade Risk Cap.
+    Never risks more than 10%-12% of account equity ($44-$55 at $440 equity) on a single play,
+    so even back-to-back-to-back stop-losses (-10c cap = ~$6/loss) can NEVER threaten the account!
     """
     eq_dlr = equity_cents / 100.0
-    if eq_dlr < 60.0:
+    if eq_dlr < 120.0:
         return {
-            "name": "TIER 1 (Growth)",
-            "base_pct": 0.40,
-            "boost_pct": 0.50,
-            "min_stake_cents": 650,
-            "max_stake_cents": 2500,
-            "min_contracts": 8,
+            "name": "TIER 1 (Protected Growth)",
+            "base_pct": 0.12,
+            "boost_pct": 0.14,
+            "min_stake_cents": 800,
+            "max_stake_cents": 2000,
+            "min_contracts": 10,
             "max_concurrent": 3,
             "min_depth_dlr": 150.0,
+            "iceberg_slice": 30,
         }
-    elif eq_dlr < 200.0:
+    elif eq_dlr < 300.0:
         return {
-            "name": "TIER 2 (Acceleration)",
-            "base_pct": 0.28,
-            "boost_pct": 0.35,
+            "name": "TIER 2 (Protected Acceleration)",
+            "base_pct": 0.10,
+            "boost_pct": 0.12,
             "min_stake_cents": 1500,
-            "max_stake_cents": 7400,
+            "max_stake_cents": min(3600, max(2000, int(equity_cents * 0.12))),
             "min_contracts": 18,
-            "max_concurrent": 4,
+            "max_concurrent": 3,
             "min_depth_dlr": 250.0,
+            "iceberg_slice": 45,
         }
     elif eq_dlr < 750.0:
-        # Continuous Micro-Compounding inside Tier 3 ($200-$750): scales smoothly with every +$25 gained!
-        # Supports up to $310/leg (350-contract front-of-queue slice = +$26 to +$32/win at $690 equity after +$200 deposit!)
-        dyn_min_contracts = min(120, max(35, int(eq_dlr * 0.14)))
-        dyn_max_stake_c = min(31000, max(12500, int(equity_cents * 0.44)))
+        # Strict 10%-12% Max Per-Trade Cap ($44-$55 per trade at $440-$460 equity = ~55-65 contracts)
+        dyn_max_stake_c = min(5500, max(3500, int(equity_cents * 0.12)))
+        dyn_min_stake_c = min(4000, max(2500, int(equity_cents * 0.09)))
+        dyn_min_contracts = min(45, max(25, int(eq_dlr * 0.07)))
         return {
-            "name": "TIER 3 ($500-$750 Pro Mode)",
-            "base_pct": 0.32,
-            "boost_pct": 0.40,
-            "min_stake_cents": 4500,
+            "name": "TIER 3 ($300-$750 Protected Pro Mode)",
+            "base_pct": 0.10,
+            "boost_pct": 0.12,
+            "min_stake_cents": dyn_min_stake_c,
+            "max_stake_cents": dyn_max_stake_c,
+            "min_contracts": dyn_min_contracts,
+            "max_concurrent": 3,
+            "min_depth_dlr": 300.0,
+            "iceberg_slice": 70,
+        }
+    elif eq_dlr < 2000.0:
+        dyn_max_stake_c = min(15000, max(6000, int(equity_cents * 0.11)))
+        dyn_min_contracts = min(90, max(45, int(eq_dlr * 0.06)))
+        return {
+            "name": "TIER 4 ($750-$2k Protected Whale Mode)",
+            "base_pct": 0.10,
+            "boost_pct": 0.11,
+            "min_stake_cents": 5000,
+            "max_stake_cents": dyn_max_stake_c,
+            "min_contracts": dyn_min_contracts,
+            "max_concurrent": 4,
+            "min_depth_dlr": 450.0,
+            "iceberg_slice": 120,
+        }
+    else:
+        working_eq_dlr = min(eq_dlr, 5000.0)
+        working_eq_cents = min(equity_cents, 500000)
+        dyn_min_contracts = min(180, max(90, int(working_eq_dlr * 0.045)))
+        dyn_max_stake_c = min(45000, max(18000, int(working_eq_cents * 0.10)))
+        return {
+            "name": "TIER 5 ($5k Sweet-Spot Plateau Mode)",
+            "base_pct": 0.09,
+            "boost_pct": 0.10,
+            "min_stake_cents": 9000,
             "max_stake_cents": dyn_max_stake_c,
             "min_contracts": dyn_min_contracts,
             "max_concurrent": 5,
-            "min_depth_dlr": 300.0,
-            "iceberg_slice": 350,
-        }
-    elif eq_dlr < 2000.0:
-        # TIER 4 ($750-$2,000 Pro/Whale Scaling): deploys $260-$480 per play (320-450 contracts = +$28 to +$40/win!)
-        dyn_min_contracts = min(180, max(90, int(eq_dlr * 0.12)))
-        dyn_max_stake_c = min(48000, max(28000, int(equity_cents * 0.40)))
-        return {
-            "name": "TIER 4 ($1k-$2k Pro Whale Mode)",
-            "base_pct": 0.30,
-            "boost_pct": 0.38,
-            "min_stake_cents": 7500,
-            "max_stake_cents": dyn_max_stake_c,
-            "min_contracts": dyn_min_contracts,
-            "max_concurrent": 7,
-            "min_depth_dlr": 450.0,
-            "iceberg_slice": 400,
-        }
-    else:
-        # TIER 5 ($2,000 to $5,000 Sweet-Spot Plateau Mode):
-        # Caps active working sizing at the $5,000 zero-slippage plateau (~$450-$550/trade)
-        # so every dollar above $5,000 ($4,000+/week) sits protected in cash for weekly bank withdrawal!
-        working_eq_dlr = min(eq_dlr, 5000.0)
-        working_eq_cents = min(equity_cents, 500000)
-        dyn_min_contracts = min(220, max(120, int(working_eq_dlr * 0.045)))
-        dyn_max_stake_c = min(55000, max(35000, int(working_eq_cents * 0.11)))
-        return {
-            "name": "TIER 5 ($5k Sweet-Spot Plateau Mode)",
-            "base_pct": 0.10,
-            "boost_pct": 0.12,
-            "min_stake_cents": 12000,
-            "max_stake_cents": dyn_max_stake_c,
-            "min_contracts": dyn_min_contracts,
-            "max_concurrent": 9,
             "min_depth_dlr": 750.0,
-            "iceberg_slice": 200,
+            "iceberg_slice": 180,
             "working_cap_cents": 500000,
         }
 
@@ -2273,9 +2248,18 @@ async def run_autonomous_loop(duration_seconds: int = 0):
     start_ts = time.time()
     peak_bids: dict[str, int] = {}
     tracked_open_positions: dict[str, dict] = educator.memory.setdefault("tracked_open_positions", {})
-    stopped_out_events: set[str] = {"KXLIGAMXGAME-26OCT25TIJSLA"}
+    stopped_out_events: set[str] = {"KXLIGAMXGAME-26OCT25TIJSLA", "KXSERIEATOTAL-26OCT27ROMCAG", "KXSERIEAGAME-26OCT27ROMCAG"}
+    traded_matchups: set[str] = set(educator.memory.setdefault("traded_matchups", ["26OCT27ROMCAG", "26OCT25TIJSLA"]))
     series_shard_cache: dict[str, int] = {}
     cold_series_until: dict[str, float] = {}
+
+    def _entity_key(tk: str) -> str:
+        pts = tk.split("-")
+        return "-".join(pts[:3]) if len(pts) >= 4 else "-".join(pts[:2])
+
+    def _matchup_slug(tk: str) -> str:
+        pts = tk.split("-")
+        return pts[1] if len(pts) >= 2 else tk
 
     while True:
         try:
@@ -2287,6 +2271,39 @@ async def run_autonomous_loop(duration_seconds: int = 0):
             port_cents = bal.get("portfolio_value", 0)
             equity_cents = total_cents + port_cents
             educator.record_equity_snapshot(total_cents, port_cents, equity_cents)
+
+            # HARD DAILY CIRCUIT BREAKER (Max -$40.00 Daily Drawdown Stop):
+            cb_state = educator.memory.setdefault("daily_circuit_breaker", {})
+            today_str = now_utc.strftime("%Y-%m-%d")
+            if cb_state.get("day") != today_str or cb_state.get("protected_floor_cents") is None:
+                cb_state["day"] = today_str
+                cb_state["start_equity_cents"] = equity_cents
+                cb_state["protected_floor_cents"] = max(10000, equity_cents - 4000)
+                cb_state["tripped"] = False
+                educator.save_memory()
+            daily_floor_c = int(cb_state.get("protected_floor_cents", 40000))
+            if equity_cents > int(cb_state.get("start_equity_cents", equity_cents)):
+                # Ratchet daily start equity & floor UP as we win during the day!
+                cb_state["start_equity_cents"] = equity_cents
+                cb_state["protected_floor_cents"] = max(daily_floor_c, equity_cents - 4000)
+                daily_floor_c = int(cb_state["protected_floor_cents"])
+                educator.save_memory()
+            if equity_cents <= daily_floor_c and not cb_state.get("tripped", False):
+                cb_state["tripped"] = True
+                educator.memory["manual_pause_buys"] = True
+                educator.save_memory()
+                logger.error(
+                    f"🚨 DAILY CIRCUIT BREAKER TRIPPED: Equity ${equity_cents/100:.2f} hit protected floor ${daily_floor_c/100:.2f} (-$40 max daily drawdown cap). Pausing all buys!"
+                )
+                await send_phone_alert(
+                    client,
+                    "🚨 DAILY CIRCUIT BREAKER TRIPPED (-$40 Cap)",
+                    (
+                        f"Live Equity (${equity_cents/100:.2f}) reached today's protected floor (${daily_floor_c/100:.2f}).\n"
+                        "All new buying is automatically PAUSED for the rest of the day to protect your bankroll."
+                    ),
+                )
+
             # Track $5,000 Sweet-Spot Plateau & Weekly Bank-Withdrawal Vault
             eq_dlr_now = round(equity_cents / 100.0, 2)
             withdrawable_vault_dlr = round(max(0.0, eq_dlr_now - 5000.0), 2)
@@ -2340,12 +2357,19 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     ),
                 )
 
-            # Detect when any previously held position cashes out (Example 3 Win notification)
+            # Detect when any previously held position cashes out (Supports both YES > 0 and NO < 0 positions!)
+            open_pos_fp_map: dict[str, float] = {}
             for pos in positions:
                 t = pos.get("ticker", "")
-                cnt = float(pos.get("position_fp", "0") or 0)
+                raw_cnt = float(pos.get("position_fp", "0") or 0)
+                open_pos_fp_map[t] = raw_cnt
+                cnt = abs(raw_cnt)
                 exp = float(pos.get("market_exposure_dollars", "0") or 0)
                 if cnt >= 1.0:
+                    mslug = _matchup_slug(t)
+                    if not t.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB", "KXINX", "KXNASDAQ", "KXWTI")):
+                        traded_matchups.add(mslug)
+                        educator.memory["traded_matchups"] = list(traded_matchups)
                     prev_tr = tracked_open_positions.get(t, {})
                     max_c = max(int(cnt), int(prev_tr.get("max_count", 0) or 0))
                     max_s = max(exp, float(prev_tr.get("max_stake", 0.0) or 0.0))
@@ -2353,7 +2377,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     if max_c >= 6 and int(cnt) <= int(max_c * 0.65) and not stage1_alerted:
                         stage1_alerted = True
                         sold_c = max_c - int(cnt)
-                        realized_so_far = float(pos.get("realized_pnl_dollars", "0") or 0)
                         await send_phone_alert(
                             client,
                             "💵 STAGE-1 PROFIT BANKED (+Breakeven Shield Locked!)",
@@ -2370,11 +2393,15 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         "max_count": max_c,
                         "max_stake": max_s,
                         "stage1_alerted": stage1_alerted,
+                        "is_no": (raw_cnt < 0),
                     }
                     educator.save_memory()
                 elif cnt < 1.0 and t in tracked_open_positions:
                     prev = tracked_open_positions.pop(t)
-                    stopped_out_events.add(_entity_key(t) if "_entity_key" in locals() else "-".join(t.split("-")[:2]))
+                    stopped_out_events.add(_entity_key(t))
+                    if not t.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB", "KXINX", "KXNASDAQ", "KXWTI")):
+                        traded_matchups.add(_matchup_slug(t))
+                        educator.memory["traded_matchups"] = list(traded_matchups)
                     realized_pnl = float(pos.get("realized_pnl_dollars", "0") or 0)
                     stake_dlr = prev.get("max_stake") or prev["stake"]
                     cnt_int = max(1, int(prev.get("max_count") or prev["count"]))
@@ -2425,12 +2452,17 @@ async def run_autonomous_loop(duration_seconds: int = 0):
             stale_buys_to_cancel: list[dict] = []
             for o in open_orders:
                 t = o.get("ticker", "")
-                if o.get("action") == "sell":
+                p_fp = open_pos_fp_map.get(t, 0.0)
+                o_act = o.get("action", "")
+                # A resting order is a closing Take-Profit order if we hold YES (p_fp >= 1) and action=="sell",
+                # OR if we hold NO (p_fp <= -1, Late-Clock Under) and action=="buy"!
+                is_closing_order = (p_fp >= 1.0 and o_act == "sell") or (p_fp <= -1.0 and o_act == "buy")
+                if is_closing_order:
                     resting_sell_orders.setdefault(t, []).append(o)
                     resting_sell_counts[t] = resting_sell_counts.get(t, 0.0) + float(
                         o.get("remaining_count_fp", "0") or 0
                     )
-                elif o.get("action") == "buy":
+                else:
                     oid = o.get("order_id", "")
                     age_sec = 0.0
                     c_str = o.get("created_time", "")
@@ -2473,55 +2505,48 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 except Exception:
                     pass
 
-            # 1. Manage Open Positions: True GEMINI.md <48c Guillotine + 90c-99c Harvest Queue
+            # 1. Manage Open Positions: Tight -10c Stop-Loss Cap + Stage-1/Stage-2 Harvest Queue (Supports YES & NO Under positions!)
             for pos in positions:
                 ticker = pos.get("ticker", "")
                 pos_fp = float(pos.get("position_fp", "0") or 0)
-                whole_pos = int(pos_fp)
+                is_no_pos = (pos_fp <= -1.0)
+                whole_pos = int(abs(pos_fp))
                 if whole_pos < 1:
                     continue
 
                 ob = await client.get_orderbook(ticker)
-                cur_bid = ob.best_yes_bid or 0
-                cur_ask = ob.best_yes_ask or 99
+                cur_bid = (ob.best_no_bid or 0) if is_no_pos else (ob.best_yes_bid or 0)
+                cur_ask = (ob.best_no_ask or 99) if is_no_pos else (ob.best_yes_ask or 99)
                 cur_spread = cur_ask - cur_bid
                 if cur_bid > peak_bids.get(ticker, 0):
                     peak_bids[ticker] = cur_bid
 
                 peaked = peak_bids.get(ticker, cur_bid)
                 exp_dlr = float(pos.get("market_exposure_dollars", "0") or 0)
-                avg_entry_cents = int(round((exp_dlr / pos_fp) * 100)) if exp_dlr > 0 else 80
+                avg_entry_cents = int(round((exp_dlr / abs(pos_fp)) * 100)) if exp_dlr > 0 else 80
                 max_orig_cnt = int(tracked_open_positions.get(ticker, {}).get("max_count", whole_pos) or whole_pos)
-                is_soccer_ml = any(
-                    ticker.startswith(sp)
-                    for sp in ("KXLALIGAGAME", "KXUCLGAME", "KXEPLGAME", "KXSERIEAGAME", "KXBUNDESLIGAGAME", "KXMLSGAME", "KXLIGAMXGAME")
-                )
-                is_fast_period = any(
-                    p in ticker for p in ("1Q", "2Q", "3Q", "4Q", "1H", "2H", "1P", "2P", "3P")
-                )
-                is_one_way_ratchet = any(
-                    k in ticker for k in ("TOTAL", "PTS", "REB", "AST", "3PT", "PRA", "YDS", "REC", "GOAL", "SOA")
-                )
                 # Stage-1 is ONLY banked when >=40% of contracts have ACTUALLY filled & cashed out (never on an unfilled touch!)
                 stage1_banked = (max_orig_cnt >= 6 and whole_pos <= int(max_orig_cnt * 0.58))
-                # Smart Stop-Loss Floor (GEMINI.md Law 3 & Pod 1):
-                # - Never fire hair-trigger Taker dumps (-3c / -7c) BEFORE Stage-1 banks!
-                # - UNIVERSAL STAGE-1 PROFIT-LOCK SHIELD: Once Stage-1 (60% of contracts) has actually sold in cash at +6c,
-                #   lock the remaining 40% runner's floor at `avg_entry_cents - 3` across ALL markets (including Totals & Props!)
-                #   so `(0.60 * +6c) + (0.40 * -3c) = +2.4c` GUARANTEED NET PROFIT (a Stage-1 winner can NEVER turn into a loss like GSWDEN-236 did!).
-                base_floor_c = 52 if is_fast_period else 48
+                # TIGHT -10c STOP-LOSS CAP (Rule 4):
+                # - Once Stage-1 (60% of contracts) has sold at +6c, lock the remaining 40% runner's floor at `avg_entry_cents - 3`
+                #   so `(0.60 * +6c) + (0.40 * -3c) = +2.4c` GUARANTEED NET PROFIT!
+                # - Before Stage-1 banks, cap maximum loss at `-10c` (`avg_entry_cents - 10`, minimum 62c) so a losing play
+                #   only costs ~$5-$6 (1.3% of account), NEVER a -35c to -54c crash!
                 if stage1_banked:
-                    stop_floor_c = max(base_floor_c, avg_entry_cents - 3)
-                elif is_soccer_ml and peaked >= avg_entry_cents + 4:
-                    stop_floor_c = max(base_floor_c, avg_entry_cents - 6)
+                    stop_floor_c = max(65, avg_entry_cents - 3)
+                elif peaked >= avg_entry_cents + 4:
+                    stop_floor_c = max(64, avg_entry_cents - 7)
                 else:
-                    stop_floor_c = base_floor_c
-                thesis_broken_guillotine = (0 < cur_bid <= stop_floor_c) and (cur_ask <= stop_floor_c + 5)
+                    stop_floor_c = max(62, avg_entry_cents - 10)
+                thesis_broken_guillotine = (0 < cur_bid <= stop_floor_c) and (cur_ask <= stop_floor_c + 4)
                 if thesis_broken_guillotine:
                     logger.warning(
-                        f"THESIS-BROKEN / STAGE-1 SHIELD TRIGGERED on {ticker} (cur_bid={cur_bid}c, ask={cur_ask}c, floor={stop_floor_c}c). Salvaging stake!"
+                        f"TIGHT -10c STOP-LOSS / STAGE-1 SHIELD TRIGGERED on {ticker} ({'NO-UNDER' if is_no_pos else 'YES'}, cur_bid={cur_bid}c, ask={cur_ask}c, floor={stop_floor_c}c). Exiting cleanly!"
                     )
-                    stopped_out_events.add("-".join(ticker.split("-")[:2]))
+                    stopped_out_events.add(_entity_key(ticker))
+                    if not ticker.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB", "KXINX", "KXNASDAQ", "KXWTI")):
+                        traded_matchups.add(_matchup_slug(ticker))
+                        educator.memory["traded_matchups"] = list(traded_matchups)
                     to_cancel = [
                         {
                             "order_id": so["order_id"],
@@ -2538,14 +2563,16 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             json_data={"orders": to_cancel},
                             authenticated=True,
                         )
+                    exit_order_side = "bid" if is_no_pos else "ask"
+                    exit_yes_price_c = min(99, max(1, 100 - cur_bid)) if is_no_pos else max(1, cur_bid)
                     await client.request(
                         "POST",
                         "/portfolio/events/orders",
                         json_data={
                             "ticker": ticker,
-                            "side": "ask",
+                            "side": exit_order_side,
                             "count": f"{whole_pos}.00",
-                            "price": f"{max(1, cur_bid) / 100:.4f}",
+                            "price": f"{exit_yes_price_c / 100:.4f}",
                             "time_in_force": "immediate_or_cancel",
                             "self_trade_prevention_type": "maker",
                             "client_order_id": str(uuid.uuid4()),
@@ -2562,97 +2589,26 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         exit_cents=cur_bid,
                         peak_cents=peaked,
                         net_pnl_dlr=est_pnl,
-                        exit_reason="STAGE1_PROFIT_SHIELD_EXIT" if stage1_banked else "THESIS_BROKEN_GUILLOTINE",
+                        exit_reason="STAGE1_PROFIT_SHIELD_EXIT" if stage1_banked else "TIGHT_10C_STOP_LOSS",
                     )
                     tracked_open_positions.pop(ticker, None)
                     educator.save_memory()
                     await send_phone_alert(
                         client,
-                        "🛡️ Stage-1 Profit Shield Locked!" if stage1_banked else "🛑 Stop-Loss Triggered (<48c Guillotine)",
+                        "🛡️ Stage-1 Profit Shield Locked!" if stage1_banked else "🛑 Tight -10c Stop-Loss Triggered",
                         (
-                            f"Play: {ticker}\n"
-                            f"Action: Exited {whole_pos}x @ {cur_bid}c (Peak: {peaked}c, Floor: {stop_floor_c}c)\n"
+                            f"Play: {ticker} ({'UNDER/NO' if is_no_pos else 'YES'})\n"
+                            f"Action: Exited {whole_pos}x @ {cur_bid}c (Entry: {avg_entry_cents}c, Floor: {stop_floor_c}c)\n"
                             f"Estimated Net Trade P&L: {est_pnl:+.2f}\n"
                             f"New Account Equity: ${equity_cents/100:.2f}"
                         ),
                     )
                     continue
 
-                # Strategy 2 (GEMINI.md Pod 2): Mid-Game "Green-Out" Equal-Profit Ratchet (+18c Surge on Value Entries)
-                greened_out_set: set[str] = set(educator.memory.setdefault("greened_out_tickers", []))
-                if (
-                    avg_entry_cents <= 75
-                    and cur_bid >= avg_entry_cents + 18
-                    and whole_pos >= 6
-                    and ticker not in greened_out_set
-                ):
-                    half_pos = whole_pos // 2
-                    runner_pos = whole_pos - half_pos
-                    green_price_cents = min(94, max(cur_bid + 1, cur_ask))
-                    logger.info(
-                        f"🟢 POD 2 GREEN-OUT TRIGGERED on {ticker} (Entry={avg_entry_cents}c -> Bid={cur_bid}c)! Locking 50% ({half_pos}x @ {green_price_cents}c) + {runner_pos}x House-Money Runner @ 96c."
-                    )
-                    to_cancel = [
-                        {
-                            "order_id": so["order_id"],
-                            "market_ticker": ticker,
-                            "exchange_index": so.get("exchange_index", 0),
-                            "subaccount": so.get("subaccount_number", 0),
-                        }
-                        for so in resting_sell_orders.get(ticker, [])
-                    ]
-                    try:
-                        if to_cancel:
-                            await client.request(
-                                "DELETE",
-                                "/portfolio/events/orders/batched",
-                                json_data={"orders": to_cancel},
-                                authenticated=True,
-                            )
-                        # 1) Place 50% Green-Out Maker Profit Lock at live touch (cur_bid + 1)
-                        await client.request(
-                            "POST",
-                            "/portfolio/events/orders",
-                            json_data={
-                                "ticker": ticker,
-                                "side": "ask",
-                                "count": f"{half_pos}.00",
-                                "price": f"{green_price_cents / 100:.4f}",
-                                "time_in_force": "good_till_canceled",
-                                "self_trade_prevention_type": "maker",
-                                "post_only": True,
-                                "client_order_id": str(uuid.uuid4()),
-                            },
-                            authenticated=True,
-                        )
-                        # 2) Place remaining 50% "House Money Runner" at 96c
-                        await client.request(
-                            "POST",
-                            "/portfolio/events/orders",
-                            json_data={
-                                "ticker": ticker,
-                                "side": "ask",
-                                "count": f"{runner_pos}.00",
-                                "price": "0.9600",
-                                "time_in_force": "good_till_canceled",
-                                "self_trade_prevention_type": "maker",
-                                "post_only": True,
-                                "client_order_id": str(uuid.uuid4()),
-                            },
-                            authenticated=True,
-                        )
-                        greened_out_set.add(ticker)
-                        educator.memory["greened_out_tickers"] = list(greened_out_set)
-                        educator.save_memory()
-                        continue
-                    except Exception as e:
-                        logger.warning(f"Green-Out split failed on {ticker}: {e}")
-
-                # Ensure Strategy A (50/50 Fast-Flip + Wave-Rider Split) & Strategy B (Front-of-Queue Ask Undercut)
+                # Ensure Strategy A (60/40 Fast-Flip + Wave-Rider Split) & Strategy B (Front-of-Queue Ask Undercut)
                 whole_covered = int(resting_sell_counts.get(ticker, 0.0))
                 uncovered = whole_pos - whole_covered
                 if uncovered >= 1:
-                    # "No More $1 Crumbs" Rule: Minimum +6c Stage-1 Fast-Flip & +11c Stage-2 Wave-Rider ($4.50-$8.50+ per win!)
                     undercut_ask = max(cur_bid + 1, cur_ask - 1)
                     if undercut_ask >= avg_entry_cents + 6:
                         fast_tp = min(avg_entry_cents + 7, undercut_ask)
@@ -2661,18 +2617,19 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     wave_tp = max(fast_tp + 3, min(96, avg_entry_cents + 11))
 
                     if uncovered >= 4:
-                        # 60% Stage-1 Fast-Flip (+6c) + 40% Stage-2 Wave-Rider (+11c) so Stage-1 banks the majority of profit immediately!
                         fast_cnt = max(2, int(round(uncovered * 0.60)))
                         wave_cnt = uncovered - fast_cnt
                         legs = [(fast_cnt, fast_tp, "Stage-1 Fast-Flip (+6c Target)"), (wave_cnt, wave_tp, "Stage-2 Wave-Rider (+11c Target)")]
                     else:
                         legs = [(uncovered, fast_tp, "Fast-Flip Harvest (+6c Target)")]
 
+                    tp_order_side = "bid" if is_no_pos else "ask"
                     for leg_cnt, leg_cents, leg_label in legs:
                         count_str = f"{leg_cnt}.00"
-                        tp_price = f"{leg_cents / 100:.4f}"
+                        eff_yes_tp_c = max(1, min(99, 100 - leg_cents)) if is_no_pos else leg_cents
+                        tp_price = f"{eff_yes_tp_c / 100:.4f}"
                         logger.info(
-                            f"Auto-queuing {leg_label} Sell for {ticker}: {count_str} @ {tp_price}"
+                            f"Auto-queuing {leg_label} Sell for {ticker} ({'NO-UNDER' if is_no_pos else 'YES'}): {count_str} @ {leg_cents}c (kalshi_yes_p={tp_price})"
                         )
                         try:
                             await client.request(
@@ -2680,7 +2637,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 "/portfolio/events/orders",
                                 json_data={
                                     "ticker": ticker,
-                                    "side": "ask",
+                                    "side": tp_order_side,
                                     "count": count_str,
                                     "price": tp_price,
                                     "time_in_force": "good_till_canceled",
@@ -2693,14 +2650,14 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         except Exception as e:
                             logger.warning(f"Could not place {leg_label} sell for {ticker}: {e}")
 
-            # 2. Dynamic 4-Tier Bankroll Scaling + Daily Smart Bet Quota Pacing (Target: 25 High-Conviction Maker Bets/Day)
+            # 2. Dynamic 4-Tier Bankroll Scaling + Daily Smart Bet Quota Pacing
             tier = get_scaling_tier(equity_cents)
             min_stake_c = tier["min_stake_cents"]
             quota_st = educator.get_daily_quota_status()
-            min_leader_ask = 75 if quota_st["behind_pace"] else (80 if quota_st["quota_met"] else 76)
-            max_leader_ask = 88 if quota_st["behind_pace"] else 87
+            min_leader_ask = 76
+            max_leader_ask = 87
             logger.info(
-                f"Heartbeat [{tier['name']}] | Cash: ${total_cents/100:.2f} | Portfolio: ${port_cents/100:.2f} | Total Equity: ${equity_cents/100:.2f} | Daily Quota: {quota_st['completed_bets']}/{quota_st['target_bets']} ({quota_st['wins']}W-{quota_st['losses']}L, Pace={quota_st['expected_by_now']})"
+                f"Heartbeat [{tier['name']}] | Cash: ${total_cents/100:.2f} | Portfolio: ${port_cents/100:.2f} | Total Equity: ${equity_cents/100:.2f} (Floor=${daily_floor_c/100:.2f}) | Daily Quota: {quota_st['completed_bets']}/{quota_st['target_bets']} ({quota_st['wins']}W-{quota_st['losses']}L, Pace={quota_st['expected_by_now']})"
             )
             # Emit silent Mac Primary Engine pulse every 90s so GitHub Cloud 24/7 Failover knows when Mac is awake vs. shut down
             if sys.platform == "darwin" and duration_seconds == 0:
@@ -2732,8 +2689,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
             # Poll 24/7 Two-Way Commands (Telegram Bot & ntfy.sh lock-screen buttons — works even when Mac is OFF!)
             await poll_two_way_commands(client, educator, total_cents, port_cents, equity_cents, positions, open_orders)
 
-            # Anti-Cluster Stagger Shield: Allow a full 3-Leg Basket (3 unshielded legs across independent games)
-            # so $130+ cash never sits idle on the bench, while unlocking slots 4-5 once any leg banks Stage-1 (+6c)!
             unshielded_open_count = sum(
                 1
                 for tk_o, tr_o in tracked_open_positions.items()
@@ -2742,6 +2697,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
 
             if (
                 not educator.memory.get("manual_pause_buys", False)
+                and not cb_state.get("tripped", False)
+                and equity_cents > daily_floor_c
                 and total_cents >= min_stake_c
                 and len(resting_buy_tickers) < min(3, tier["max_concurrent"])
                 and unshielded_open_count < 3
@@ -2752,8 +2709,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     if idx in shard_cents:
                         shard_cents[idx] = int(float(b_item.get("balance", "0") or 0) * 100)
 
-                # Pre-warm dry trading shards ONLY when cash > $260 and no resting buy orders are reserving shard margin
-                # (otherwise let the JIT Cross-Shard Sweeper concentrate cash on whichever shard has the approved A+ play!)
                 for dst_shard in ((0, 2, 3) if (total_cents >= 26000 and not resting_buy_tickers) else ()):
                     if shard_cents.get(dst_shard, 0) < min_stake_c:
                         donor_shard = max((0, 2, 3), key=lambda s: shard_cents.get(s, 0))
@@ -2767,7 +2722,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                         json_data={
                                             "source": "event_contract",
                                             "destination": "event_contract",
-                                            "amount": xfer_c * 100,  # Kalshi expects centicents (1c = 100 centicents)
+                                            "amount": xfer_c * 100,
                                             "client_transfer_id": str(uuid.uuid4()),
                                             "source_exchange_shard": donor_shard,
                                             "destination_exchange_shard": dst_shard,
@@ -2790,27 +2745,19 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     + list(resting_sell_counts.keys())
                     + list(tracked_open_positions.keys())
                 )
-                def _entity_key(tk: str) -> str:
-                    pts = tk.split("-")
-                    return "-".join(pts[:3]) if len(pts) >= 4 else "-".join(pts[:2])
-
-                def _matchup_slug(tk: str) -> str:
-                    pts = tk.split("-")
-                    return pts[1] if len(pts) >= 2 else tk
-
                 harvested_set = set(educator.memory.get("harvested_tickers", []))
-                # Strict Single-Game Correlation Lock: Never hold two concurrent active positions or resting buys
-                # in the same matchup (e.g. never hold both DALMIA Moneyline AND DALMIA Total at the same time!).
-                # Once a matchup position cashes out, _matchup_slug frees up so we can step up the alt-line ladder!
-                active_matchups = {_matchup_slug(tk) for tk in active_all_tickers}
+                # GLOBAL SAME-GAME LOCKOUT (Rule 3):
+                # Once any game (`26OCT27ROMCAG`) is traded once (active, harvested, or stopped out), lock out that
+                # entire matchup slug across ALL series (Moneyline, Total, Spread, Halftime, Quarters, Props)!
+                active_matchups = (
+                    set(traded_matchups)
+                    | {_matchup_slug(tk) for tk in active_all_tickers if not tk.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB", "KXINX", "KXNASDAQ", "KXWTI"))}
+                    | {_matchup_slug(tk) for tk in harvested_set if not tk.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB", "KXINX", "KXNASDAQ", "KXWTI"))}
+                )
                 active_events = (
                     set(stopped_out_events)
                     | {_entity_key(tk) for tk in active_all_tickers}
-                    | {
-                        _entity_key(tk)
-                        for tk in harvested_set
-                        if not any(k in tk for k in ("SPREAD", "TOTAL", "PTS", "REB", "AST", "3PT", "YDS", "REC", "GOAL", "SOA"))
-                    }
+                    | {_entity_key(tk) for tk in harvested_set}
                 )
                 active_crypto_count = sum(
                     1
@@ -2828,7 +2775,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 for series in WATCH_SERIES:
                     is_crypto_s = series.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB"))
                     is_index_s = series.startswith(("KXINX", "KXNASDAQ", "KXWTI"))
-                    # Correlation Guard: Max 1 active Crypto play & Max 1 active Wall St Index play at a time!
                     if is_crypto_s and active_crypto_count >= 1:
                         continue
                     if is_index_s and active_index_count >= 1:
@@ -2849,7 +2795,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     except Exception:
                         return s_name, [], False
 
-                # Poll Hot/Due Series in concurrent 2-way pairs (~16 req/sec, zero 429 bursts on Kalshi Basic Tier!)
                 batched_series_results = []
                 for b_idx in range(0, len(series_to_poll), 2):
                     batch_slice = series_to_poll[b_idx : b_idx + 2]
@@ -2871,10 +2816,10 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             shard_key = int(m.get("exchange_index", 0) or 0)
 
                             t = m.get("ticker", "")
-                            # Block fragile Soccer Draws (-TIE) and narrow middle range brackets (-B)
                             if t.endswith("-TIE") or "-B" in t:
                                 continue
                             event_prefix = _entity_key(t)
+                            mslug = _matchup_slug(t)
                             exp_str = m.get("expected_expiration_time") or m.get("expiration_time") or ""
                             if not exp_str:
                                 continue
@@ -2891,18 +2836,18 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 or resting_sell_counts.get(t, 0) > 0
                                 or t in harvested_set
                                 or event_prefix in active_events
+                                or (not is_crypto_s and not is_index_s and mslug in active_matchups)
                             ):
                                 continue
 
-                            # Strict Final-25-Minute Lock Window for volatile Crypto/Indices; 165m for live in-play Sports
+                            # Strict <= 90-Minute Fast-Turnover Window for Live Sports; 5-25m for Crypto/Indices
                             if is_crypto_s or is_index_s:
                                 if not (5.0 <= mins_to_exp <= 25.0):
                                     continue
                             else:
-                                if not (-180.0 <= mins_to_exp <= 165.0):
+                                if not (-180.0 <= mins_to_exp <= 90.0):
                                     continue
 
-                            # Fast pre-filter on live Bid/Ask before fetching full orderbook
                             bid_f = float(m.get("yes_bid_dollars") or 0)
                             ask_f = float(m.get("yes_ask_dollars") or 0)
                             bid_c = int(round(bid_f * 100))
@@ -2910,12 +2855,20 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             spread_c = ask_c - bid_c
                             if spread_c <= 0 or spread_c > 3:
                                 continue
-                            # "Meat of the Move" Sweet Spot (75c-88c when behind daily quota pace, 76c-87c normal):
-                            if not (min_leader_ask <= ask_c <= max_leader_ask):
+
+                            raw_title = m.get("yes_sub_title") or m.get("title", t)
+                            # Rule 5: For TOTAL markets, scan Late-Clock UNDERS (`NO` side in 76c-87c zone, i.e., `100 - bid_c` in 76c-87c)
+                            # or 100%-already-banked Overs (`YES` side in 76c-87c zone)
+                            no_ask_c = 100 - bid_c
+                            is_under_candidate = False
+                            if "TOTAL" in series and "TEAMTOTAL" not in series and (min_leader_ask <= no_ask_c <= max_leader_ask):
+                                is_under_candidate = True
+                                clean_title = f"[UNDER-NO] {raw_title}"
+                            elif min_leader_ask <= ask_c <= max_leader_ask:
+                                clean_title = raw_title
+                            else:
                                 continue
 
-                            clean_title = m.get("yes_sub_title") or m.get("title", t)
-                            # Fast-Settlement Velocity Cap: Quarters/Periods resolve in ~8m, Player Props in ~12m, Halves in ~20m!
                             eff_mins = max(0.0, mins_to_exp)
                             is_q_series = any(q in series for q in ("1Q", "2Q", "3Q", "4Q", "1P", "2P", "3P"))
                             is_prop_mkt = len(t.split("-")) >= 4
@@ -2925,29 +2878,21 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 eff_mins = min(eff_mins, 12.0)
                             elif any(h in series for h in ("1H", "2H")):
                                 eff_mins = min(eff_mins, 20.0)
-                            # "Hot Quarter & Player Prop King" Priority: ALWAYS attack 12-min Quarters (-30.0) and Hot Player Props (-25.0)
-                            # BEFORE Halftime or Full-Game lines!
-                            quarter_king_bonus = -30.0 if is_q_series else (-25.0 if is_prop_mkt else 0.0)
-                            # "One-Way Ratchet" Bonus: ONLY for Player Props (NEVER prioritize unbanked Over/Under Totals over Moneylines!)
+                            quarter_king_bonus = -30.0 if is_q_series else (-25.0 if is_prop_mkt else (-15.0 if is_under_candidate else 0.0))
                             is_one_way_ratchet = is_prop_mkt
                             ratchet_bonus = -12.0 if is_one_way_ratchet else 0.0
-                            # Alt-Line Cushion Priority ("Buying Points / Safer Strike First"):
-                            # Within the 76c-87c zone on the same game/player, prefer the LOWER strike number first
-                            # (e.g. -2.5 before -8.5 spread, Over 213 before Over 219, 100 yds before 150 yds) for maximum safety cushion!
                             import re as _re
                             _m_strike = _re.search(r"(\d+(?:\.\d+)?)$", t.split("-")[-1])
-                            alt_line_safety_tiebreaker = float(_m_strike.group(1)) * 0.04 if _m_strike else 0.0
-                            # Velocity Priority Score: Hot Quarter/Prop First + Tightest spread + One-Way Ratchet + safest Alt-Line strike
+                            strike_num = float(_m_strike.group(1)) if _m_strike else 0.0
+                            # For Late-Clock Unders, prefer HIGHER strike numbers (e.g. Under 4.5 before Under 3.5) for maximum goal cushion!
+                            alt_line_safety_tiebreaker = (-strike_num * 0.04) if is_under_candidate else (strike_num * 0.04)
                             vel_score = (spread_c * 25.0) + eff_mins + quarter_king_bonus + ratchet_bonus + alt_line_safety_tiebreaker
                             candidates.append((vel_score, mins_to_exp, t, clean_title, shard_key))
-                        # If a series has zero markets active/expiring within 3.5 hours, sleep that cold series for 4 minutes!
                         if not has_near_active and not is_crypto_s and not is_index_s:
                             cold_series_until[series] = time.time() + 240.0
                     except Exception:
                         pass
 
-                # Sort by Fastest Capital Turnover Velocity, then deduplicate to max 2 alt-strikes per game/player
-                # so one game with 10 alt-lines never pushes Player Props or other sports out of the inspection queue!
                 candidates.sort(key=lambda x: x[0])
                 dedup_candidates = []
                 seen_entity_counts: dict[str, int] = {}
@@ -2964,7 +2909,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     is_index_t = t.startswith(("KXINX", "KXNASDAQ", "KXWTI"))
                     if (
                         event_prefix in active_events
-                        or matchup_slug in active_matchups
+                        or (not is_crypto_t and not is_index_t and matchup_slug in active_matchups)
                         or total_cents < min_stake_c
                         or unshielded_open_count >= 3
                         or len(resting_buy_tickers) >= max(1, 3 - unshielded_open_count)
@@ -2974,9 +2919,12 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         continue
                     await asyncio.sleep(0.06)
                     ob = await client.get_orderbook(t)
-                    if ob.best_yes_bid and ob.best_yes_ask:
-                        spread = ob.best_yes_ask - ob.best_yes_bid
-                        is_leader_zone = (min_leader_ask <= ob.best_yes_ask <= max_leader_ask and spread <= 3)
+                    is_under_cand = title.startswith("[UNDER-NO]")
+                    side_bid = ob.best_no_bid if is_under_cand else ob.best_yes_bid
+                    side_ask = ob.best_no_ask if is_under_cand else ob.best_yes_ask
+                    if side_bid and side_ask:
+                        spread = side_ask - side_bid
+                        is_leader_zone = (min_leader_ask <= side_ask <= max_leader_ask and 1 <= spread <= 3)
                         is_tail_lock_zone = False
 
                         if is_leader_zone:
@@ -2984,22 +2932,22 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 client, t, ob, title=title, min_book_depth_dlr=tier["min_depth_dlr"]
                             )
                             logger.info(
-                                f"PreTradeEducator [76-87c MEAT-OF-MOVE LEADER | {t} ({mins_left:.0f}m left)]: {reason}"
+                                f"PreTradeEducator [{'76-87c LATE-CLOCK UNDER' if is_under_cand else '76-87c MEAT-OF-MOVE LEADER'} | {t} ({mins_left:.0f}m left)]: {reason}"
                             )
                             if not approved:
                                 continue
 
-                            # Front-of-Queue Spread-Capture Entry Discount: bid (cur_bid + 1) on 2c-3c spreads to save +1c for free!
-                            bid_cents = max(ob.best_yes_bid + 1, ob.best_yes_ask - 2) if spread >= 2 else (ob.best_yes_ask - 1)
-                            price_str = f"{bid_cents / 100:.4f}"
-                            # 4-Tier Institutional Kelly Sizing (Cap working equity at $5,000 Sweet-Spot Plateau so >$5k is reserved for bank withdrawal!)
+                            # Front-of-Queue Spread-Capture Entry Discount: bid (side_bid + 1) on 2c-3c spreads to save +1c for free!
+                            bid_cents = max(side_bid + 1, side_ask - 2) if spread >= 2 else (side_ask - 1)
+                            entry_order_side = "ask" if is_under_cand else "bid"
+                            eff_yes_entry_c = max(1, min(99, 100 - bid_cents)) if is_under_cand else bid_cents
+                            price_str = f"{eff_yes_entry_c / 100:.4f}"
+                            # HARD PER-TRADE STAKE CAP (Rule 1): Strictly max 10%-12% of account equity ($44-$55 cap at $440 equity!)
                             working_equity_cents = min(equity_cents, tier.get("working_cap_cents", equity_cents))
-                            if is_crypto_t or is_index_t:
-                                base_alloc_pct = min(0.20, tier["base_pct"])
-                            else:
-                                base_alloc_pct = tier["boost_pct"] if (is_tail_lock_zone or conf_mult >= 1.20) else tier["base_pct"]
-                            raw_stake = int(working_equity_cents * base_alloc_pct * conf_mult)
-                            target_stake_cents = min(tier["max_stake_cents"], max(min_stake_c, raw_stake), total_cents)
+                            base_alloc_pct = min(0.12, tier["boost_pct"] if conf_mult >= 1.20 else tier["base_pct"])
+                            raw_stake = int(working_equity_cents * base_alloc_pct)
+                            hard_12pct_cap_c = max(2000, int(equity_cents * 0.12))
+                            target_stake_cents = min(tier["max_stake_cents"], hard_12pct_cap_c, max(min_stake_c, raw_stake), total_cents)
 
                             # Just-In-Time (JIT) Cross-Shard Liquidity Sweeper: pull cash from other shards if needed!
                             if shard_cents.get(shard_key, 0) < target_stake_cents:
@@ -3017,7 +2965,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                                 json_data={
                                                     "source": "event_contract",
                                                     "destination": "event_contract",
-                                                    "amount": pull_c * 100,  # centicents
+                                                    "amount": pull_c * 100,
                                                     "client_transfer_id": str(uuid.uuid4()),
                                                     "source_exchange_shard": donor,
                                                     "destination_exchange_shard": shard_key,
@@ -3039,12 +2987,10 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             alloc_cents = min(shard_cents.get(shard_key, 0), target_stake_cents)
                             count_int = int(alloc_cents // bid_cents)
                             if count_int >= tier["min_contracts"]:
-                                # Institutional 2-Tranche Maker Ladder (For $1k-$2k+ orders > max_slice, splits 60% @ bid_cents + 40% @ bid_cents-1c!)
-                                max_slice = tier.get("iceberg_slice", 110)
-                                slice_count = min(count_int, max_slice) if count_int > max_slice else count_int
-                                rem_ladder_count = max(0, min(count_int - slice_count, max_slice)) if count_int > max_slice else 0
+                                max_slice = tier.get("iceberg_slice", 70)
+                                slice_count = min(count_int, max_slice)
                                 logger.info(
-                                    f"Auto-deploying [{tier['name']}] Maker Bid on {t}: {slice_count} contracts (Target={count_int}) @ {price_str} (${(slice_count*bid_cents)/100:.2f})"
+                                    f"Auto-deploying [{tier['name']}] Maker {'UNDER(NO)' if is_under_cand else 'YES'} Bid on {t}: {slice_count} contracts @ {bid_cents}c (${(slice_count*bid_cents)/100:.2f})"
                                 )
                                 try:
                                     await client.request(
@@ -3052,7 +2998,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                         "/portfolio/events/orders",
                                         json_data={
                                             "ticker": t,
-                                            "side": "bid",
+                                            "side": entry_order_side,
                                             "count": f"{slice_count}.00",
                                             "price": price_str,
                                             "time_in_force": "good_till_canceled",
@@ -3065,6 +3011,10 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                     resting_buy_tickers.add(t)
                                     active_events.add(event_prefix)
                                     active_matchups.add(matchup_slug)
+                                    if not is_crypto_t and not is_index_t:
+                                        traded_matchups.add(matchup_slug)
+                                        educator.memory["traded_matchups"] = list(traded_matchups)
+                                        educator.save_memory()
                                     locked_buy_shards.add(shard_key)
                                     if is_crypto_t:
                                         active_crypto_count += 1
@@ -3072,25 +3022,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                         active_index_count += 1
                                     shard_cents[shard_key] -= slice_count * bid_cents
                                     total_cents -= slice_count * bid_cents
-                                    if rem_ladder_count >= 15 and shard_cents.get(shard_key, 0) >= rem_ladder_count * max(1, bid_cents - 1):
-                                        ladder_p_str = f"{max(1, bid_cents - 1) / 100:.4f}"
-                                        await client.request(
-                                            "POST",
-                                            "/portfolio/events/orders",
-                                            json_data={
-                                                "ticker": t,
-                                                "side": "bid",
-                                                "count": f"{rem_ladder_count}.00",
-                                                "price": ladder_p_str,
-                                                "time_in_force": "good_till_canceled",
-                                                "self_trade_prevention_type": "maker",
-                                                "post_only": True,
-                                                "client_order_id": str(uuid.uuid4()),
-                                            },
-                                            authenticated=True,
-                                        )
-                                        shard_cents[shard_key] -= rem_ladder_count * max(1, bid_cents - 1)
-                                        total_cents -= rem_ladder_count * max(1, bid_cents - 1)
                                 except Exception:
                                     pass
 

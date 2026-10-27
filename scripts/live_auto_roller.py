@@ -265,11 +265,37 @@ class PreTradeEducator:
         self.memory = self._load_memory()
         self.odds_api_cache: dict[str, tuple[float, list]] = {}
         self.sleeper_cache: dict[str, tuple[float, dict, set, set]] = {}
+        self.espn_scoreboard_cache: dict[str, tuple[float, list]] = {}
+        self.espn_summary_cache: dict[str, tuple[float, dict]] = {}
         self.odds_api_key = (
             os.environ.get("ODDS_API_KEY")
             or os.environ.get("THE_ODDS_API_KEY")
             or ""
         )
+
+    async def _get_espn_events_cached(self, hc, sport_path: str, ttl: float = 4.0) -> list:
+        now_t = time.time()
+        c_ts, c_ev = self.espn_scoreboard_cache.get(sport_path, (0.0, []))
+        if (now_t - c_ts) <= ttl and c_ev:
+            return c_ev
+        r = await hc.get(f"https://site.api.espn.com/apis/site/v2/sports/{sport_path}", timeout=3.5)
+        events = r.json().get("events", [])
+        self.espn_scoreboard_cache[sport_path] = (now_t, events)
+        return events
+
+    async def _get_espn_summary_cached(self, hc, sport_base: str, ev_id: str, ttl: float = 4.0) -> dict:
+        key = f"{sport_base}:{ev_id}"
+        now_t = time.time()
+        c_ts, c_sum = self.espn_summary_cache.get(key, (0.0, {}))
+        if (now_t - c_ts) <= ttl and c_sum:
+            return c_sum
+        r_box = await hc.get(
+            f"https://site.api.espn.com/apis/site/v2/sports/{sport_base}/summary?event={ev_id}",
+            timeout=3.5,
+        )
+        data = r_box.json()
+        self.espn_summary_cache[key] = (now_t, data)
+        return data
 
     @staticmethod
     def classify_archetype(ticker: str) -> str:
@@ -919,8 +945,7 @@ class PreTradeEducator:
 
         if sp_path:
             try:
-                r = await hc.get(f"https://site.api.espn.com/apis/site/v2/sports/{sp_path}", timeout=3.5)
-                events = r.json().get("events", [])
+                events = await self._get_espn_events_cached(hc, sp_path, ttl=4.0)
                 live_events = [
                     ev for ev in events
                     if ev.get("status", {}).get("type", {}).get("state") == "in"
@@ -1267,11 +1292,8 @@ class PreTradeEducator:
                     if target_val > 0 and player_last:
                         sport_base = sp_path.split("/scoreboard")[0]
                         ev_id = matched_ev.get("id", "")
-                        r_box = await hc.get(
-                            f"https://site.api.espn.com/apis/site/v2/sports/{sport_base}/summary?event={ev_id}",
-                            timeout=3.5,
-                        )
-                        bs_players = r_box.json().get("boxscore", {}).get("players", [])
+                        box_json = await self._get_espn_summary_cached(hc, sport_base, ev_id, ttl=4.0)
+                        bs_players = box_json.get("boxscore", {}).get("players", [])
                         found_stat = None
                         fouls_val = 0
                         mins_played = "0"
@@ -1581,8 +1603,7 @@ class PreTradeEducator:
             target_name = title.replace(" wins", "").strip().lower()
             last_word = target_name.split()[-1] if target_name else ""
             try:
-                r = await hc.get(f"https://site.api.espn.com/apis/site/v2/sports/{sport_path}", timeout=3.5)
-                events = r.json().get("events", [])
+                events = await self._get_espn_events_cached(hc, sport_path, ttl=4.0)
                 for ev in events:
                     comps = list(ev.get("competitions", []))
                     for grp in ev.get("groupings", []):
@@ -2070,6 +2091,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
     tracked_open_positions: dict[str, dict] = educator.memory.setdefault("tracked_open_positions", {})
     stopped_out_events: set[str] = {"KXLIGAMXGAME-26OCT25TIJSLA"}
     series_shard_cache: dict[str, int] = {}
+    cold_series_until: dict[str, float] = {}
 
     while True:
         try:
@@ -2609,6 +2631,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     if tk.startswith(("KXINX", "KXNASDAQ", "KXWTI"))
                 )
                 candidates = []
+                now_scan_ts = time.time()
+                series_to_poll = []
                 for series in WATCH_SERIES:
                     is_crypto_s = series.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB"))
                     is_index_s = series.startswith(("KXINX", "KXNASDAQ", "KXWTI"))
@@ -2617,16 +2641,38 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         continue
                     if is_index_s and active_index_count >= 1:
                         continue
+                    if now_scan_ts < cold_series_until.get(series, 0.0):
+                        continue
+                    series_to_poll.append(series)
+
+                async def _fetch_series_markets(s_name: str):
                     try:
                         res = await client.request(
                             "GET",
                             "/markets",
-                            params={"series_ticker": series, "status": "open", "limit": 1000},
+                            params={"series_ticker": s_name, "status": "open", "limit": 1000},
+                            authenticated=False,
                         )
-                        await asyncio.sleep(0.035)
-                        markets_list = res.get("markets", [])
+                        return s_name, res.get("markets", [])
+                    except Exception:
+                        return s_name, []
+
+                # Poll Hot/Due Series in concurrent 5-way batches (10x faster discovery without 429 bursts!)
+                batched_series_results = []
+                for b_idx in range(0, len(series_to_poll), 5):
+                    batch_slice = series_to_poll[b_idx : b_idx + 5]
+                    b_res = await asyncio.gather(*(_fetch_series_markets(s) for s in batch_slice))
+                    batched_series_results.extend(b_res)
+                    if b_idx + 5 < len(series_to_poll):
+                        await asyncio.sleep(0.14)
+
+                for series, markets_list in batched_series_results:
+                    is_crypto_s = series.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB"))
+                    is_index_s = series.startswith(("KXINX", "KXNASDAQ", "KXWTI"))
+                    try:
                         if markets_list and series not in series_shard_cache:
                             series_shard_cache[series] = int(markets_list[0].get("exchange_index", 0) or 0)
+                        has_near_active = False
                         for m in markets_list:
                             shard_key = int(m.get("exchange_index", 0) or 0)
 
@@ -2635,14 +2681,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             if t.endswith("-TIE") or "-B" in t:
                                 continue
                             event_prefix = _entity_key(t)
-                            if (
-                                t in resting_buy_tickers
-                                or resting_sell_counts.get(t, 0) > 0
-                                or t in harvested_set
-                                or event_prefix in active_events
-                            ):
-                                continue
-
                             exp_str = m.get("expected_expiration_time") or m.get("expiration_time") or ""
                             if not exp_str:
                                 continue
@@ -2651,6 +2689,17 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 mins_to_exp = (exp_dt - now_utc).total_seconds() / 60.0
                             except Exception:
                                 continue
+                            if -180.0 <= mins_to_exp <= 210.0:
+                                has_near_active = True
+
+                            if (
+                                t in resting_buy_tickers
+                                or resting_sell_counts.get(t, 0) > 0
+                                or t in harvested_set
+                                or event_prefix in active_events
+                            ):
+                                continue
+
                             # Strict Final-25-Minute Lock Window for volatile Crypto/Indices; 165m for live in-play Sports
                             if is_crypto_s or is_index_s:
                                 if not (5.0 <= mins_to_exp <= 25.0):
@@ -2697,6 +2746,9 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             # Velocity Priority Score: Hot Quarter/Prop First + Tightest spread + One-Way Ratchet + safest Alt-Line strike
                             vel_score = (spread_c * 25.0) + eff_mins + quarter_king_bonus + ratchet_bonus + alt_line_safety_tiebreaker
                             candidates.append((vel_score, mins_to_exp, t, clean_title, shard_key))
+                        # If a series has zero markets active/expiring within 3.5 hours, sleep that cold series for 4 minutes!
+                        if not has_near_active and not is_crypto_s and not is_index_s:
+                            cold_series_until[series] = time.time() + 240.0
                     except Exception:
                         pass
 
@@ -2726,7 +2778,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         or (is_index_t and active_index_count >= 1)
                     ):
                         continue
-                    await asyncio.sleep(0.12)
+                    await asyncio.sleep(0.06)
                     ob = await client.get_orderbook(t)
                     if ob.best_yes_bid and ob.best_yes_ask:
                         spread = ob.best_yes_ask - ob.best_yes_bid
@@ -2855,7 +2907,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
             logger.info(f"Completed scheduled cloud burst ({duration_seconds}s).")
             break
 
-        await asyncio.sleep(5)
+        await asyncio.sleep(1.5)
 
     await client.close()
 

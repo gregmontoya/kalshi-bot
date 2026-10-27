@@ -405,9 +405,9 @@ class PreTradeEducator:
         if hist:
             prev_cash = float(hist[-1].get("cash", cash_dlr))
             prev_eq = float(hist[-1].get("equity", eq_dlr))
-            # If both cash and total equity jump simultaneously by >= $25, it's an external deposit
-            if (cash_dlr - prev_cash) >= 25.0 and (eq_dlr - prev_eq) >= 20.0:
-                deposit_delta = round(cash_dlr - prev_cash, 2)
+            # True external deposit: both cash and total equity jump by nearly the same amount (>= $45) without portfolio liquidation
+            if (eq_dlr - prev_eq) >= 45.0 and abs((cash_dlr - prev_cash) - (eq_dlr - prev_eq)) <= 5.0:
+                deposit_delta = round(eq_dlr - prev_eq, 2)
 
         daily = self.memory.setdefault("daily_ledger", {})
         day_entry = daily.setdefault(

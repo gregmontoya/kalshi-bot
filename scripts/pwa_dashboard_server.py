@@ -76,9 +76,9 @@ HTML_PAGE = """<!DOCTYPE html>
       <div class="kpi-sub" id="twoDaySub">2-Day Net: +$16.32</div>
     </div>
     <div class="kpi">
-      <div class="kpi-lbl">Tonight Bet ($346.40)</div>
-      <div class="kpi-val cyan" id="betProg">+$12.12 / +$72.50</div>
-      <div class="kpi-sub" id="betRem">$60.38 left tonight</div>
+      <div class="kpi-lbl">Tonight Bet ($542.40)</div>
+      <div class="kpi-val cyan" id="betProg">+$6.91 / +$72.50</div>
+      <div class="kpi-sub" id="betRem">$65.59 left tonight</div>
     </div>
     <div class="kpi">
       <div class="kpi-lbl">AI Trophy & Payday Vault</div>
@@ -89,11 +89,11 @@ HTML_PAGE = """<!DOCTYPE html>
 
   <div class="card">
     <div class="card-title">
-      <span>🎯 Gate 1 Tonight: $273.90 -> $346.40 (+$72.50 Target)</span>
-      <span id="betPct">16.7%</span>
+      <span>🎯 Gate 1 Tonight (+$200 Deposit Adjusted): $469.90 -> $542.40 (+$72.50 Net Profit Target)</span>
+      <span id="betPct">9.5%</span>
     </div>
-    <div class="bar-bg"><div class="bar-fill" id="betBar" style="width:16.7%"></div></div>
-    <div style="font-size:0.73rem;color:var(--muted)">Reward at $346.40: $10.00 AI Trophy Seed + $500 Tier 4 Accelerator Deposit</div>
+    <div class="bar-bg"><div class="bar-fill" id="betBar" style="width:9.5%"></div></div>
+    <div style="font-size:0.73rem;color:var(--muted)">Adjusted for +$196.00 net ($200.00 gross) deposit at 8:09 PM • Stretch Target: $575–$600+</div>
   </div>
 
   <div class="card">
@@ -126,10 +126,10 @@ async function refresh() {
     document.getElementById('eqVal').textContent = '$' + d.equity.toFixed(2);
     document.getElementById('cashSub').textContent = `Cash: $${d.cash.toFixed(2)} | Open: $${d.open_port.toFixed(2)}`;
     document.getElementById('todayProfit').textContent = (d.today_net >= 0 ? '+$' : '-$') + Math.abs(d.today_net).toFixed(2);
-    const betGained = Math.max(0, d.equity - 273.90);
+    const betGained = Math.max(0, d.equity - 469.90);
     const betPct = Math.min(100, (betGained / 72.50) * 100);
     document.getElementById('betProg').textContent = `+$${betGained.toFixed(2)} / +$72.50`;
-    document.getElementById('betRem').textContent = `$${Math.max(0, 346.40 - d.equity).toFixed(2)} left tonight`;
+    document.getElementById('betRem').textContent = `$${Math.max(0, 542.40 - d.equity).toFixed(2)} left tonight`;
     document.getElementById('betPct').textContent = betPct.toFixed(1) + '%';
     document.getElementById('betBar').style.width = betPct + '%';
 

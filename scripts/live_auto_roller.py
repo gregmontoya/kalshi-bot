@@ -703,18 +703,18 @@ class PreTradeEducator:
                 def _comp_window_pts(c_obj: dict) -> float:
                     ls = [float(x.get("value", 0) or 0) for x in c_obj.get("linescores", [])]
                     full_sc = float(c_obj.get("score", 0) or (sum(ls) if ls else 0))
-                    if req_periods == (1,) and ls:
-                        return ls[0]
+                    if req_periods == (1,):
+                        return ls[0] if ls else (full_sc if live_period == 1 else 0.0)
                     if req_periods == (2,) and not is_soccer:
                         return ls[1] if len(ls) >= 2 else 0.0
                     if req_periods == (3,):
                         return ls[2] if len(ls) >= 3 else 0.0
                     if req_periods == (4,):
                         return ls[3] if len(ls) >= 4 else 0.0
-                    if req_periods == (1, 2) and ls:
-                        return sum(ls[:2])
-                    if req_periods == (3, 4) and ls:
-                        return sum(ls[2:4])
+                    if req_periods == (1, 2):
+                        return sum(ls[:2]) if ls else (full_sc if live_period <= 2 else 0.0)
+                    if req_periods == (3, 4):
+                        return sum(ls[2:4]) if len(ls) >= 3 else 0.0
                     return full_sc
 
                 # 2. Quarter/Half Winner, Spread & Total Live Scoreboard Verification
@@ -750,18 +750,43 @@ class PreTradeEducator:
                     else:
                         cur_pts = _comp_window_pts(competitors[0]) + _comp_window_pts(competitors[1])
                     prog_pct = (cur_pts / target_val) * 100.0
+                    pts_needed = max(0.0, target_val - cur_pts)
+                    gm_margin_tot = abs(float(competitors[0].get("score", 0) or 0) - float(competitors[1].get("score", 0) or 0))
+                    try:
+                        cur_clk_m = float(str(clock_disp).replace("'", "").split(":")[0].split("+")[0] or 0) if ":" in str(clock_disp) else 0.5
+                    except Exception:
+                        cur_clk_m = 6.0
+
                     # Period-Aware Scoring Pace Curve:
-                    # - Quarter/Half Totals (req_periods is not None): require >= 60% of that Quarter/Half total banked
+                    # - Quarter/Half Totals (req_periods is not None): require >= 60% of that Quarter/Half total banked (and >=85% if <3.5m left in window!)
                     # - NHL Full-Game Totals (3 periods): P1 >= 45%, P2 >= 68%, P3 >= 80%
                     # - NBA/NFL/NCAAF Full-Game Totals (4 quarters): P1 >= 36%, P2 >= 56%, P3 >= 66%, P4 >= 76%
                     if req_periods is not None:
-                        req_tot_pct = 60.0
+                        is_final_period_of_win = (live_period == req_periods[-1])
+                        req_tot_pct = 85.0 if (is_final_period_of_win and cur_clk_m < 3.5) else (72.0 if (is_final_period_of_win and cur_clk_m < 6.0) else 60.0)
                     elif is_soccer:
                         req_tot_pct = 55.0 if live_period == 1 else 68.0
                     elif "NHL" in series:
                         req_tot_pct = {1: 45.0, 2: 68.0}.get(live_period, 80.0)
                     else:
                         req_tot_pct = {1: 36.0, 2: 56.0, 3: 66.0}.get(live_period, 76.0)
+
+                    # Point Trap A (Football Discrete 3/7-pt Scoring & 4Q Clock-Chew Trap):
+                    # In NFL/College Football Q4, if a Team Total or Game Total still needs >3.0 pts (a FG won't win it — needs a full TD!)
+                    # while a team is leading by >=13 pts (running out the clock!) or <8:00 left in Q4, VETO!
+                    if series.startswith(("KXNFL", "KXNCAAF")) and live_period >= 4 and pts_needed > 3.0 and (gm_margin_tot >= 13.0 or cur_clk_m < 8.0):
+                        return False, (
+                            f"VETO [Football 4Q Clock-Chew / TD Trap]: Needs {pts_needed:.1f} more pts (>3pt FG) in P4 {clock_disp} "
+                            f"with {gm_margin_tot:.0f}-pt margin (clock-chew risk!)"
+                        )
+                    # Point Trap B (NBA 4Q Blowout Bench Dribble-Out Trap):
+                    # In NBA Q4, if margin >= 16 pts (starters benched, deep bench dribbling out shot clock) or <4:00 left, require >=90% banked!
+                    if series.startswith(("KXNBA", "KXNCAAMB")) and live_period >= 4 and (gm_margin_tot >= 16.0 or cur_clk_m < 4.0) and prog_pct < 90.0:
+                        return False, (
+                            f"VETO [Basketball 4Q Dribble-Out Trap]: {cur_pts:.0f}/{target_val:.1f} ({prog_pct:.0f}% < 90% min) "
+                            f"in P4 {clock_disp} (margin={gm_margin_tot:.0f} pts)"
+                        )
+
                     if prog_pct < req_tot_pct:
                         return False, (
                             f"VETO [ESPN {period_tag} Total]: Only {cur_pts:.0f}/{target_val:.1f} pts scored "
@@ -862,7 +887,11 @@ class PreTradeEducator:
                 nfl_prop_Set = {"KXNFLPASSYDS", "KXNFLPASSTD", "KXNFLRUSHYDS", "KXNFLRECYDS", "KXNFLREC"}
                 nhl_prop_Set = {"KXNHLPTS", "KXNHLGOAL", "KXNHLAST", "KXNHLSOG"}
                 if (series in nba_prop_Set or series in nfl_prop_Set or series in nhl_prop_Set) and ":" in title and len(parts) >= 4:
-                    player_target_name = title.split(":")[0].strip().lower()
+                    import unicodedata
+                    def _strip_accents(s: str) -> str:
+                        return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii").replace(".", "").strip().lower()
+
+                    player_target_name = _strip_accents(title.split(":")[0])
                     name_tokens = player_target_name.split()
                     player_first = name_tokens[0] if name_tokens else ""
                     player_last = name_tokens[-1] if name_tokens else ""
@@ -887,11 +916,11 @@ class PreTradeEducator:
                                 sg_name = (sg.get("name") or "").lower()
                                 labels = [lbl.upper() for lbl in sg.get("labels", [])]
                                 for ath in sg.get("athletes", []):
-                                    a_name = (ath.get("athlete", {}).get("displayName") or "").lower()
+                                    a_name = _strip_accents(ath.get("athlete", {}).get("displayName") or "")
                                     a_tokens = a_name.split()
                                     a_first = a_tokens[0] if a_tokens else ""
                                     a_last = a_tokens[-1] if a_tokens else ""
-                                    # Exact First-Initial + Last-Name Match (Prevents Jalen Williams vs Jaylin Williams collisions!)
+                                    # Exact First-Initial + Last-Name Match (Prevents Jalen Williams vs Jaylin Williams collisions + handles Jokić/Dončić!)
                                     name_matched = (
                                         (player_target_name == a_name)
                                         or (player_last == a_last and (not player_first or not a_first or player_first[0] == a_first[0]))
@@ -963,24 +992,34 @@ class PreTradeEducator:
                                     f"({prog_pct:.0f}% < {req_prop_pct:.0f}% P{live_period} hot-pace min)"
                                 )
                             # Late-Clock Crunch Veto: Never buy a prop in the final 3 mins of Q4 if still <84% of target!
+                            # Late-Clock Crunch Veto: Never buy a prop in the final 5 mins of Q4 if <85% (or final 3 mins if <90%)!
                             try:
                                 clk_m = float(str(clock_disp).split(":")[0]) if ":" in str(clock_disp) else 5.0
                             except Exception:
                                 clk_m = 5.0
-                            if live_period >= 4 and clk_m < 3.0 and prog_pct < 84.0:
-                                return False, (
-                                    f"VETO [Late Clock Crunch]: Only {clock_disp} left in P{live_period} and {title} is at "
-                                    f"{found_stat:.0f}/{target_val:.0f} ({prog_pct:.0f}% < 84% min for final 3m)"
-                                )
-                            # Blowout / Garbage-Time Bench Shield: Veto Q3/Q4 player props in 22+ pt blowouts unless >=90% banked!
-                            if len(competitors) >= 2 and live_period >= 3 and prog_pct < 90.0:
-                                gm_margin = abs(float(competitors[0].get("score", 0) or 0) - float(competitors[1].get("score", 0) or 0))
-                                max_blowout = 22.0 if series in nba_prop_Set else 21.0
-                                if gm_margin >= max_blowout:
+                            if live_period >= 4 and clk_m < 5.0:
+                                req_late_prop = 90.0 if clk_m < 3.0 else 85.0
+                                if prog_pct < req_late_prop:
                                     return False, (
-                                        f"VETO [Blowout Bench Risk]: Game margin is {gm_margin:.0f} pts in P{live_period} "
-                                        f"— starters risk getting benched in garbage time!"
+                                        f"VETO [Late Clock Crunch]: Only {clock_disp} left in P{live_period} and {title} is at "
+                                        f"{found_stat:.0f}/{target_val:.0f} ({prog_pct:.0f}% < {req_late_prop:.0f}% min)"
                                     )
+                            # NFL 2-Score (13+ pt) Clock-Chew / Run-Heavy Script Shield (Prevents Dak Prescott 2H Pass-Stall Trap!):
+                            # When an NFL game has a >=13 pt margin from P2 onward, the leading team runs the ball 80% of the time!
+                            if len(competitors) >= 2 and prog_pct < 90.0:
+                                gm_margin = abs(float(competitors[0].get("score", 0) or 0) - float(competitors[1].get("score", 0) or 0))
+                                if series in ("KXNFLPASSYDS", "KXNFLPASSTD", "KXNFLRECYDS", "KXNFLREC") and live_period >= 2 and gm_margin >= 13.0:
+                                    return False, (
+                                        f"VETO [NFL 2-Score Run-Script Trap]: NFL margin is {gm_margin:.0f} pts in P{live_period} "
+                                        f"— winning team runs the clock (stalls QB/WR passing stats)!"
+                                    )
+                                if live_period >= 3:
+                                    max_blowout = 20.0 if series in nba_prop_Set else 17.0
+                                    if gm_margin >= max_blowout:
+                                        return False, (
+                                            f"VETO [Blowout Bench Risk]: Game margin is {gm_margin:.0f} pts in P{live_period} "
+                                            f"— starters risk getting benched in garbage time!"
+                                        )
                             lock_tag = " | PROP-LOCK" if prog_pct >= (req_prop_pct + 12.0) else ""
                             if str(clock_disp).strip() in ("0:00", "0.0", ""):
                                 lock_tag += " | CLOCK-FROZEN"

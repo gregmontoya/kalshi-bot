@@ -841,20 +841,40 @@ class PreTradeEducator:
                             f"where a 3-pt Field Goal ends the game!"
                         )
 
-                    # Point Trap A (Football Discrete 3/7-pt Scoring & 4Q Victory-Formation / Kneel-Down Clock-Chew Trap):
+                    # Point Trap A (Football Discrete 3/7-pt Scoring, 0-Timeouts Runoff & 4Q Victory-Formation Clock-Chew Trap):
                     # 1. Inside final 6:00 of P4 with >=9 pt (2-score) lead, teams kneel down in the red zone instead of kicking FGs or scoring TDs!
-                    # 2. In P4 with >3.0 pts needed (a FG won't win it — needs a full TD!) and >=13 pt margin or <8:00 left, VETO!
-                    if series.startswith(("KXNFL", "KXNCAAF")) and live_period >= 4:
-                        if pts_needed > 0.0 and cur_clk_m < 6.0 and gm_margin_tot >= 9.0:
-                            return False, (
-                                f"VETO [Football 4Q Kneel-Down / Victory Formation]: Needs {pts_needed:.1f} more pts in P4 {clock_disp} "
-                                f"with {gm_margin_tot:.0f}-pt 2-score lead (teams kneel/run clock instead of scoring!)"
-                            )
-                        if pts_needed > 3.0 and (gm_margin_tot >= 13.0 or cur_clk_m < 8.0):
-                            return False, (
-                                f"VETO [Football 4Q Clock-Chew / TD Trap]: Needs {pts_needed:.1f} more pts (>3pt FG) in P4 {clock_disp} "
-                                f"with {gm_margin_tot:.0f}-pt margin (clock-chew risk!)"
-                            )
+                    # 2. Inside final 3:30 of P2/P4, if leading team has possession and trailing team has 0 timeouts (`homeTimeouts`/`awayTimeouts`), clock runs out!
+                    # 3. In P4 with >3.0 pts needed (a FG won't win it — needs a full TD!) and >=13 pt margin or <8:00 left, VETO!
+                    script_tot_tag = ""
+                    if series.startswith(("KXNFL", "KXNCAAF")):
+                        sit_tot = comp.get("situation") or {}
+                        poss_tot_id = str(sit_tot.get("possession") or "")
+                        sc0_t = float(competitors[0].get("score", 0) or 0)
+                        sc1_t = float(competitors[1].get("score", 0) or 0)
+                        lead_idx = 0 if sc0_t >= sc1_t else 1
+                        trail_idx = 1 - lead_idx
+                        trail_ha = (competitors[trail_idx].get("homeAway") or "").lower()
+                        trail_to = int(sit_tot.get("homeTimeouts" if trail_ha == "home" else "awayTimeouts", 2) or 0)
+                        if live_period in (2, 4) and pts_needed > 0.0 and cur_clk_m <= 3.5 and gm_margin_tot >= 1.0:
+                            if poss_tot_id == str(competitors[lead_idx].get("id") or "") and trail_to == 0 and prog_pct < 96.0:
+                                return False, (
+                                    f"VETO [Football 0-Timeouts Clock Runoff]: Leading team has ball at P{live_period} {clock_disp} "
+                                    f"and trailing team has 0 timeouts left (2-min runoff kills Over)!"
+                                )
+                            elif poss_tot_id == str(competitors[trail_idx].get("id") or "") and trail_to >= 2 and gm_margin_tot <= 14.0:
+                                req_tot_pct = max(58.0, req_tot_pct - 3.5)
+                                script_tot_tag += f" | +HURRY-UP-{trail_to}TO-BOOST"
+                        if live_period >= 4:
+                            if pts_needed > 0.0 and cur_clk_m < 6.0 and gm_margin_tot >= 9.0:
+                                return False, (
+                                    f"VETO [Football 4Q Kneel-Down / Victory Formation]: Needs {pts_needed:.1f} more pts in P4 {clock_disp} "
+                                    f"with {gm_margin_tot:.0f}-pt 2-score lead (teams kneel/run clock instead of scoring!)"
+                                )
+                            if pts_needed > 3.0 and (gm_margin_tot >= 13.0 or cur_clk_m < 8.0):
+                                return False, (
+                                    f"VETO [Football 4Q Clock-Chew / TD Trap]: Needs {pts_needed:.1f} more pts (>3pt FG) in P4 {clock_disp} "
+                                    f"with {gm_margin_tot:.0f}-pt margin (clock-chew risk!)"
+                                )
                     # Point Trap B (Soccer Late Corner-Flag Time-Wasting / Park-the-Bus Trap):
                     # After 75' in Soccer, if the Over is not already 100% banked (pts_needed > 0), leading teams sub in defenders and waste time at the corner flag!
                     if is_soccer and live_period >= 2 and cur_clk_m >= 75.0 and pts_needed > 0.0:
@@ -862,20 +882,27 @@ class PreTradeEducator:
                             f"VETO [Soccer >75' Time-Wasting Trap]: Still needs {pts_needed:.1f} goal(s) at {clock_disp} "
                             f"(corner-flag stall / park-the-bus risk!)"
                         )
-                    # Point Trap C (NBA 4Q Blowout Bench Dribble-Out Trap vs. Close-Game Intentional Foul Parade Boost):
-                    script_tot_tag = ""
-                    if series.startswith(("KXNBA", "KXNCAAMB")) and live_period >= 4:
-                        if (gm_margin_tot >= 16.0 or cur_clk_m < 4.0) and not (1.0 <= gm_margin_tot <= 7.0 and cur_clk_m <= 3.0) and prog_pct < 90.0:
-                            return False, (
-                                f"VETO [Basketball 4Q Dribble-Out Trap]: {cur_pts:.0f}/{target_val:.1f} ({prog_pct:.0f}% < 90% min) "
-                                f"in P4 {clock_disp} (margin={gm_margin_tot:.0f} pts)"
-                            )
-                        if 1.0 <= gm_margin_tot <= 7.0 and cur_clk_m <= 3.0:
-                            req_tot_pct = max(72.0, req_tot_pct - 4.0)
-                            script_tot_tag = " | +FOUL-PARADE-BOOST"
+                    # Point Trap C (NBA 4Q Blowout Bench Dribble-Out, 24s Shot-Clock Bleed, 2-for-1 Quarter End & Intentional Foul Parade):
+                    if series.startswith(("KXNBA", "KXNCAAMB")):
+                        if live_period in (1, 2, 3) and 0.55 <= cur_clk_m <= 1.35:
+                            script_tot_tag += " | +2-FOR-1-CLOCK-BOOST"
+                        if live_period >= 4:
+                            if (gm_margin_tot >= 16.0 or cur_clk_m < 4.0) and not (1.0 <= gm_margin_tot <= 7.0 and cur_clk_m <= 3.0) and prog_pct < 90.0:
+                                return False, (
+                                    f"VETO [Basketball 4Q Dribble-Out Trap]: {cur_pts:.0f}/{target_val:.1f} ({prog_pct:.0f}% < 90% min) "
+                                    f"in P4 {clock_disp} (margin={gm_margin_tot:.0f} pts)"
+                                )
+                            if "TEAMTOTAL" in series and cur_clk_m < 6.0 and gm_margin_tot >= 10.0 and prog_pct < 90.0:
+                                return False, (
+                                    f"VETO [NBA 4Q 24s Shot-Clock Bleed]: Team Total at {cur_pts:.0f}/{target_val:.1f} ({prog_pct:.0f}% < 90%) "
+                                    f"with {gm_margin_tot:.0f}-pt lead in P4 {clock_disp} (walk-ball-up pace bleed!)"
+                                )
+                            if 1.0 <= gm_margin_tot <= 7.0 and cur_clk_m <= 3.0:
+                                req_tot_pct = max(72.0, req_tot_pct - 4.0)
+                                script_tot_tag += " | +FOUL-PARADE-BOOST"
                     elif "NHL" in series and live_period == 3 and cur_clk_m <= 3.5 and 1.0 <= gm_margin_tot <= 2.0:
                         req_tot_pct = max(75.0, req_tot_pct - 4.0)
-                        script_tot_tag = " | +EMPTY-NET-BOOST"
+                        script_tot_tag += " | +EMPTY-NET-BOOST"
 
                     if prog_pct < req_tot_pct:
                         return False, (
@@ -1176,12 +1203,12 @@ class PreTradeEducator:
                                     req_prop_pct = max(40.0, req_prop_pct - 3.0)
                                     script_prop_tag += f" | +FT-VOLUME-FLOOR(FGA={fga_val:.0f},FTA={fta_val:.0f})"
 
-                            # 1C. NBA Point Guard Late-4Q "Dribble-Out the Clock" Assist Stall (`KXNBAAST`):
-                            # When leading by >=9 pts in the final 6:00 of Q4, the PG dribbles 20s off the shot clock and runs ISO instead of passing!
-                            if series == "KXNBAAST" and live_period >= 4 and clk_m < 6.0 and player_team_margin is not None and player_team_margin >= 9.0 and prog_pct < 90.0:
+                            # 1C. NBA Late-4Q "Walk-Ball-Up 24s Shot-Clock Bleed" Stall (`KXNBAAST`, `KXNBAPTS`, `KXNBAPRA`, `KXNBAPR`, `KXNBAPA`):
+                            # When leading by >=10 pts in the final 6:00 of Q4, the leading team walks the ball up and bleeds the 24s shot clock down to :02!
+                            if series in ("KXNBAAST", "KXNBAPTS", "KXNBAPRA", "KXNBAPR", "KXNBAPA") and live_period >= 4 and clk_m < 6.0 and player_team_margin is not None and player_team_margin >= 10.0 and prog_pct < 90.0:
                                 return False, (
-                                    f"VETO [NBA 4Q Lead Assist-Stall]: {player_team_abbr} up +{player_team_margin:.0f} in P4 {clock_disp} "
-                                    f"— PG milks 24s shot clock (stalls assists at {found_stat:.0f}/{target_val:.0f})!"
+                                    f"VETO [NBA 4Q 24s Shot-Clock Bleed]: {player_team_abbr} up +{player_team_margin:.0f} in P4 {clock_disp} "
+                                    f"— leading team milks 24s shot clock (stalls stats at {found_stat:.0f}/{target_val:.0f})!"
                                 )
 
                             # 1D. NBA Rebound Scarcity ("Hyper-Shooting / No Missed Shots" Drought) on `KXNBAREB`:
@@ -1595,18 +1622,19 @@ def get_scaling_tier(equity_cents: int) -> dict:
         }
     elif eq_dlr < 750.0:
         # Continuous Micro-Compounding inside Tier 3 ($200-$750): scales smoothly with every +$25 gained!
-        dyn_min_contracts = min(80, max(30, int(eq_dlr * 0.11)))
-        dyn_max_stake_c = min(22000, max(9500, int(equity_cents * 0.36)))
+        # Raised iceberg_slice from 110 -> 260 and max_stake to 44% of equity so $475+ accounts deploy 200-255 contracts ($170-$215/leg = +$18 to +$23/win!)
+        dyn_min_contracts = min(100, max(35, int(eq_dlr * 0.14)))
+        dyn_max_stake_c = min(26000, max(12500, int(equity_cents * 0.44)))
         return {
             "name": "TIER 3 ($500 Pro Mode)",
-            "base_pct": 0.25,
-            "boost_pct": 0.33,
-            "min_stake_cents": 3500,
+            "base_pct": 0.32,
+            "boost_pct": 0.40,
+            "min_stake_cents": 4500,
             "max_stake_cents": dyn_max_stake_c,
             "min_contracts": dyn_min_contracts,
             "max_concurrent": 5,
             "min_depth_dlr": 300.0,
-            "iceberg_slice": 110,
+            "iceberg_slice": 260,
         }
     elif eq_dlr < 2000.0:
         # TIER 4 ($750-$2,000 Pro/Whale Scaling): deploys $150-$440 per play across up to 7 concurrent winners!

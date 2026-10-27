@@ -581,9 +581,15 @@ class PreTradeEducator:
             st_state["loss_streak"] = 0
             st_state["house_money_pool_dlr"] = round(max(0.0, float(st_state.get("house_money_pool_dlr", 0.0)) + net_pnl_dlr), 2)
         else:
-            st_state["win_streak"] = 0
-            st_state["loss_streak"] = int(st_state.get("loss_streak", 0)) + 1
-            st_state["house_money_pool_dlr"] = round(max(0.0, float(st_state.get("house_money_pool_dlr", 0.0)) + net_pnl_dlr), 2)
+            is_scout_loss = bool(self.memory.get("last_scout_flags", {}).get(ticker, False)) or abs(net_pnl_dlr) <= 3.50
+            new_pool = round(max(0.0, float(st_state.get("house_money_pool_dlr", 0.0)) + net_pnl_dlr), 2)
+            st_state["house_money_pool_dlr"] = new_pool
+            if is_scout_loss and new_pool > 0.0 and int(st_state.get("win_streak", 0)) >= 2:
+                # Wall Street Asymmetric Scout Shield: a tiny -$2.50 Scout scratch only steps streak back -1 (never nukes a Gear-3/4 heater to 0!)
+                st_state["win_streak"] = max(1, int(st_state.get("win_streak", 0)) - 1)
+            else:
+                st_state["win_streak"] = 0
+                st_state["loss_streak"] = int(st_state.get("loss_streak", 0)) + 1
 
         w_strk = int(st_state["win_streak"])
         hm_pool = float(st_state["house_money_pool_dlr"])
@@ -2754,10 +2760,11 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 # - Elite Powerhouse Teams (`pos_conf_score >= 85/100`): full `-10c` stop-loss buffer so a 1-play blip never shakes us out!
                 # - Medium-Confidence Teams (`pos_conf_score < 82/100`): tighter `-8c` leash + 70% Stage-1 early profit lock!
                 max_stop_dist = 10 if pos_conf_score >= 82 else 8
-                if stage1_banked:
+                if stage1_banked or peaked >= avg_entry_cents + 5:
+                    # Wall Street Anti-Round-Trip Ratchet: once Stage-1 banks OR trade touches +5c profit, tighten stop floor to -3c!
                     stop_floor_c = max(65, avg_entry_cents - 3)
-                elif peaked >= avg_entry_cents + 4:
-                    stop_floor_c = max(64, avg_entry_cents - min(7, max_stop_dist - 2))
+                elif peaked >= avg_entry_cents + 3:
+                    stop_floor_c = max(64, avg_entry_cents - min(6, max_stop_dist - 2))
                 else:
                     stop_floor_c = max(62, avg_entry_cents - max_stop_dist)
                 thesis_broken_guillotine = (0 < cur_bid <= stop_floor_c) and (cur_ask <= stop_floor_c + 4)

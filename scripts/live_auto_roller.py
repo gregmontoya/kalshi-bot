@@ -1463,6 +1463,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
             resting_sell_orders: dict[str, list[dict]] = {}
             resting_sell_counts: dict[str, float] = {}
             resting_buy_tickers: set[str] = set()
+            locked_buy_shards: set[int] = set()
             stale_buys_to_cancel: list[dict] = []
             for o in open_orders:
                 t = o.get("ticker", "")
@@ -1473,7 +1474,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     )
                 elif o.get("action") == "buy":
                     oid = o.get("order_id", "")
-                    resting_buy_tickers.add(t)
                     age_sec = 0.0
                     c_str = o.get("created_time", "")
                     if c_str:
@@ -1492,9 +1492,12 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 "subaccount": o.get("subaccount_number", 0),
                             }
                         )
+                    else:
+                        resting_buy_tickers.add(t)
+                        locked_buy_shards.add(int(o.get("exchange_index", 0) or 0))
 
             if stale_buys_to_cancel:
-                logger.info(f"Auto-canceling {len(stale_buys_to_cancel)} unfilled resting buy order(s) (>75s UTC age) to free cash.")
+                logger.info(f"Auto-canceling {len(stale_buys_to_cancel)} unfilled resting buy order(s) (>40s UTC age) to free cash.")
                 try:
                     await client.request(
                         "DELETE",
@@ -1502,6 +1505,11 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         json_data={"orders": stale_buys_to_cancel},
                         authenticated=True,
                     )
+                    await asyncio.sleep(0.4)
+                    bal = await client.request("GET", "/portfolio/balance", authenticated=True)
+                    total_cents = int(bal.get("balance", 0) or 0)
+                    port_cents = int(bal.get("portfolio_value", 0) or 0)
+                    equity_cents = total_cents + port_cents
                 except Exception:
                     pass
 
@@ -1932,11 +1940,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         seen_entity_counts[ek] = seen_entity_counts.get(ek, 0) + 1
                         dedup_candidates.append(cand)
 
-                locked_buy_shards: set[int] = {
-                    int(o.get("exchange_index", 0) or 0)
-                    for o in open_orders
-                    if o.get("action") == "buy"
-                }
                 for _vel, mins_left, t, title, shard_key in dedup_candidates[:40]:
                     event_prefix = _entity_key(t)
                     matchup_slug = _matchup_slug(t)

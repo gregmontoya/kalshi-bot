@@ -62,24 +62,45 @@ async def send_phone_alert(client: KalshiClient, title: str, message: str) -> No
         except Exception:
             pass
 
-    # 2. Cloud-native push via ntfy.sh (works 24/7 on GitHub Actions & local with 0 setup)
+    # 2. Cloud-native push via ntfy.sh (works 24/7 on GitHub Actions & local with 0 setup + Lock-Screen Action Buttons!)
+    cmd_topic = f"{NTFY_TOPIC}-cmd"
     try:
         await hc.post(
             f"https://ntfy.sh/{NTFY_TOPIC}",
             content=message.encode("utf-8"),
-            headers={"Title": title, "Priority": "high", "Tags": "chart_with_upwards_trend,moneybag"},
+            headers={
+                "Title": title,
+                "Priority": "high",
+                "Tags": "chart_with_upwards_trend,moneybag",
+                "Actions": (
+                    f"http, 📊 Status, https://ntfy.sh/{cmd_topic}, body=status, clear=true; "
+                    f"http, 💼 Positions, https://ntfy.sh/{cmd_topic}, body=positions, clear=true; "
+                    f"http, ⏸️ Pause/Resume, https://ntfy.sh/{cmd_topic}, body=toggle_pause, clear=true"
+                ),
+            },
         )
     except Exception:
         pass
 
-    # 3. Telegram Bot 24/7 Instant Push (works on Mac & GitHub Cloud when Mac is OFF)
+    # 3. Telegram Bot 24/7 Instant Push + Interactive 2-Way Command Keyboard (works on Mac & GitHub Cloud when Mac is OFF)
     tg_token = os.environ.get("TELEGRAM_BOT_TOKEN") or getattr(settings, "TELEGRAM_BOT_TOKEN", None)
     tg_chat = os.environ.get("TELEGRAM_CHAT_ID") or getattr(settings, "TELEGRAM_CHAT_ID", None)
     if tg_token and tg_chat:
         try:
             await hc.post(
                 f"https://api.telegram.org/bot{tg_token}/sendMessage",
-                json={"chat_id": tg_chat, "text": f"*{title}*\n{message}", "parse_mode": "Markdown"},
+                json={
+                    "chat_id": tg_chat,
+                    "text": f"*{title}*\n{message}",
+                    "parse_mode": "Markdown",
+                    "reply_markup": {
+                        "keyboard": [
+                            [{"text": "📊 Live Status"}, {"text": "💼 Positions"}],
+                            [{"text": "⏸️ Pause Buys"}, {"text": "▶️ Resume Buys"}],
+                        ],
+                        "resize_keyboard": True,
+                    },
+                },
             )
         except Exception:
             pass
@@ -118,6 +139,129 @@ async def send_phone_alert(client: KalshiClient, title: str, message: str) -> No
             )
         except Exception:
             pass
+
+
+async def poll_two_way_commands(
+    client: KalshiClient,
+    educator,
+    total_cents: int,
+    port_cents: int,
+    equity_cents: int,
+    positions: list[dict],
+    open_orders: list[dict],
+) -> None:
+    """
+    Polls incoming 2-way commands from Telegram Bot AND ntfy.sh every 6 seconds
+    so the user can text/tap the bot 24/7 even when the Mac is completely turned OFF!
+    Supported commands: status, how we doing, positions, bets, pause, resume, toggle_pause
+    """
+    now_t = time.time()
+    if now_t - getattr(educator, "_last_cmd_poll_ts", 0.0) < 6.0:
+        return
+    educator._last_cmd_poll_ts = now_t
+    hc = await client.get_client()
+    incoming_cmds: list[str] = []
+
+    # A. Poll ntfy.sh command channel (from lock-screen buttons or ntfy app chat)
+    cmd_topic = f"{NTFY_TOPIC}-cmd"
+    last_ntfy_id = educator.memory.get("last_ntfy_cmd_id", "")
+    try:
+        r_nt = await hc.get(f"https://ntfy.sh/{cmd_topic}/json?poll=1&since=20s", timeout=2.5)
+        if r_nt.status_code == 200 and r_nt.text.strip():
+            for line in r_nt.text.strip().splitlines():
+                obj = json.loads(line)
+                mid = obj.get("id", "")
+                msg_txt = (obj.get("message") or "").strip().lower()
+                if mid and mid != last_ntfy_id and msg_txt:
+                    last_ntfy_id = mid
+                    educator.memory["last_ntfy_cmd_id"] = mid
+                    incoming_cmds.append(msg_txt)
+    except Exception:
+        pass
+
+    # B. Poll Telegram Bot getUpdates (2-way chat from anywhere in the world with Mac OFF!)
+    tg_token = os.environ.get("TELEGRAM_BOT_TOKEN") or getattr(settings, "TELEGRAM_BOT_TOKEN", None)
+    if tg_token:
+        offset = int(educator.memory.get("tg_update_offset", 0) or 0)
+        try:
+            r_tg = await hc.get(
+                f"https://api.telegram.org/bot{tg_token}/getUpdates",
+                params={"offset": offset + 1, "timeout": 0},
+                timeout=2.5,
+            )
+            if r_tg.status_code == 200:
+                for upd in r_tg.json().get("result", []):
+                    uid = int(upd.get("update_id", 0))
+                    if uid > offset:
+                        offset = uid
+                        educator.memory["tg_update_offset"] = offset
+                    msg_obj = upd.get("message") or {}
+                    chat_id = str((msg_obj.get("chat") or {}).get("id") or "")
+                    if chat_id and not os.environ.get("TELEGRAM_CHAT_ID"):
+                        os.environ["TELEGRAM_CHAT_ID"] = chat_id
+                        educator.memory["telegram_chat_id"] = chat_id
+                    txt = (msg_obj.get("text") or "").strip().lower()
+                    if txt:
+                        incoming_cmds.append(txt)
+        except Exception:
+            pass
+
+    if not incoming_cmds:
+        return
+
+    educator.save_memory()
+    cmd = incoming_cmds[-1]
+    day_str = datetime.now().strftime("%Y-%m-%d")
+    day_led = educator.memory.get("daily_ledger", {}).get(day_str, {})
+    net_today = float(day_led.get("net_change_dlr", 0.0) or 0.0)
+    pct_today = float(day_led.get("net_change_pct", 0.0) or 0.0)
+    q_st = educator.get_daily_quota_status()
+    engine_mode = "☁️ GITHUB CLOUD 24/7" if sys.platform != "darwin" else "💻 MAC PRIMARY ENGINE"
+
+    if any(k in cmd for k in ("pause", "stop", "toggle_pause")) and "resume" not in cmd:
+        cur_p = bool(educator.memory.get("manual_pause_buys", False))
+        new_p = (not cur_p) if "toggle" in cmd else True
+        educator.memory["manual_pause_buys"] = new_p
+        educator.save_memory()
+        state_lbl = "⏸️ NEW BUYS PAUSED (Open positions still managed!)" if new_p else "▶️ RESUMED FULL AUTONOMOUS HUNTING!"
+        await send_phone_alert(
+            client,
+            "⚙️ 2-Way Command Executed",
+            f"{state_lbl}\nEngine: {engine_mode}\nEquity: ${equity_cents/100:.2f} (Today: {net_today:+.2f})",
+        )
+    elif any(k in cmd for k in ("resume", "start", "go")):
+        educator.memory["manual_pause_buys"] = False
+        educator.save_memory()
+        await send_phone_alert(
+            client,
+            "▶️ Autonomous Hunting Resumed!",
+            f"Engine: {engine_mode}\nCash Ready: ${total_cents/100:.2f} | Equity: ${equity_cents/100:.2f}",
+        )
+    elif any(k in cmd for k in ("pos", "bet", "open")):
+        active_p = [
+            f"• {p.get('ticker')}: {float(p.get('position_fp',0)):.0f}x (${float(p.get('market_exposure_dollars',0)):.2f})"
+            for p in positions
+            if float(p.get("position_fp", "0") or 0) >= 1.0
+        ]
+        pos_body = "\n".join(active_p) if active_p else "None (100% Liquid Cash hunting next A+ setup!)"
+        await send_phone_alert(
+            client,
+            f"💼 Active Positions ({len(active_p)})",
+            f"{pos_body}\nResting Orders: {len(open_orders)}\nCash: ${total_cents/100:.2f} | Equity: ${equity_cents/100:.2f}",
+        )
+    else:
+        dist_750 = max(0.0, 750.0 - (equity_cents / 100.0))
+        await send_phone_alert(
+            client,
+            "📊 Live 24/7 Command Report",
+            (
+                f"Engine: {engine_mode}\n"
+                f"Total Equity: ${equity_cents/100:.2f} (Cash: ${total_cents/100:.2f} | Port: ${port_cents/100:.2f})\n"
+                f"Today's Net Profit: {net_today:+.2f} ({pct_today:+.2f}%)\n"
+                f"Daily Quota: {q_st['completed_bets']}/{q_st['target_bets']} ({q_st['wins']}W-{q_st['losses']}L)\n"
+                f"Distance to $750 Tier 4: ${dist_750:.2f}"
+            ),
+        )
 
 
 from datetime import datetime, timezone
@@ -2580,6 +2724,9 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     except Exception:
                         pass
 
+            # Poll 24/7 Two-Way Commands (Telegram Bot & ntfy.sh lock-screen buttons — works even when Mac is OFF!)
+            await poll_two_way_commands(client, educator, total_cents, port_cents, equity_cents, positions, open_orders)
+
             # Anti-Cluster Stagger Shield: Allow a full 3-Leg Basket (3 unshielded legs across independent games)
             # so $130+ cash never sits idle on the bench, while unlocking slots 4-5 once any leg banks Stage-1 (+6c)!
             unshielded_open_count = sum(
@@ -2588,7 +2735,12 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 if not tr_o.get("stage1_alerted", False) and float(tr_o.get("stake", 0) or 0) >= 15.0
             )
 
-            if total_cents >= min_stake_c and len(resting_buy_tickers) < min(3, tier["max_concurrent"]) and unshielded_open_count < 3:
+            if (
+                not educator.memory.get("manual_pause_buys", False)
+                and total_cents >= min_stake_c
+                and len(resting_buy_tickers) < min(3, tier["max_concurrent"])
+                and unshielded_open_count < 3
+            ):
                 shard_cents = {0: 0, 1: 0, 2: 0, 3: 0}
                 for b_item in bal.get("balance_breakdown", []):
                     idx = b_item.get("exchange_index")

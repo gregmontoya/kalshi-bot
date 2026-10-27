@@ -2653,20 +2653,22 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             params={"series_ticker": s_name, "status": "open", "limit": 1000},
                             authenticated=False,
                         )
-                        return s_name, res.get("markets", [])
+                        return s_name, res.get("markets", []), True
                     except Exception:
-                        return s_name, []
+                        return s_name, [], False
 
-                # Poll Hot/Due Series in concurrent 5-way batches (10x faster discovery without 429 bursts!)
+                # Poll Hot/Due Series in concurrent 2-way pairs (~16 req/sec, zero 429 bursts on Kalshi Basic Tier!)
                 batched_series_results = []
-                for b_idx in range(0, len(series_to_poll), 5):
-                    batch_slice = series_to_poll[b_idx : b_idx + 5]
+                for b_idx in range(0, len(series_to_poll), 2):
+                    batch_slice = series_to_poll[b_idx : b_idx + 2]
                     b_res = await asyncio.gather(*(_fetch_series_markets(s) for s in batch_slice))
                     batched_series_results.extend(b_res)
-                    if b_idx + 5 < len(series_to_poll):
-                        await asyncio.sleep(0.14)
+                    if b_idx + 2 < len(series_to_poll):
+                        await asyncio.sleep(0.11)
 
-                for series, markets_list in batched_series_results:
+                for series, markets_list, fetch_ok in batched_series_results:
+                    if not fetch_ok:
+                        continue
                     is_crypto_s = series.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB"))
                     is_index_s = series.startswith(("KXINX", "KXNASDAQ", "KXWTI"))
                     try:
@@ -2916,6 +2918,20 @@ async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--duration", type=int, default=0)
     args = parser.parse_args()
+    pid_file = Path("/tmp/kalshi_auto_roller.pid")
+    if pid_file.exists():
+        try:
+            old_pid = int(pid_file.read_text().strip())
+            if old_pid != os.getpid():
+                import signal
+                os.kill(old_pid, signal.SIGTERM)
+                await asyncio.sleep(0.5)
+        except Exception:
+            pass
+    try:
+        pid_file.write_text(str(os.getpid()))
+    except Exception:
+        pass
     await run_autonomous_loop(duration_seconds=args.duration)
 
 

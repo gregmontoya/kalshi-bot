@@ -1817,7 +1817,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
             unshielded_open_count = sum(
                 1
                 for tk_o, tr_o in tracked_open_positions.items()
-                if not tr_o.get("stage1_alerted", False)
+                if not tr_o.get("stage1_alerted", False) and float(tr_o.get("stake", 0) or 0) >= 15.0
             )
 
             if total_cents >= min_stake_c and len(resting_buy_tickers) < min(3, tier["max_concurrent"]) and unshielded_open_count < 3:

@@ -981,9 +981,11 @@ class PreTradeEducator:
 
                 # 2. Dynamic 15-Minute ATR Volatility Cushion & Multi-Timeframe Candlesticks (Coinbase Exchange API)
                 is_high_beta_alt = series in ("KXSOLD", "KXXRPD", "KXXRP", "KXDOGED", "KXDOGE", "KXBNBD")
-                base_cush = 0.75 if is_high_beta_alt else 0.45
+                now_min_utc = datetime.now(timezone.utc).minute
+                is_final_12m_window = (46 <= now_min_utc <= 57)
+                base_cush = (0.45 if is_high_beta_alt else 0.25) if is_final_12m_window else (0.75 if is_high_beta_alt else 0.45)
                 min_required_cushion = base_cush
-                trend_str = ""
+                trend_str = " | SCOUT-TIER(CRYPTO-FINAL-12M)" if is_final_12m_window else ""
                 try:
                     rc = await hc.get(f"https://api.exchange.coinbase.com/products/{pair}/candles?granularity=300", timeout=2.5)
                     candles = rc.json()
@@ -994,14 +996,14 @@ class PreTradeEducator:
                         high_15m = max(float(c[2]) for c in candles[:3])
                         low_15m = min(float(c[1]) for c in candles[:3])
                         atr_15m_pct = ((high_15m - low_15m) / max(0.01, spot)) * 100.0
-                        # Require strike cushion to exceed at least 1.50x the live 15-min volatility range (min 0.45% BTC/ETH, 0.75% Alts)
-                        min_required_cushion = max(base_cush, round(atr_15m_pct * 1.50, 2))
+                        atr_mult = 1.10 if is_final_12m_window else 1.50
+                        min_required_cushion = max(base_cush, round(atr_15m_pct * atr_mult, 2))
 
                         trend_15m = ((newest_close - oldest_open) / oldest_open) * 100.0
                         effective_trend = -trend_15m if is_below else trend_15m
                         if effective_trend < -0.02:
                             return False, f"VETO [Crypto 15m Trend]: {pair} drifting {trend_15m:+.2f}% over last 15m toward strike (strict zero-drift rule)"
-                        trend_str = f" | 15mTrend={trend_15m:+.2f}% | 15mVol={atr_15m_pct:.2f}%"
+                        trend_str += f" | 15mTrend={trend_15m:+.2f}% | 15mVol={atr_15m_pct:.2f}%"
                 except Exception:
                     pass
 
@@ -3175,9 +3177,12 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             if not approved:
                                 continue
 
-                            # Join the Whale Bid Wall (`side_bid`) on 1c-2c spreads so the Whale Wall sits AT our entry price (zero -1c/-2c post-fill drop!),
-                            # and only step +1c (`side_bid + 1`) on a 3c spread:
-                            bid_cents = side_bid if spread <= 2 else (side_bid + 1)
+                            # Join the Whale Bid Wall (`side_bid`) on a 1c spread, or on a 2c spread when queue depth is light;
+                            # when `spread == 2` and a massive Whale Bid Wall (`>= $400` depth) is already queued at `side_bid`,
+                            # step +1c (`side_bid + 1`) so we sit #1 at the front of the queue with the Whale Wall directly behind us!
+                            side_top_bids = sorted(ob.no_bids if is_under_cand else ob.yes_bids, key=lambda x: x.price, reverse=True)
+                            best_lvl_dlr = (float(side_top_bids[0].quantity) * (side_top_bids[0].price / 100.0)) if side_top_bids else 0.0
+                            bid_cents = (side_bid + 1) if (spread >= 3 or (spread == 2 and best_lvl_dlr >= 400.0)) else side_bid
                             entry_order_side = "ask" if is_under_cand else "bid"
                             eff_yes_entry_c = max(1, min(99, 100 - bid_cents)) if is_under_cand else bid_cents
                             price_str = f"{eff_yes_entry_c / 100:.4f}"

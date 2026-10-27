@@ -264,11 +264,208 @@ class PreTradeEducator:
         MEMORY_PATH.parent.mkdir(parents=True, exist_ok=True)
         self.memory = self._load_memory()
         self.odds_api_cache: dict[str, tuple[float, list]] = {}
+        self.sleeper_cache: dict[str, tuple[float, dict, set, set]] = {}
         self.odds_api_key = (
             os.environ.get("ODDS_API_KEY")
             or os.environ.get("THE_ODDS_API_KEY")
             or ""
         )
+
+    @staticmethod
+    def classify_archetype(ticker: str) -> str:
+        series = ticker.split("-")[0] if "-" in ticker else ticker
+        if any(q in series for q in ("1Q", "2Q", "3Q", "4Q", "1H", "2H", "1P", "2P", "3P")):
+            return "FAST_PERIOD_MARKET"
+        if any(p in series for p in ("PASSYDS", "PASSTD", "RECYDS", "REC")):
+            return "NFL_PASS_PROP"
+        if "RUSHYDS" in series or "ANYTD" in series:
+            return "NFL_RUSH_TD_PROP"
+        if any(p in series for p in ("NBAPTS", "NBAREB", "NBAAST", "NBA3PT", "NBAPRA", "NBAPR", "NBAPA", "NBABLK", "NBASTL")):
+            return "NBA_PLAYER_PROP"
+        if any(p in series for p in ("NHLPTS", "NHLGOAL", "NHLAST", "NHLSOG", "UCLSOA")):
+            return "HOCKEY_SOCCER_PROP"
+        if "TOTAL" in series:
+            return "FULL_GAME_TOTAL"
+        if "SPREAD" in series:
+            return "FULL_GAME_SPREAD"
+        if series in ("KXATPMATCH", "KXWTAMATCH"):
+            return "TENNIS_MATCH"
+        if any(s in series for s in ("LALIGA", "UCL", "EPL", "SERIEA", "BUNDESLIGA", "MLS", "LIGAMX", "LIGUE1")):
+            return "SOCCER_MONEYLINE"
+        if any(c in series for c in ("BTC", "ETH", "SOL", "XRP", "DOGE", "BNB", "INX", "NASDAQ", "WTI", "HIGH")):
+            return "MACRO_CRYPTO_WEATHER"
+        return "FULL_GAME_MONEYLINE"
+
+    def record_trade_autopsy(
+        self,
+        ticker: str,
+        entry_cents: int,
+        exit_cents: int,
+        peak_cents: int,
+        net_pnl_dlr: float,
+        exit_reason: str,
+    ) -> None:
+        """
+        Records a structured Post-Trade Winner/Loser Autopsy and updates Archetype & Daily Quota learning.
+        """
+        now_local = datetime.now()
+        day_str = now_local.strftime("%Y-%m-%d")
+        arch = self.classify_archetype(ticker)
+        is_win = net_pnl_dlr >= 0.0
+        if is_win:
+            diagnosis = "CLEAN_MAKER_HARVEST" if exit_cents >= entry_cents + 5 else "STAGE1_PROFIT_SHIELD_SAVE"
+        else:
+            if "TOTAL" in ticker or "PTS" in ticker or "YDS" in ticker:
+                diagnosis = "LATE_PACE_OR_GAME_SCRIPT_STALL"
+            elif peak_cents >= entry_cents + 4:
+                diagnosis = "UNBANKED_REVERSAL_AFTER_LEAD"
+            else:
+                diagnosis = "SCOREBOARD_MOMENTUM_FLIP"
+
+        autopsies = self.memory.setdefault("trade_autopsy_log", [])
+        autopsies.append(
+            {
+                "timestamp": now_local.strftime("%Y-%m-%d %H:%M:%S"),
+                "ticker": ticker,
+                "archetype": arch,
+                "outcome": "WIN" if is_win else "LOSS",
+                "entry_cents": entry_cents,
+                "peak_cents": peak_cents,
+                "exit_cents": exit_cents,
+                "net_pnl_dlr": round(net_pnl_dlr, 2),
+                "diagnosis": diagnosis,
+                "exit_reason": exit_reason,
+            }
+        )
+        if len(autopsies) > 250:
+            self.memory["trade_autopsy_log"] = autopsies[-250:]
+
+        arch_map = self.memory.setdefault("archetype_learning", {})
+        a_stat = arch_map.setdefault(arch, {"wins": 0, "losses": 0, "realized_pnl": 0.0, "last_diagnosis": ""})
+        if is_win:
+            a_stat["wins"] = int(a_stat.get("wins", 0)) + 1
+        else:
+            a_stat["losses"] = int(a_stat.get("losses", 0)) + 1
+        a_stat["realized_pnl"] = round(float(a_stat.get("realized_pnl", 0.0)) + net_pnl_dlr, 2)
+        a_stat["last_diagnosis"] = diagnosis
+
+        # Update Daily Smart Bet Quota Tracker (Target: 25 High-Conviction Maker Bets / Day)
+        q_map = self.memory.setdefault("daily_quota_tracker", {})
+        q_day = q_map.setdefault(
+            day_str,
+            {"target_bets": 25, "completed_bets": 0, "wins": 0, "losses": 0, "net_pnl_dlr": 0.0},
+        )
+        q_day["completed_bets"] = int(q_day.get("completed_bets", 0)) + 1
+        if is_win:
+            q_day["wins"] = int(q_day.get("wins", 0)) + 1
+        else:
+            q_day["losses"] = int(q_day.get("losses", 0)) + 1
+        q_day["net_pnl_dlr"] = round(float(q_day.get("net_pnl_dlr", 0.0)) + net_pnl_dlr, 2)
+        self.save_memory()
+
+    def get_daily_quota_status(self) -> dict:
+        now_local = datetime.now()
+        day_str = now_local.strftime("%Y-%m-%d")
+        q_map = self.memory.setdefault("daily_quota_tracker", {})
+        q_day = q_map.setdefault(
+            day_str,
+            {"target_bets": 25, "completed_bets": 0, "wins": 0, "losses": 0, "net_pnl_dlr": 0.0},
+        )
+        # Expected pace across 24h day (~1.04 bets/hour)
+        frac_day = max(0.05, (now_local.hour + now_local.minute / 60.0) / 24.0)
+        expected_by_now = round(25.0 * frac_day, 1)
+        done = int(q_day.get("completed_bets", 0))
+        behind_pace = (expected_by_now - done) >= 1.5 and done < 25
+        quota_met = done >= 25
+        return {
+            "target_bets": 25,
+            "completed_bets": done,
+            "expected_by_now": expected_by_now,
+            "behind_pace": behind_pace,
+            "quota_met": quota_met,
+            "wins": int(q_day.get("wins", 0)),
+            "losses": int(q_day.get("losses", 0)),
+        }
+
+    async def get_sleeper_fantasy_intel(
+        self, client: KalshiClient, sport: str, player_target_name: str
+    ) -> tuple[float, str, bool]:
+        """
+        Queries Sleeper Fantasy API (`https://api.sleeper.app/v1/players/{sport}` + 24h trending waiver adds/drops).
+        Returns (req_pct_adjustment, tag_note, hard_veto).
+        - Vetoes players flagged `Out` / `Doubtful` / `IR`.
+        - Penalizes `Questionable` / `GTD` decoy risk (+8% required banked stat) and `depth_chart_order >= 3` backup mirages (+12% required banked stat).
+        - Boosts Fantasy Alpha #1 starters (`depth_chart_order == 1` & `search_rank <= 50` or top trending waiver breakout: -3.5% required banked stat).
+        """
+        now_ts = time.time()
+        cache_file = Path(f"data/sleeper_{sport}_cache.json")
+        c_ts, name_idx, trend_adds, trend_drops = self.sleeper_cache.get(sport, (0.0, {}, set(), set()))
+        if (now_ts - c_ts) > 10800.0 or not name_idx:
+            try:
+                hc = await client.get_client()
+                raw_players = None
+                if cache_file.exists() and (now_ts - cache_file.stat().st_mtime) < 43200.0:
+                    raw_players = json.loads(cache_file.read_text())
+                else:
+                    r_pl = await hc.get(f"https://api.sleeper.app/v1/players/{sport}", timeout=8.0)
+                    if r_pl.status_code == 200:
+                        raw_players = r_pl.json()
+                        try:
+                            cache_file.write_text(json.dumps(raw_players))
+                        except Exception:
+                            pass
+                r_add = await hc.get(f"https://api.sleeper.app/v1/players/{sport}/trending/add?lookback_hours=24&limit=40", timeout=3.0)
+                r_drp = await hc.get(f"https://api.sleeper.app/v1/players/{sport}/trending/drop?lookback_hours=24&limit=40", timeout=3.0)
+                trend_adds = {str(x.get("player_id")) for x in (r_add.json() if r_add.status_code == 200 else [])}
+                trend_drops = {str(x.get("player_id")) for x in (r_drp.json() if r_drp.status_code == 200 else [])}
+                if isinstance(raw_players, dict):
+                    import unicodedata
+                    def _norm(s: str) -> str:
+                        return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii").replace(".", "").strip().lower()
+                    name_idx = {}
+                    for pid, pdata in raw_players.items():
+                        if not isinstance(pdata, dict):
+                            continue
+                        fn = _norm(pdata.get("full_name") or f"{pdata.get('first_name','')} {pdata.get('last_name','')}")
+                        if fn and pdata.get("active"):
+                            name_idx[fn] = {
+                                "pid": str(pid),
+                                "inj": pdata.get("injury_status") or "",
+                                "depth": pdata.get("depth_chart_order"),
+                                "rank": pdata.get("search_rank") or 9999,
+                            }
+                    self.sleeper_cache[sport] = (now_ts, name_idx, trend_adds, trend_drops)
+            except Exception:
+                return 0.0, "", False
+
+        p_info = name_idx.get(player_target_name)
+        if not p_info:
+            return 0.0, "", False
+        inj = str(p_info.get("inj") or "").upper()
+        depth = p_info.get("depth")
+        rank = int(p_info.get("rank") or 9999)
+        pid = p_info.get("pid", "")
+
+        if inj in ("OUT", "DOUBTFUL", "IR", "SUSPENDED"):
+            return 99.0, f"VETO [Sleeper Fantasy Injury]: {player_target_name} flagged '{inj}'", True
+        adj = 0.0
+        tags = []
+        if inj in ("QUESTIONABLE", "GTD", "PROBABLE"):
+            adj += 8.0
+            tags.append(f"FANTASY-INJURY-DECOY({inj}:+8%)")
+        if depth is not None and int(depth) >= 3:
+            adj += 12.0
+            tags.append(f"FANTASY-BACKUP-MIRAGE(Depth#{depth}:+12%)")
+        elif depth == 1 and rank <= 60 and not inj:
+            adj -= 3.5
+            tags.append(f"+FANTASY-ALPHA-WR1/RB1(Rank#{rank})")
+        if pid in trend_drops:
+            adj += 6.0
+            tags.append("FANTASY-WAIVER-DROP(+6%)")
+        elif pid in trend_adds and (depth == 1 or depth == 2):
+            adj -= 2.5
+            tags.append("+FANTASY-WAIVER-BREAKOUT")
+        return adj, (" | " + " ".join(tags) if tags else ""), False
 
     async def verify_pinnacle_sharp_odds(
         self, client: KalshiClient, series: str, ticker: str, title: str
@@ -813,19 +1010,26 @@ class PreTradeEducator:
                     except Exception:
                         cur_clk_m = 6.0
 
-                    # Period-Aware Scoring Pace Curve:
+                    # Period-Aware + Minute-by-Minute Clock-Ahead Scoring Pace Curve:
                     # - Quarter/Half Totals (req_periods is not None): require >= 60% of that Quarter/Half total banked (and >=85% if <3.5m left in window!)
                     # - NHL Full-Game Totals (3 periods): P1 >= 45%, P2 >= 68%, P3 >= 80%
-                    # - NBA/NFL/NCAAF Full-Game Totals (4 quarters): P1 >= 36%, P2 >= 56%, P3 >= 66%, P4 >= 76%
+                    # - NBA/NFL/NCAAF Full-Game Totals (4 quarters): must ALSO be >= +6.0% AHEAD of exact minute-by-minute elapsed game clock!
                     if req_periods is not None:
                         is_final_period_of_win = (live_period == req_periods[-1])
                         req_tot_pct = 85.0 if (is_final_period_of_win and cur_clk_m < 3.5) else (72.0 if (is_final_period_of_win and cur_clk_m < 6.0) else 60.0)
                     elif is_soccer:
                         req_tot_pct = 55.0 if live_period == 1 else 68.0
                     elif "NHL" in series:
-                        req_tot_pct = {1: 45.0, 2: 68.0}.get(live_period, 80.0)
+                        elapsed_nhl_m = ((min(3, live_period) - 1) * 20.0) + max(0.0, 20.0 - cur_clk_m)
+                        elapsed_nhl_pct = min(92.0, (elapsed_nhl_m / 60.0) * 100.0)
+                        req_tot_pct = max({1: 45.0, 2: 68.0}.get(live_period, 80.0), elapsed_nhl_pct + 6.0)
                     else:
-                        req_tot_pct = {1: 36.0, 2: 56.0, 3: 66.0}.get(live_period, 76.0)
+                        p_len_m = 15.0 if series.startswith(("KXNFL", "KXNCAAF")) else (20.0 if "NCAAMB" in series else 12.0)
+                        reg_tot_m = 60.0 if series.startswith(("KXNFL", "KXNCAAF")) else (40.0 if "NCAAMB" in series else 48.0)
+                        max_reg_p = 2 if "NCAAMB" in series else 4
+                        elapsed_gm_m = ((min(max_reg_p, live_period) - 1) * p_len_m) + max(0.0, p_len_m - cur_clk_m)
+                        elapsed_gm_pct = min(93.0, (elapsed_gm_m / reg_tot_m) * 100.0)
+                        req_tot_pct = max({1: 36.0, 2: 58.0, 3: 72.0}.get(live_period, 82.0), elapsed_gm_pct + 6.0)
 
                     # Point Trap 0 (Overtime Sudden-Death & Short-Period Impossible-Total Trap):
                     # - NHL Overtime (P4+): Sudden-death 3-on-3 or Shootout means AT MOST 1.0 goal can be scored in the entire rest of the game!
@@ -1181,9 +1385,23 @@ class PreTradeEducator:
                                     player_team_margin = sc1 - sc0
                                     player_st_edge, player_st_tag = _team_standings_edge(competitors[1], competitors[0])
 
-                            # Period-Aware Hot-Hand Player Prop Pace Curve + Coaching Game-Script ("Enhance vs. Stall") Adjustments:
-                            req_prop_pct = {1: 42.0, 2: 56.0, 3: 68.0}.get(live_period, 78.0)
+                            # Period-Aware + Minute-by-Minute Clock-Ahead Hot-Hand Player Prop Pace Curve:
+                            p_len_prop = 15.0 if series in nfl_prop_Set else (20.0 if series in nhl_prop_Set else 12.0)
+                            reg_tot_prop = 60.0 if (series in nfl_prop_Set or series in nhl_prop_Set) else 48.0
+                            max_p_prop = 3 if series in nhl_prop_Set else 4
+                            el_prop_m = ((min(max_p_prop, live_period) - 1) * p_len_prop) + max(0.0, p_len_prop - clk_m)
+                            el_prop_pct = min(93.0, (el_prop_m / reg_tot_prop) * 100.0)
+                            req_prop_pct = max({1: 42.0, 2: 58.0, 3: 72.0}.get(live_period, 82.0), el_prop_pct + 6.0)
                             script_prop_tag = player_st_tag
+
+                            # 0A. Live Sleeper Fantasy Football & Basketball Player Intelligence (`injury_status`, `depth_chart_order`, `search_rank`, 24h waiver trends):
+                            if series in nfl_prop_Set or series in nba_prop_Set:
+                                slp_sport = "nfl" if series in nfl_prop_Set else "nba"
+                                slp_adj, slp_tag, slp_veto = await self.get_sleeper_fantasy_intel(client, slp_sport, player_target_name)
+                                if slp_veto:
+                                    return False, slp_tag
+                                req_prop_pct = max(40.0, req_prop_pct + slp_adj)
+                                script_prop_tag += slp_tag
 
                             # 0. Standings Quality Mismatch on Player Props:
                             # If a player on a BAD team faces a GOOD team (`player_st_edge <= -0.14`) in the 2nd Half, require +4.0% higher banked progress!
@@ -1496,11 +1714,14 @@ class PreTradeEducator:
         """
         self.memory["evaluated_plays"] = self.memory.get("evaluated_plays", 0) + 1
 
-        # 1. Whale Order Book Imbalance Check (Top 5 levels near touch) + Self-Correcting Drawdown Gate
+        # 1. Whale Order Book Imbalance Check (Top 5 levels near touch) + Self-Correcting Series & Archetype Drawdown Gate
         series = ticker.split("-")[0] if "-" in ticker else ticker
+        arch = self.classify_archetype(ticker)
         st = self.memory.get("series_stats", {}).get(series, {})
         series_pnl = float(st.get("realized_pnl", 0.0) or 0.0)
-        req_imbalance = 1.85 if series_pnl < -1.00 else 1.35
+        arch_st = self.memory.get("archetype_learning", {}).get(arch, {})
+        arch_pnl = float(arch_st.get("realized_pnl", 0.0) or 0.0)
+        req_imbalance = 1.85 if (series_pnl < -1.00 or arch_pnl < -5.00) else 1.35
 
         top_yes_bids = sorted(ob.yes_bids, key=lambda x: x.price, reverse=True)[:5]
         top_no_bids = sorted(ob.no_bids, key=lambda x: x.price, reverse=True)[:5]
@@ -1569,12 +1790,20 @@ class PreTradeEducator:
         if pin_note:
             ext_reason += pin_note
 
-        # 4. Self-Learning Series Confidence Multiplier + A+ Whale Wall Boost
+        # 4. Self-Learning Series & Archetype Confidence Multiplier + A+ Whale Wall Boost
         conf_mult = 1.0
         if series_pnl > 0:
             conf_mult = 1.15  # Boost allocation 15% on proven profitable series
         elif series_pnl < -1.00:
             conf_mult = 0.85  # Auto-trim size 15% on drawdown series until back in green
+        arch_wins = int(arch_st.get("wins", 0) or 0)
+        arch_losses = int(arch_st.get("losses", 0) or 0)
+        if (arch_wins + arch_losses) >= 3:
+            arch_wr = arch_wins / max(1, arch_wins + arch_losses)
+            if arch_wr >= 0.80 and arch_pnl > 0:
+                conf_mult *= 1.10
+            elif arch_wr < 0.65 or arch_pnl < -10.0:
+                conf_mult *= 0.85
         if imbalance_ratio >= 2.25 and momentum_delta >= 0:
             conf_mult *= 1.22  # A+ Whale Wall (>=2.25x) + non-negative tape momentum
         elif imbalance_ratio >= 1.85 and momentum_delta >= 0:
@@ -1811,12 +2040,21 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     prev = tracked_open_positions.pop(t)
                     stopped_out_events.add(_entity_key(t) if "_entity_key" in locals() else "-".join(t.split("-")[:2]))
                     realized_pnl = float(pos.get("realized_pnl_dollars", "0") or 0)
+                    stake_dlr = prev.get("max_stake") or prev["stake"]
+                    cnt_int = max(1, int(prev.get("max_count") or prev["count"]))
+                    avg_ent_c = int(round((stake_dlr / cnt_int) * 100)) if stake_dlr > 0 else 82
+                    pk_c = peak_bids.get(t, avg_ent_c + 6)
                     if realized_pnl >= 0:
                         educator.memory.setdefault("harvested_tickers", []).append(t)
-                        educator.save_memory()
-                        stake_dlr = prev.get("max_stake") or prev["stake"]
-                        cnt_int = prev.get("max_count") or prev["count"]
-                        profit_dlr = realized_pnl if realized_pnl > 0 else max(0.01, round((cnt_int * 0.94) - stake_dlr, 2))
+                        profit_dlr = realized_pnl if realized_pnl > 0 else max(0.01, round((cnt_int * 0.92) - stake_dlr, 2))
+                        educator.record_trade_autopsy(
+                            ticker=t,
+                            entry_cents=avg_ent_c,
+                            exit_cents=min(96, avg_ent_c + int(round((profit_dlr / cnt_int) * 100))),
+                            peak_cents=pk_c,
+                            net_pnl_dlr=profit_dlr,
+                            exit_reason="STAGE1_AND_STAGE2_MAKER_HARVEST",
+                        )
                         payout_dlr = round(stake_dlr + profit_dlr, 2)
                         roi_pct = round((profit_dlr / max(0.01, stake_dlr)) * 100, 1)
                         await send_phone_alert(
@@ -1830,7 +2068,14 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             ),
                         )
                     else:
-                        educator.save_memory()
+                        educator.record_trade_autopsy(
+                            ticker=t,
+                            entry_cents=avg_ent_c,
+                            exit_cents=max(1, avg_ent_c + int(round((realized_pnl / cnt_int) * 100))),
+                            peak_cents=pk_c,
+                            net_pnl_dlr=realized_pnl,
+                            exit_reason="POSITION_CLOSED_OR_SETTLED_LOSS",
+                        )
 
             orders_resp = await client.request("GET", "/portfolio/orders", authenticated=True)
             open_orders = [
@@ -1922,14 +2167,15 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     k in ticker for k in ("TOTAL", "PTS", "REB", "AST", "3PT", "PRA", "YDS", "REC", "GOAL", "SOA")
                 )
                 # Stage-1 is ONLY banked when >=40% of contracts have ACTUALLY filled & cashed out (never on an unfilled touch!)
-                stage1_banked = (max_orig_cnt >= 6 and whole_pos <= int(max_orig_cnt * 0.60))
+                stage1_banked = (max_orig_cnt >= 6 and whole_pos <= int(max_orig_cnt * 0.58))
                 # Smart Stop-Loss Floor (GEMINI.md Law 3 & Pod 1):
-                # - Never fire hair-trigger Taker dumps (-3c / -7c) on One-Way Ratchets (Over Totals & Player Props) during timeouts!
-                # - Base emergency thesis-broken floor: 52c on fast Quarter/Half contracts, 48c on Full Games.
-                # - Once Stage-1 (50% of contracts) has actually sold in cash at +6c, protect the runner at max(base_floor_c, entry - 12c).
+                # - Never fire hair-trigger Taker dumps (-3c / -7c) BEFORE Stage-1 banks!
+                # - UNIVERSAL STAGE-1 PROFIT-LOCK SHIELD: Once Stage-1 (60% of contracts) has actually sold in cash at +6c,
+                #   lock the remaining 40% runner's floor at `avg_entry_cents - 3` across ALL markets (including Totals & Props!)
+                #   so `(0.60 * +6c) + (0.40 * -3c) = +2.4c` GUARANTEED NET PROFIT (a Stage-1 winner can NEVER turn into a loss like GSWDEN-236 did!).
                 base_floor_c = 52 if is_fast_period else 48
-                if stage1_banked and not is_one_way_ratchet:
-                    stop_floor_c = max(base_floor_c, avg_entry_cents - 12)
+                if stage1_banked:
+                    stop_floor_c = max(base_floor_c, avg_entry_cents - 3)
                 elif is_soccer_ml and peaked >= avg_entry_cents + 4:
                     stop_floor_c = max(base_floor_c, avg_entry_cents - 6)
                 else:
@@ -1937,7 +2183,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 thesis_broken_guillotine = (0 < cur_bid <= stop_floor_c) and (cur_ask <= stop_floor_c + 5)
                 if thesis_broken_guillotine:
                     logger.warning(
-                        f"THESIS-BROKEN <48c GUILLOTINE TRIGGERED on {ticker} (cur_bid={cur_bid}c, ask={cur_ask}c). Salvaging stake!"
+                        f"THESIS-BROKEN / STAGE-1 SHIELD TRIGGERED on {ticker} (cur_bid={cur_bid}c, ask={cur_ask}c, floor={stop_floor_c}c). Salvaging stake!"
                     )
                     stopped_out_events.add("-".join(ticker.split("-")[:2]))
                     to_cancel = [
@@ -1970,15 +2216,27 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         },
                         authenticated=True,
                     )
+                    est_pnl = round(
+                        ((max_orig_cnt - whole_pos) * 0.06) + (whole_pos * ((cur_bid - avg_entry_cents) / 100.0)),
+                        2,
+                    )
+                    educator.record_trade_autopsy(
+                        ticker=ticker,
+                        entry_cents=avg_entry_cents,
+                        exit_cents=cur_bid,
+                        peak_cents=peaked,
+                        net_pnl_dlr=est_pnl,
+                        exit_reason="STAGE1_PROFIT_SHIELD_EXIT" if stage1_banked else "THESIS_BROKEN_GUILLOTINE",
+                    )
                     tracked_open_positions.pop(ticker, None)
                     educator.save_memory()
                     await send_phone_alert(
                         client,
-                        "🛑 Stop-Loss Triggered (<48c Guillotine)",
+                        "🛡️ Stage-1 Profit Shield Locked!" if stage1_banked else "🛑 Stop-Loss Triggered (<48c Guillotine)",
                         (
                             f"Play: {ticker}\n"
-                            f"Action: Exited {whole_pos}x @ {cur_bid}c (Peak: {peaked}c, <48c thesis-broken guillotine triggered) "
-                            f"to salvage stake.\n"
+                            f"Action: Exited {whole_pos}x @ {cur_bid}c (Peak: {peaked}c, Floor: {stop_floor_c}c)\n"
+                            f"Estimated Net Trade P&L: {est_pnl:+.2f}\n"
                             f"New Account Equity: ${equity_cents/100:.2f}"
                         ),
                     )
@@ -2067,7 +2325,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     wave_tp = max(fast_tp + 3, min(96, avg_entry_cents + 11))
 
                     if uncovered >= 4:
-                        fast_cnt = uncovered // 2
+                        # 60% Stage-1 Fast-Flip (+6c) + 40% Stage-2 Wave-Rider (+11c) so Stage-1 banks the majority of profit immediately!
+                        fast_cnt = max(2, int(round(uncovered * 0.60)))
                         wave_cnt = uncovered - fast_cnt
                         legs = [(fast_cnt, fast_tp, "Stage-1 Fast-Flip (+6c Target)"), (wave_cnt, wave_tp, "Stage-2 Wave-Rider (+11c Target)")]
                     else:
@@ -2098,11 +2357,14 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         except Exception as e:
                             logger.warning(f"Could not place {leg_label} sell for {ticker}: {e}")
 
-            # 2. Dynamic 4-Tier Bankroll Scaling into SOONEST Worldwide Games (80c-89c Leaders & 93c-97c Tail Locks)
+            # 2. Dynamic 4-Tier Bankroll Scaling + Daily Smart Bet Quota Pacing (Target: 25 High-Conviction Maker Bets/Day)
             tier = get_scaling_tier(equity_cents)
             min_stake_c = tier["min_stake_cents"]
+            quota_st = educator.get_daily_quota_status()
+            min_leader_ask = 75 if quota_st["behind_pace"] else (80 if quota_st["quota_met"] else 76)
+            max_leader_ask = 88 if quota_st["behind_pace"] else 87
             logger.info(
-                f"Heartbeat [{tier['name']}] | Cash: ${total_cents/100:.2f} | Portfolio: ${port_cents/100:.2f} | Total Equity: ${equity_cents/100:.2f}"
+                f"Heartbeat [{tier['name']}] | Cash: ${total_cents/100:.2f} | Portfolio: ${port_cents/100:.2f} | Total Equity: ${equity_cents/100:.2f} | Daily Quota: {quota_st['completed_bets']}/{quota_st['target_bets']} ({quota_st['wins']}W-{quota_st['losses']}L, Pace={quota_st['expected_by_now']})"
             )
             # Emit silent Mac Primary Engine pulse every 90s so GitHub Cloud 24/7 Failover knows when Mac is awake vs. shut down
             if sys.platform == "darwin" and duration_seconds == 0:
@@ -2275,8 +2537,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             spread_c = ask_c - bid_c
                             if spread_c <= 0 or spread_c > 3:
                                 continue
-                            # "Meat of the Move" Sweet Spot (76c-87c): Ban 88c-96c penny-picking where upside is only $1!
-                            if not (76 <= ask_c <= 87):
+                            # "Meat of the Move" Sweet Spot (75c-88c when behind daily quota pace, 76c-87c normal):
+                            if not (min_leader_ask <= ask_c <= max_leader_ask):
                                 continue
 
                             clean_title = m.get("yes_sub_title") or m.get("title", t)
@@ -2338,7 +2600,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     ob = await client.get_orderbook(t)
                     if ob.best_yes_bid and ob.best_yes_ask:
                         spread = ob.best_yes_ask - ob.best_yes_bid
-                        is_leader_zone = (76 <= ob.best_yes_ask <= 87 and spread <= 3)
+                        is_leader_zone = (min_leader_ask <= ob.best_yes_ask <= max_leader_ask and spread <= 3)
                         is_tail_lock_zone = False
 
                         if is_leader_zone:

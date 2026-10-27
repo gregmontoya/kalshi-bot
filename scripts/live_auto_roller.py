@@ -566,7 +566,72 @@ class PreTradeEducator:
         else:
             q_day["losses"] = int(q_day.get("losses", 0)) + 1
         q_day["net_pnl_dlr"] = round(float(q_day.get("net_pnl_dlr", 0.0)) + net_pnl_dlr, 2)
+
+        # Anti-Martingale Win/Loss Streak & House-Money Pool Tracker:
+        # - Shrinks to Conservative Defense Mode (7% stake) when losing/rebuilding
+        # - Expands freely in House-Money Mode (up to 18-20% stake) when on a 2+ Win Streak, while capping max -10c stop risk at <=35% of banked profit!
+        st_state = self.memory.setdefault(
+            "streak_state",
+            {"win_streak": 0, "loss_streak": 0, "house_money_pool_dlr": 0.0, "mode": "CONSERVATIVE_DEFENSE"},
+        )
+        if is_win:
+            st_state["win_streak"] = int(st_state.get("win_streak", 0)) + 1
+            st_state["loss_streak"] = 0
+            st_state["house_money_pool_dlr"] = round(max(0.0, float(st_state.get("house_money_pool_dlr", 0.0)) + net_pnl_dlr), 2)
+        else:
+            st_state["win_streak"] = 0
+            st_state["loss_streak"] = int(st_state.get("loss_streak", 0)) + 1
+            st_state["house_money_pool_dlr"] = round(max(0.0, float(st_state.get("house_money_pool_dlr", 0.0)) + net_pnl_dlr), 2)
+
+        w_strk = int(st_state["win_streak"])
+        hm_pool = float(st_state["house_money_pool_dlr"])
+        if w_strk >= 2 and hm_pool >= 6.0:
+            st_state["mode"] = f"HOUSE_MONEY_OFFENSE({w_strk}W_Streak,+${hm_pool:.2f}_Pool)"
+        elif w_strk == 1 and hm_pool > 0.0:
+            st_state["mode"] = f"STANDARD_BUILDER(1W,+${hm_pool:.2f}_Pool)"
+        else:
+            st_state["mode"] = f"CONSERVATIVE_DEFENSE({st_state['loss_streak']}L)"
         self.save_memory()
+
+    def get_streak_sizing(self, equity_cents: int, bid_cents: int) -> tuple[int, str, float]:
+        """
+        Returns (target_stake_cents, mode_label, extra_req_imbalance):
+        1) CONSERVATIVE_DEFENSE (After any loss or $0 House-Money Pool):
+           - Tight 7% stake (~$30.80 at $440 equity = ~$3.50 max risk at -10c stop).
+           - Stricter Whale Imbalance (+0.25x boost required).
+        2) STANDARD_BUILDER (1 Win in a row & positive House-Money Pool):
+           - 10% stake (~$44.00 at $440 equity).
+        3) HOUSE_MONEY_OFFENSE (2+ Wins in a row & >= $6.00 banked House-Money Pool):
+           - Base 10% stake + reinvests 50% of banked House-Money Pool (scales up freely up to 20% of equity as we win!),
+           - IRONCLAD PROFIT SHIELD: Caps contract count so a -10c stop-loss NEVER loses more than 35% of our banked House-Money Pool!
+             (We can NEVER lose all our profit in 1 bet again!)
+        """
+        st_state = self.memory.setdefault(
+            "streak_state",
+            {"win_streak": 0, "loss_streak": 0, "house_money_pool_dlr": 0.0, "mode": "CONSERVATIVE_DEFENSE"},
+        )
+        w_strk = int(st_state.get("win_streak", 0) or 0)
+        l_strk = int(st_state.get("loss_streak", 0) or 0)
+        hm_pool_dlr = float(st_state.get("house_money_pool_dlr", 0.0) or 0.0)
+        hm_pool_cents = int(round(hm_pool_dlr * 100))
+
+        if w_strk >= 2 and hm_pool_dlr >= 6.0:
+            # House-Money Offense: Base 10% + 50% of banked profit pool (up to 20% of equity max)
+            base_c = int(equity_cents * 0.10)
+            bonus_c = int(hm_pool_cents * 0.55)
+            raw_target_c = min(int(equity_cents * 0.20), base_c + bonus_c)
+            # Profit-Retention Cap: Ensure a -10c stop-loss on this bet risks at most 40% of banked profits (or base 10% stake)
+            max_risk_c = max(int(equity_cents * 0.012), int(hm_pool_cents * 0.40))
+            max_contracts_by_profit_shield = max(35, int(max_risk_c // 10))
+            shielded_stake_c = min(raw_target_c, max_contracts_by_profit_shield * max(75, bid_cents))
+            return shielded_stake_c, f"🔥 HOUSE-MONEY OFFENSE ({w_strk}W Streak, Pool=+${hm_pool_dlr:.2f})", 0.0
+        elif w_strk == 1 and hm_pool_dlr > 0.0:
+            stake_c = int(equity_cents * 0.10)
+            return stake_c, f"⚖️ STANDARD BUILDER (1W Streak, Pool=+${hm_pool_dlr:.2f})", 0.0
+        else:
+            # Conservative Defense Mode when losing or at $0 pool: 7% of equity (~$30.80 at $440 -> ~$3.50 max risk at -10c stop!)
+            stake_c = max(2400, int(equity_cents * 0.07))
+            return stake_c, f"🛡️ CONSERVATIVE DEFENSE ({l_strk}L, Tight 7% Cap)", 0.20
 
     def get_daily_quota_status(self) -> dict:
         now_local = datetime.now()
@@ -1944,7 +2009,9 @@ class PreTradeEducator:
         series_pnl = float(st.get("realized_pnl", 0.0) or 0.0)
         arch_st = self.memory.get("archetype_learning", {}).get(arch, {})
         arch_pnl = float(arch_st.get("realized_pnl", 0.0) or 0.0)
-        req_imbalance = 1.85 if (series_pnl < -1.00 or arch_pnl < -5.00) else 1.35
+        st_state_eval = self.memory.get("streak_state", {})
+        in_defense_mode = int(st_state_eval.get("win_streak", 0) or 0) == 0 or float(st_state_eval.get("house_money_pool_dlr", 0.0) or 0.0) <= 0.0
+        req_imbalance = (1.85 if (series_pnl < -1.00 or arch_pnl < -5.00) else 1.35) + (0.20 if in_defense_mode else 0.0)
 
         is_under_no = title.startswith("[UNDER-NO]")
         top_yes_bids = sorted(ob.yes_bids, key=lambda x: x.price, reverse=True)[:5]
@@ -2942,12 +3009,11 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             entry_order_side = "ask" if is_under_cand else "bid"
                             eff_yes_entry_c = max(1, min(99, 100 - bid_cents)) if is_under_cand else bid_cents
                             price_str = f"{eff_yes_entry_c / 100:.4f}"
-                            # HARD PER-TRADE STAKE CAP (Rule 1): Strictly max 10%-12% of account equity ($44-$55 cap at $440 equity!)
+                            # ANTI-MARTINGALE 3-GEAR SIZING (Conservative When Losing / House-Money When Winning):
                             working_equity_cents = min(equity_cents, tier.get("working_cap_cents", equity_cents))
-                            base_alloc_pct = min(0.12, tier["boost_pct"] if conf_mult >= 1.20 else tier["base_pct"])
-                            raw_stake = int(working_equity_cents * base_alloc_pct)
-                            hard_12pct_cap_c = max(2000, int(equity_cents * 0.12))
-                            target_stake_cents = min(tier["max_stake_cents"], hard_12pct_cap_c, max(min_stake_c, raw_stake), total_cents)
+                            streak_stake_c, streak_mode_label, _ = educator.get_streak_sizing(working_equity_cents, bid_cents)
+                            target_stake_cents = min(streak_stake_c, total_cents)
+                            eff_min_contracts = max(12, int(round((target_stake_cents * 0.75) // max(1, bid_cents))))
 
                             # Just-In-Time (JIT) Cross-Shard Liquidity Sweeper: pull cash from other shards if needed!
                             if shard_cents.get(shard_key, 0) < target_stake_cents:
@@ -2986,11 +3052,11 @@ async def run_autonomous_loop(duration_seconds: int = 0):
 
                             alloc_cents = min(shard_cents.get(shard_key, 0), target_stake_cents)
                             count_int = int(alloc_cents // bid_cents)
-                            if count_int >= tier["min_contracts"]:
+                            if count_int >= eff_min_contracts:
                                 max_slice = tier.get("iceberg_slice", 70)
                                 slice_count = min(count_int, max_slice)
                                 logger.info(
-                                    f"Auto-deploying [{tier['name']}] Maker {'UNDER(NO)' if is_under_cand else 'YES'} Bid on {t}: {slice_count} contracts @ {bid_cents}c (${(slice_count*bid_cents)/100:.2f})"
+                                    f"Auto-deploying [{streak_mode_label}] Maker {'UNDER(NO)' if is_under_cand else 'YES'} Bid on {t}: {slice_count} contracts @ {bid_cents}c (${(slice_count*bid_cents)/100:.2f})"
                                 )
                                 try:
                                     await client.request(

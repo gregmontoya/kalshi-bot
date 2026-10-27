@@ -597,14 +597,13 @@ class PreTradeEducator:
         """
         Returns (target_stake_cents, mode_label, extra_req_imbalance):
         1) CONSERVATIVE_DEFENSE (After any loss or $0 House-Money Pool):
-           - Tight 7% stake (~$30.80 at $440 equity = ~$3.50 max risk at -10c stop).
-           - Stricter Whale Imbalance (+0.25x boost required).
+           - Tight ~12% stake (~$54 at $440 equity = ~65 contracts -> +$5.20/win, -$6.50 max risk at -10c stop).
+           - Stricter Whale Imbalance (+0.20x boost required).
         2) STANDARD_BUILDER (1 Win in a row & positive House-Money Pool):
-           - 10% stake (~$44.00 at $440 equity).
+           - ~19% stake (~$84 at $440 equity = ~102 contracts -> +$8.15/win, -$10.20 max risk at -10c stop).
         3) HOUSE_MONEY_OFFENSE (2+ Wins in a row & >= $6.00 banked House-Money Pool):
-           - Base 10% stake + reinvests 50% of banked House-Money Pool (scales up freely up to 20% of equity as we win!),
-           - IRONCLAD PROFIT SHIELD: Caps contract count so a -10c stop-loss NEVER loses more than 35% of our banked House-Money Pool!
-             (We can NEVER lose all our profit in 1 bet again!)
+           - Reinvests House-Money Pool up to ~$115-$120 stake (~140 contracts -> +$11.20/win) to recover drawdown fast,
+             protected by the Tight -10c Stop-Loss and Global Same-Game Lockout!
         """
         st_state = self.memory.setdefault(
             "streak_state",
@@ -615,23 +614,15 @@ class PreTradeEducator:
         hm_pool_dlr = float(st_state.get("house_money_pool_dlr", 0.0) or 0.0)
         hm_pool_cents = int(round(hm_pool_dlr * 100))
 
-        if w_strk >= 2 and hm_pool_dlr >= 6.0:
-            # House-Money Offense: Base 10% + 50% of banked profit pool (up to 20% of equity max)
-            base_c = int(equity_cents * 0.10)
-            bonus_c = int(hm_pool_cents * 0.55)
-            raw_target_c = min(int(equity_cents * 0.20), base_c + bonus_c)
-            # Profit-Retention Cap: Ensure a -10c stop-loss on this bet risks at most 40% of banked profits (or base 10% stake)
-            max_risk_c = max(int(equity_cents * 0.012), int(hm_pool_cents * 0.40))
-            max_contracts_by_profit_shield = max(35, int(max_risk_c // 10))
-            shielded_stake_c = min(raw_target_c, max_contracts_by_profit_shield * max(75, bid_cents))
-            return shielded_stake_c, f"🔥 HOUSE-MONEY OFFENSE ({w_strk}W Streak, Pool=+${hm_pool_dlr:.2f})", 0.0
+        if w_strk >= 2 and hm_pool_dlr >= 5.0:
+            raw_target_c = min(12000, int(equity_cents * 0.26), int(equity_cents * 0.19) + int(hm_pool_cents * 0.65))
+            return raw_target_c, f"🔥 HOUSE-MONEY OFFENSE ({w_strk}W Streak, Pool=+${hm_pool_dlr:.2f})", 0.0
         elif w_strk == 1 and hm_pool_dlr > 0.0:
-            stake_c = int(equity_cents * 0.10)
+            stake_c = min(8500, int(equity_cents * 0.19))
             return stake_c, f"⚖️ STANDARD BUILDER (1W Streak, Pool=+${hm_pool_dlr:.2f})", 0.0
         else:
-            # Conservative Defense Mode when losing or at $0 pool: 7% of equity (~$30.80 at $440 -> ~$3.50 max risk at -10c stop!)
-            stake_c = max(2400, int(equity_cents * 0.07))
-            return stake_c, f"🛡️ CONSERVATIVE DEFENSE ({l_strk}L, Tight 7% Cap)", 0.20
+            stake_c = min(5500, max(3000, int(equity_cents * 0.12)))
+            return stake_c, f"🛡️ CONSERVATIVE DEFENSE ({l_strk}L, Protected $54 Cap)", 0.20
 
     def get_daily_quota_status(self) -> dict:
         now_local = datetime.now()
@@ -1346,11 +1337,16 @@ class PreTradeEducator:
                                 return False, (
                                     f"VETO [NHL Under Too Early]: P{live_period} {clock_disp} (requires P3 <=12:00 left for Late-Clock Under)"
                                 )
+                            if gm_margin_tot == 0.0:
+                                return False, (
+                                    f"VETO [NHL Tied Overtime Under Trap]: Game is TIED at P3 {clock_disp} "
+                                    "(Overtime/Shootout guarantees an extra goal and kills Under!)"
+                                )
                             min_nhl_under_buf = 3.0 if gm_margin_tot <= 1.0 else 2.0
                             if pts_to_break_under < min_nhl_under_buf:
                                 return False, (
                                     f"VETO [NHL Under Cushion <{min_nhl_under_buf:.0f} Goals]: {cur_pts:.0f} goals vs Under {target_val:.1f} "
-                                    f"at P3 {clock_disp} (margin={gm_margin_tot:.0f} — empty-netter shield!)"
+                                    f"at P3 {clock_disp} (margin={gm_margin_tot:.0f} — empty-netter/OT shield!)"
                                 )
                             return True, (
                                 f"ESPN NHL Late-Clock UNDER Verified ({cur_pts:.0f} goals vs Under {target_val:.1f} = "
@@ -1360,6 +1356,11 @@ class PreTradeEducator:
                             if live_period < 4 or cur_clk_m > 10.0:
                                 return False, (
                                     f"VETO [Football Under Too Early]: P{live_period} {clock_disp} (requires P4 <=10:00 left for Late-Clock Under)"
+                                )
+                            if gm_margin_tot < 9.0:
+                                return False, (
+                                    f"VETO [Football 1-Score Overtime/Hurry-Up Under Trap]: Margin is only {gm_margin_tot:.0f} pts in P4 {clock_disp} "
+                                    "(requires >=9 pt 2-score lead so game cannot tie/go to OT and leader runs the clock!)"
                                 )
                             if pts_to_break_under < 10.0:
                                 return False, (
@@ -1378,10 +1379,10 @@ class PreTradeEducator:
                                     f"VETO [Basketball Under Clock Window]: P{live_period} {clock_disp} "
                                     f"(requires final period <=7:30 left for Late-Clock Under)"
                                 )
-                            if gm_margin_tot <= 6.0 and cur_clk_m <= 3.5:
+                            if gm_margin_tot < 9.0:
                                 return False, (
-                                    f"VETO [Basketball Intentional-Foul Under Trap]: Margin is {gm_margin_tot:.0f} pts with {clock_disp} left "
-                                    "(close-game FT foul parade risk on Under!)"
+                                    f"VETO [Basketball Overtime & Foul-Parade Under Trap]: Margin is only {gm_margin_tot:.0f} pts with {clock_disp} left "
+                                    "(requires >=9 pt 3-possession lead so game cannot go to 25-pt Overtime or FT foul parade!)"
                                 )
                             p_len_m = 20.0 if "NCAAMB" in series else 12.0
                             elapsed_gm_m = max(5.0, ((min(final_reg_p, live_period) - 1) * p_len_m) + max(0.0, p_len_m - cur_clk_m))
@@ -1429,17 +1430,17 @@ class PreTradeEducator:
                                     f"VETO [1H Time-in-Play Gate]: Full-game spread in P{live_period} {clock_disp} traps cash through Halftime "
                                     f"(use 1Q/2Q/1H spread instead!)"
                                 )
-                        # Require team to ALREADY be covering the spread:
-                        # - NHL/Soccer: +0.5 goals
-                        # - Fast Quarters/Halves (req_periods is not None): +3.5 points
-                        # - Full-Game NBA/Football Spreads in Q3: +7.5 points above spread (prevents Q3 2-possession swing wipeouts!)
-                        # - Full-Game NBA/Football Spreads in Q4: +5.0 points above spread
+                        # Require team to ALREADY be covering the spread by a Multi-Score Safety Cushion:
+                        # - NHL/Soccer: +1.5 goals above spread (2-goal cushion so 1 goal against you CANNOT break the spread!)
+                        # - Fast Quarters/Halves (req_periods is not None): +5.5 points above spread (2 full possessions!)
+                        # - Full-Game NBA/Football Spreads in Q3: +8.5 points above spread
+                        # - Full-Game NBA/Football Spreads in Q4: +6.5 points above spread
                         if "NHL" in series or is_soccer:
-                            req_spread_buf = 0.5
+                            req_spread_buf = 1.5
                         elif req_periods is not None:
-                            req_spread_buf = 3.5
+                            req_spread_buf = 5.5
                         else:
-                            req_spread_buf = 7.5 if live_period <= 3 else 5.0
+                            req_spread_buf = 8.5 if live_period <= 3 else 6.5
                         # Opponent Red-Zone Threat Shield on Football Spreads:
                         # If the trailing opponent currently has the ball inside the Red Zone (about to score 7 pts!), require +7.0 extra cushion!
                         sit_sp = comp.get("situation") or {}
@@ -1478,13 +1479,11 @@ class PreTradeEducator:
                             p_clk_m = 6.0
                         st_edge_w, st_tag_w = _team_standings_edge(competitors[c_idx], competitors[1 - c_idx])
                         # Clock-Aware Multi-Possession Shield for Quarter, Period & Half Winners across ALL leagues:
+                        # STRICT 2+ GOAL CUSHION on Soccer Halves & NHL Periods (1 goal ties a 3-way half/period and wipes out the play!)
                         if is_soccer and margin < 2:
-                            if p_clk_m < 38.0 or st_edge_w <= -0.10:
-                                return False, f"VETO [Soccer 1H 1-Goal Risk]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} at {clock_disp} (<38' or <2 goal cushion{st_tag_w})"
-                        elif "NHL" in series:
-                            req_nhl_p_cush = (2 if st_edge_w <= -0.10 else 1) if p_clk_m < 7.0 else 2
-                            if margin < req_nhl_p_cush:
-                                return False, f"VETO [NHL {period_tag} Cushion]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} with {clock_disp} left (needs +{req_nhl_p_cush} goals{st_tag_w})"
+                            return False, f"VETO [Soccer 1H 1-Goal Lead Ban]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} at {clock_disp} (strict 2+ goal cushion required{st_tag_w}!)"
+                        elif "NHL" in series and margin < 2:
+                            return False, f"VETO [NHL {period_tag} 1-Goal Lead Ban]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} with {clock_disp} left (strict 2+ goal cushion required{st_tag_w}!)"
                         elif series.startswith(("KXNFL", "KXNCAAF")):
                             req_fb_p_cush = 10 if st_edge_w <= -0.10 else 7
                             if margin < req_fb_p_cush:
@@ -1668,8 +1667,10 @@ class PreTradeEducator:
                             reg_tot_prop = 60.0 if (series in nfl_prop_Set or series in nhl_prop_Set) else 48.0
                             max_p_prop = 3 if series in nhl_prop_Set else 4
                             el_prop_m = ((min(max_p_prop, live_period) - 1) * p_len_prop) + max(0.0, p_len_prop - clk_m)
-                            el_prop_pct = min(93.0, (el_prop_m / reg_tot_prop) * 100.0)
-                            req_prop_pct = max({1: 42.0, 2: 58.0, 3: 72.0}.get(live_period, 82.0), el_prop_pct + 6.0)
+                            el_prop_pct = min(95.0, (el_prop_m / reg_tot_prop) * 100.0)
+                            # Anti-Stall Prop Rule: Never buy 1st-Half props unless >=90% banked (avoids Halftime cash lock & injury risk);
+                            # require >=86% banked in Q3 and >=92% banked in Q4 (1 basket away)!
+                            req_prop_pct = max({1: 92.0, 2: 90.0, 3: 86.0}.get(live_period, 92.0), el_prop_pct + 12.0)
                             script_prop_tag = player_st_tag
 
                             # 0A. Live Sleeper Fantasy Football & Basketball Player Intelligence (`injury_status`, `depth_chart_order`, `search_rank`, 24h waiver trends):

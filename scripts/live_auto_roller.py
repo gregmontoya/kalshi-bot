@@ -614,6 +614,54 @@ class PreTradeEducator:
             except Exception as e:
                 return False, f"VETO [Wall St API Error]: Could not verify live index/commodity feed ({e})"
 
+        # Helper: Team Quality & Standings Tier Engine (`GOOD` vs `MEDIUM` vs `BAD` + Home/Road Split + Top-25 Rank)
+        def _team_standings_edge(my_comp: dict, opp_comp: dict) -> tuple[float, str]:
+            def _parse_comp_strength(c_obj: dict) -> tuple[float, str, str]:
+                recs = c_obj.get("records") or []
+                ov_sum = "0-0"
+                venue_sum = ""
+                is_home = (c_obj.get("homeAway") or "").lower() == "home"
+                for r_item in recs:
+                    r_type = (r_item.get("type") or r_item.get("name") or "").lower()
+                    s_val = str(r_item.get("summary") or "")
+                    if r_type in ("total", "overall") and "-" in s_val:
+                        ov_sum = s_val
+                    elif is_home and r_type == "home" and "-" in s_val:
+                        venue_sum = s_val
+                    elif not is_home and r_type in ("road", "away") and "-" in s_val:
+                        venue_sum = s_val
+
+                def _rec_to_wp(rec_s: str, prior_g: float = 4.0) -> float:
+                    try:
+                        nums = [float(x) for x in rec_s.split("-") if x.strip().isdigit()]
+                        if len(nums) == 2:
+                            w, l = nums[0], nums[1]
+                            return (w + 0.5 * prior_g) / max(1.0, w + l + prior_g)
+                        if len(nums) >= 3:
+                            w, l, ot_d = nums[0], nums[1], nums[2]
+                            return (w + 0.5 * ot_d + 0.5 * prior_g) / max(1.0, w + l + ot_d + prior_g)
+                    except Exception:
+                        pass
+                    return 0.50
+
+                ov_wp = _rec_to_wp(ov_sum, prior_g=4.0)
+                ven_wp = _rec_to_wp(venue_sum, prior_g=2.0) if venue_sum else ov_wp
+                strength = 0.70 * ov_wp + 0.30 * ven_wp
+                rank_val = int(c_obj.get("curatedRank", {}).get("current", 99) or 99)
+                if 1 <= rank_val <= 10:
+                    strength = min(0.92, strength + 0.14)
+                elif 11 <= rank_val <= 25:
+                    strength = min(0.86, strength + 0.08)
+                tier_lbl = "GOOD" if strength >= 0.57 else ("BAD" if strength <= 0.43 else "MED")
+                rank_str = f"#{rank_val} " if 1 <= rank_val <= 25 else ""
+                return strength, f"{rank_str}{ tier_lbl }({ov_sum})", tier_lbl
+
+            my_str, my_lbl, my_tier = _parse_comp_strength(my_comp)
+            opp_str, opp_lbl, opp_tier = _parse_comp_strength(opp_comp)
+            edge = my_str - opp_str
+            tag = f" | STANDINGS[{my_lbl} vs {opp_lbl}, edge={edge:+.2f}]" if abs(edge) >= 0.06 or my_tier != opp_tier else ""
+            return edge, tag
+
         # C2. Deep ESPN Live Box Score, Quarter/Halftime Linescore & Matchup Verification
         sp_path = None
         if series not in (
@@ -885,12 +933,17 @@ class PreTradeEducator:
                         sit_sp = comp.get("situation") or {}
                         if series.startswith(("KXNFL", "KXNCAAF")) and sit_sp.get("isRedZone") and str(sit_sp.get("possession") or "") == str(competitors[1 - c_idx].get("id") or ""):
                             req_spread_buf += 7.0
+                        # Standings Quality Tier Adjustment (`GOOD` vs `MEDIUM` vs `BAD`):
+                        # If a BAD/lower-tier team is leading a GOOD/higher-tier team (`st_edge <= -0.10`), require extra cushion ("Underdog Mirage Lead Shield")!
+                        st_edge, st_tag = _team_standings_edge(competitors[c_idx], competitors[1 - c_idx])
+                        if st_edge <= -0.10:
+                            req_spread_buf += 1.0 if ("NHL" in series or is_soccer) else 3.5
                         if margin <= 0 or margin < (strike_val + req_spread_buf):
                             return False, (
                                 f"VETO [ESPN {period_tag} Spread Cushion]: {tm_prefix} margin is {margin:+.0f} ({my_pts:.0f}-{opp_pts:.0f}) "
-                                f"vs -{strike_val:.1f} spread (requires +{strike_val + req_spread_buf:.1f} min lead) in P{live_period} {clock_disp}"
+                                f"vs -{strike_val:.1f} spread (requires +{strike_val + req_spread_buf:.1f} min lead{st_tag}) in P{live_period} {clock_disp}"
                             )
-                        lock_tag = " | PROP-LOCK" if margin >= (strike_val + req_spread_buf + 1.0) else ""
+                        lock_tag = (" | PROP-LOCK" if margin >= (strike_val + req_spread_buf + 1.0) or st_edge >= 0.12 else "") + st_tag
                         return True, f"ESPN {period_tag} Spread Verified ({tm_prefix} {my_pts:.0f}-{opp_pts:.0f}, margin {margin:+.0f} vs -{strike_val:.1f}{lock_tag} | P{live_period} {clock_disp})"
 
                 if req_periods is not None and "TOTAL" not in series and "SPREAD" not in series and len(competitors) >= 2:
@@ -911,22 +964,24 @@ class PreTradeEducator:
                             p_clk_m = float(str(clock_disp).replace("'", "").split(":")[0].split("+")[0] or 0)
                         except Exception:
                             p_clk_m = 6.0
+                        st_edge_w, st_tag_w = _team_standings_edge(competitors[c_idx], competitors[1 - c_idx])
                         # Clock-Aware Multi-Possession Shield for Quarter, Period & Half Winners across ALL leagues:
                         if is_soccer and margin < 2:
-                            if p_clk_m < 38.0:
-                                return False, f"VETO [Soccer 1H 1-Goal Risk]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} at {clock_disp} (<38' or <2 goal cushion)"
+                            if p_clk_m < 38.0 or st_edge_w <= -0.10:
+                                return False, f"VETO [Soccer 1H 1-Goal Risk]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} at {clock_disp} (<38' or <2 goal cushion{st_tag_w})"
                         elif "NHL" in series:
-                            req_nhl_p_cush = 1 if p_clk_m < 7.0 else 2
+                            req_nhl_p_cush = (2 if st_edge_w <= -0.10 else 1) if p_clk_m < 7.0 else 2
                             if margin < req_nhl_p_cush:
-                                return False, f"VETO [NHL {period_tag} Cushion]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} with {clock_disp} left (needs +{req_nhl_p_cush} goals)"
+                                return False, f"VETO [NHL {period_tag} Cushion]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} with {clock_disp} left (needs +{req_nhl_p_cush} goals{st_tag_w})"
                         elif series.startswith(("KXNFL", "KXNCAAF")):
-                            if margin < 7:
-                                return False, f"VETO [Football {period_tag} Cushion]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} (+{margin:.0f} < +7 pt full-TD min)"
+                            req_fb_p_cush = 10 if st_edge_w <= -0.10 else 7
+                            if margin < req_fb_p_cush:
+                                return False, f"VETO [Football {period_tag} Cushion]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} (+{margin:.0f} < +{req_fb_p_cush} pt min{st_tag_w})"
                         elif series.startswith(("KXNBA", "KXNCAAMB", "KXNCAAWB")):
-                            req_bb_p_cush = 6 if p_clk_m < 5.0 else 8
+                            req_bb_p_cush = (6 if p_clk_m < 5.0 else 8) + (3 if st_edge_w <= -0.10 else 0)
                             if margin < req_bb_p_cush:
-                                return False, f"VETO [Basketball {period_tag} Cushion]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} (+{margin:.0f} < +{req_bb_p_cush} pt min with {clock_disp} left)"
-                        lock_tag = " | PROP-LOCK" if margin >= 8 or (is_soccer and margin >= 2) else ""
+                                return False, f"VETO [Basketball {period_tag} Cushion]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} (+{margin:.0f} < +{req_bb_p_cush} pt min with {clock_disp} left{st_tag_w})"
+                        lock_tag = (" | PROP-LOCK" if margin >= 8 or (is_soccer and margin >= 2) or st_edge_w >= 0.12 else "") + st_tag_w
                         return True, f"ESPN {period_tag} Leader Verified ({suffix} leading {my_pts:.0f}-{opp_pts:.0f}{lock_tag} | P{live_period} {clock_disp})"
 
                 # 3. Deep Player Prop Box Score Check via ESPN Summary API (/summary?event={id}) — 100% FAIL-CLOSED!
@@ -1079,9 +1134,10 @@ class PreTradeEducator:
                                         f"by P{live_period} {clock_disp} (injury/locker-room/bench restriction risk!)"
                                     )
 
-                            # Compute Signed Team Score Differential for this specific player's team (`player_team_margin`):
-                            # Positive (+) means player's team is LEADING; Negative (-) means player's team is TRAILING!
+                            # Compute Signed Team Score Differential & Standings Tier Edge for this specific player's team:
                             player_team_margin = None
+                            player_st_edge = 0.0
+                            player_st_tag = ""
                             gm_margin = 0.0
                             total_gm_pts = 0.0
                             if len(competitors) >= 2:
@@ -1093,12 +1149,19 @@ class PreTradeEducator:
                                 tm1_abbr = (competitors[1].get("team", {}).get("abbreviation") or "").upper()
                                 if player_team_abbr == tm0_abbr:
                                     player_team_margin = sc0 - sc1
+                                    player_st_edge, player_st_tag = _team_standings_edge(competitors[0], competitors[1])
                                 elif player_team_abbr == tm1_abbr:
                                     player_team_margin = sc1 - sc0
+                                    player_st_edge, player_st_tag = _team_standings_edge(competitors[1], competitors[0])
 
                             # Period-Aware Hot-Hand Player Prop Pace Curve + Coaching Game-Script ("Enhance vs. Stall") Adjustments:
                             req_prop_pct = {1: 42.0, 2: 56.0, 3: 68.0}.get(live_period, 78.0)
-                            script_prop_tag = ""
+                            script_prop_tag = player_st_tag
+
+                            # 0. Standings Quality Mismatch on Player Props:
+                            # If a player on a BAD team faces a GOOD team (`player_st_edge <= -0.14`) in the 2nd Half, require +4.0% higher banked progress!
+                            if live_period >= 3 and player_st_edge <= -0.14 and prog_pct < 90.0:
+                                req_prop_pct += 4.0
 
                             # 1. NBA Early-Q2 / Early-Q4 Mandatory Starter Bench-Rotation Stall Shield:
                             # Coaches sub out primary starters from 12:00 down to ~7:30 of Q2 and Q4 (4.5 mins of dead bench clock!).
@@ -1284,25 +1347,27 @@ class PreTradeEducator:
                                 if sets_won[idx] > sets_won[opp_idx] and game_diff < min_set2_diff:
                                     return False, f"VETO [ESPN Tennis Momentum]: '{title}' down in current set ({cur_set_games[idx]:.0f}-{cur_set_games[opp_idx]:.0f}) despite set lead"
 
-                            # Anti-Fluke / Multi-Possession Cushion Shield on Full-Game Moneylines (Soccer, NHL, NBA, NFL)
+                            # Anti-Fluke / Multi-Possession Cushion Shield + Standings Quality Tier (`GOOD` vs `MEDIUM` vs `BAD`) on Full-Game Moneylines:
                             st_obj = comp.get("status", {})
                             period_num = int(st_obj.get("period", 1) or 1)
                             clock_disp = st_obj.get("displayClock", "")
+                            ml_st_edge, ml_st_tag = (0.0, "") if series in ("KXWTAMATCH", "KXATPMATCH") else _team_standings_edge(competitors[idx], competitors[opp_idx])
                             if "soccer/" in sport_path and margin < 2:
                                 try:
                                     clk_min = float(str(clock_disp).replace("'", "").split("+")[0] or 0)
                                 except Exception:
                                     clk_min = 0.0
-                                # Stoppage-Time Siege & Early-Game 1-Goal Draw Shield:
-                                if period_num < 2 or clk_min < 74.0 or "+" in str(clock_disp):
+                                # Stoppage-Time Siege, Early-Game 1-Goal Draw & Bad-vs-Good Mirage Shield:
+                                req_soc_clk = 82.0 if ml_st_edge <= -0.10 else 74.0
+                                if period_num < 2 or clk_min < req_soc_clk or "+" in str(clock_disp):
                                     return False, (
                                         f"VETO [Soccer 1-Goal / Stoppage-Time Risk]: '{title}' only leading {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
-                                        f"at {clock_disp} (requires 2+ goal cushion or 74'-89' regulation window!)"
+                                        f"at {clock_disp} (requires 2+ goal cushion or {req_soc_clk:.0f}'-89' regulation window{ml_st_tag}!)"
                                     )
-                            elif series == "KXNHLGAME" and margin < 2 and period_num < 3:
+                            elif series == "KXNHLGAME" and margin < 2 and (period_num < 3 or ml_st_edge <= -0.10):
                                 return False, (
                                     f"VETO [NHL 1-Goal Risk]: '{title}' only up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
-                                    f"in P{period_num} (requires 2+ goal lead or 3rd Period!)"
+                                    f"in P{period_num} (requires 2+ goal lead{ml_st_tag}!)"
                                 )
                             elif series in ("KXNBAGAME", "KXNCAAMBGAME", "KXNCAAWBGAME"):
                                 # Strict Multi-Possession Full-Game Moneyline Cushion:
@@ -1319,13 +1384,17 @@ class PreTradeEducator:
                                     min_bball_margin = 12
                                 else:
                                     min_bball_margin = 5 if q4_clk_m < 3.0 else 8
+                                if ml_st_edge <= -0.10:
+                                    min_bball_margin += 4
                                 if margin < min_bball_margin:
                                     return False, (
                                         f"VETO [Basketball Cushion/Time Gate]: '{title}' up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
-                                        f"(+{margin:.0f} < +{min_bball_margin} pt min in P{period_num} {clock_disp} — avoiding fragile Q3/Q4 leads!)"
+                                        f"(+{margin:.0f} < +{min_bball_margin} pt min in P{period_num} {clock_disp}{ml_st_tag} — avoiding fragile Q3/Q4 leads!)"
                                     )
                             elif series in ("KXNFLGAME", "KXNCAAFGAME"):
                                 min_fball_margin = 14 if period_num <= 2 else (10 if period_num == 3 else 7)
+                                if ml_st_edge <= -0.10:
+                                    min_fball_margin += 4
                                 # Opponent Driving in Red Zone Threat Shield:
                                 # If the trailing opponent has possession inside the Red Zone (about to score 7 pts!), add +7 pts to required cushion!
                                 sit_fb = comp.get("situation") or {}
@@ -1334,11 +1403,11 @@ class PreTradeEducator:
                                 if margin < min_fball_margin:
                                     return False, (
                                         f"VETO [Football Cushion / Red-Zone Gate]: '{title}' up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
-                                        f"(+{margin:.0f} < +{min_fball_margin} pt min in P{period_num} — avoiding single-TD / Red-Zone flips!)"
+                                        f"(+{margin:.0f} < +{min_fball_margin} pt min in P{period_num}{ml_st_tag} — avoiding single-TD / Red-Zone flips!)"
                                     )
 
                             # Check Vegas Opening vs Closing Line Movement, Game Clock Period & Live Win Probability
-                            vegas_note = ""
+                            vegas_note = ml_st_tag
                             try:
                                 is_4q_sport = series in ("KXNBAGAME", "KXNFLGAME", "KXNCAAFGAME", "KXNCAAWBGAME")
                                 is_late_clock = (period_num >= 3) if is_4q_sport else (period_num >= 2)

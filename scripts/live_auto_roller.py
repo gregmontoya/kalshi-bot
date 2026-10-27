@@ -1449,13 +1449,24 @@ class PreTradeEducator:
                                     req_prop_pct = max(40.0, req_prop_pct - 3.0)
                                     script_prop_tag += f" | +FT-VOLUME-FLOOR(FGA={fga_val:.0f},FTA={fta_val:.0f})"
 
-                            # 1C. NBA Late-4Q "Walk-Ball-Up 24s Shot-Clock Bleed" Stall (`KXNBAAST`, `KXNBAPTS`, `KXNBAPRA`, `KXNBAPR`, `KXNBAPA`):
-                            # When leading by >=10 pts in the final 6:00 of Q4, the leading team walks the ball up and bleeds the 24s shot clock down to :02!
-                            if series in ("KXNBAAST", "KXNBAPTS", "KXNBAPRA", "KXNBAPR", "KXNBAPA") and live_period >= 4 and clk_m < 6.0 and player_team_margin is not None and player_team_margin >= 10.0 and prog_pct < 90.0:
-                                return False, (
-                                    f"VETO [NBA 4Q 24s Shot-Clock Bleed]: {player_team_abbr} up +{player_team_margin:.0f} in P4 {clock_disp} "
-                                    f"— leading team milks 24s shot clock (stalls stats at {found_stat:.0f}/{target_val:.0f})!"
-                                )
+                            # 1C. NBA Score-Script Engine ("Trailing Star Chase-Mode Urgency" vs. "Leading 24s Shot-Clock Bleed"):
+                            if series in nba_prop_Set and player_team_margin is not None and live_period >= 2:
+                                # TRAILING URGENCY BOOST: When an NBA starter's team is down 4 to 14 pts, coaches skip bench rest and stars push pace!
+                                if -14.0 <= player_team_margin <= -4.0 and "TIER4" not in script_prop_tag:
+                                    req_prop_pct = max(40.0, req_prop_pct - 3.5)
+                                    script_prop_tag += f" | +NBA-TRAILING-URGENCY-BOOST({player_team_abbr} {player_team_margin:+.0f})"
+                                # LEADING STALL VETO: When leading by >=10 pts in final 6:00 of Q4, point guard walks ball up & bleeds 24s shot clock!
+                                elif series in ("KXNBAAST", "KXNBAPTS", "KXNBAPRA", "KXNBAPR", "KXNBAPA") and live_period >= 4 and clk_m < 6.0 and player_team_margin >= 10.0 and prog_pct < 90.0:
+                                    return False, (
+                                        f"VETO [NBA 4Q 24s Shot-Clock Bleed]: {player_team_abbr} up +{player_team_margin:.0f} in P4 {clock_disp} "
+                                        f"— leading team milks 24s shot clock (stalls stats at {found_stat:.0f}/{target_val:.0f})!"
+                                    )
+                                # LATE-Q3 "NO-4TH-QUARTER" STAR REST SHIELD: When leading by >=16 pts with <4:00 left in Q3, stars often sit the entire 4th quarter!
+                                elif live_period == 3 and clk_m < 4.0 and player_team_margin >= 16.0 and prog_pct < 92.0:
+                                    return False, (
+                                        f"VETO [NBA No-4Q Blowout Rest Risk]: {player_team_abbr} up +{player_team_margin:.0f} late in Q3 ({clock_disp}) "
+                                        f"— starters often sit the entire 4th quarter!"
+                                    )
 
                             # 1D. NBA Rebound Scarcity ("Hyper-Shooting / No Missed Shots" Drought) on `KXNBAREB`:
                             # When both teams shoot 58%+ FG% (e.g. >135 pts by Halftime or >195 pts by Q3), available rebounds plummet by 30%!
@@ -1523,11 +1534,18 @@ class PreTradeEducator:
                                         f"— winning team runs the clock (stalls QB/WR passing stats)!"
                                     )
                                 if live_period >= 3:
-                                    max_blowout = 20.0 if series in nba_prop_Set else 17.0
+                                    # Clock-Scaled White-Flag Blowout Bench Shield:
+                                    # - In Q3: 18 pts NBA / 17 pts NFL
+                                    # - In Early Q4 (>=5:00 left): 15 pts NBA / 16 pts NFL
+                                    # - In Late Q4 (<5:00 left): 12 pts NBA / 14 pts NFL (coaches empty the bench with a 5-for-5 hockey sub!)
+                                    if series in nba_prop_Set:
+                                        max_blowout = 18.0 if live_period == 3 else (12.0 if clk_m < 5.0 else 15.0)
+                                    else:
+                                        max_blowout = 17.0 if live_period == 3 else (14.0 if clk_m < 5.0 else 16.0)
                                     if gm_margin >= max_blowout:
                                         return False, (
-                                            f"VETO [Blowout Bench Risk]: Game margin is {gm_margin:.0f} pts in P{live_period} "
-                                            f"— starters risk getting benched in garbage time!"
+                                            f"VETO [White-Flag Blowout Bench Risk]: Game margin is {gm_margin:.0f} pts (>={max_blowout:.0f} max) "
+                                            f"in P{live_period} {clock_disp} — coaches rest starters in blowouts!"
                                         )
                             lock_tag = (" | PROP-LOCK" if prog_pct >= (req_prop_pct + 12.0) else "") + script_prop_tag
                             if str(clock_disp).strip() in ("0:00", "0.0", ""):
@@ -1811,6 +1829,34 @@ class PreTradeEducator:
                         self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
                         self.save_memory()
                         return False, f"VETO: Negative tape drift ({momentum_delta}c over last {len(window_10)} trades — only buying rising/flat leaders)", 0.0
+
+                    # Gate 2A-0: Multi-Timeframe Anti-Falling-Knife & Live Orderbook Divergence Shield:
+                    # 1) Zero Down-Tick Law: Last print (`newest_c`) must NOT be lower than the print immediately before it (`t_prices[1]`) or the 3-print average!
+                    prev_3_avg = sum(t_prices[1:4]) / max(1, len(t_prices[1:4]))
+                    if newest_c < t_prices[1] or newest_c < (prev_3_avg - 0.5):
+                        self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+                        self.save_memory()
+                        return False, (
+                            f"VETO [Micro Falling Knife]: Last trade ticked DOWN ({t_prices[1]}c -> {newest_c}c, 3-trade avg={prev_3_avg:.1f}c) "
+                            "— waiting for confirmed uptick!"
+                        ), 0.0
+                    # 2) Live Orderbook Falling Knife Shield: Live best bid must not have dropped >=2c below the last executed trade!
+                    if (ob.best_yes_bid or 0) < (newest_c - 1):
+                        self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+                        self.save_memory()
+                        return False, (
+                            f"VETO [Orderbook Falling Knife]: Live bid ({ob.best_yes_bid}c) dropped below last trade ({newest_c}c) "
+                            "— market makers pulling bids!"
+                        ), 0.0
+                    # 3) Anti-Single-Print Spoof Jump Filter: A single isolated jump (>3.5c above the 3-trade average) must print at least 2-3 fills at the new level!
+                    cur_3_avg = sum(t_prices[:3]) / 3.0
+                    if (newest_c - cur_3_avg) > 3.5:
+                        self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+                        self.save_memory()
+                        return False, (
+                            f"VETO [Unconfirmed Single-Print Jump]: Last print ({newest_c}c) jumped +{newest_c - cur_3_avg:.1f}c above 3-trade avg "
+                            f"({cur_3_avg:.1f}c) — waiting for multi-trade support at this level!"
+                        ), 0.0
 
                     # Gate 2A: Pop-and-Drop / Peak Pullback Veto (Jumped up and is now dropping back down!)
                     tape_high_c = max(t_prices[:12])

@@ -1725,15 +1725,15 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     except Exception:
                         pass
 
-            # Anti-Cluster Stagger Shield: Never allow more than 2 filled unshielded (pre-Stage-1) plays at the exact same time,
-            # while allowing up to 3 resting Maker bids across different games/props so we never sit idle waiting on 1 bid!
+            # Anti-Cluster Stagger Shield: Allow a full 3-Leg Basket (3 unshielded legs across independent games)
+            # so $130+ cash never sits idle on the bench, while unlocking slots 4-5 once any leg banks Stage-1 (+6c)!
             unshielded_open_count = sum(
                 1
                 for tk_o, tr_o in tracked_open_positions.items()
                 if not tr_o.get("stage1_alerted", False)
             )
 
-            if total_cents >= min_stake_c and len(resting_buy_tickers) < min(3, tier["max_concurrent"]) and unshielded_open_count < 2:
+            if total_cents >= min_stake_c and len(resting_buy_tickers) < min(3, tier["max_concurrent"]) and unshielded_open_count < 3:
                 shard_cents = {0: 0, 1: 0, 2: 0, 3: 0}
                 for b_item in bal.get("balance_breakdown", []):
                     idx = b_item.get("exchange_index")
@@ -1913,7 +1913,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     if (
                         event_prefix in active_events
                         or total_cents < min_stake_c
-                        or unshielded_open_count >= 2
+                        or unshielded_open_count >= 3
                         or len(resting_buy_tickers) >= min(3, tier["max_concurrent"])
                         or (is_crypto_t and active_crypto_count >= 1)
                         or (is_index_t and active_index_count >= 1)

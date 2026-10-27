@@ -9,6 +9,7 @@ Enforces:
 - No Native Combos (all combinations must be synthetic baskets)
 """
 
+import asyncio
 import logging
 import uuid
 from typing import Any, Optional
@@ -77,29 +78,34 @@ class KalshiClient:
     ) -> dict[str, Any]:
         """Performs HTTP request with RSA-PSS authentication headers if required."""
         client = await self.get_client()
-        headers = {}
+        for attempt in range(3):
+            headers = {}
+            if authenticated:
+                if not self.signer or not self.signer.has_key:
+                    raise ValueError("Authenticated request requires loaded KalshiAuthSigner credentials")
+                # Ensure full trade-api/v2 prefix for signature matching Kalshi CLOB requirement
+                clean_path = path if path.startswith("/trade-api/v2") else f"/trade-api/v2{path if path.startswith('/') else '/' + path}"
+                auth_headers = self.signer.get_auth_headers(method=method, path_or_url=clean_path)
+                headers.update(auth_headers)
 
-        if authenticated:
-            if not self.signer or not self.signer.has_key:
-                raise ValueError("Authenticated request requires loaded KalshiAuthSigner credentials")
-            # Ensure full trade-api/v2 prefix for signature matching Kalshi CLOB requirement
-            clean_path = path if path.startswith("/trade-api/v2") else f"/trade-api/v2{path if path.startswith('/') else '/' + path}"
-            auth_headers = self.signer.get_auth_headers(method=method, path_or_url=clean_path)
-            headers.update(auth_headers)
+            response = await client.request(
+                method=method,
+                url=path,
+                params=params,
+                json=json_data,
+                headers=headers,
+            )
 
-        response = await client.request(
-            method=method,
-            url=path,
-            params=params,
-            json=json_data,
-            headers=headers,
-        )
+            if response.status_code == 429 and attempt < 2:
+                await asyncio.sleep(0.25 * (attempt + 1))
+                continue
 
-        if response.status_code >= 400:
-            logger.error("Kalshi API error %s: %s", response.status_code, response.text)
-            response.raise_for_status()
+            if response.status_code >= 400:
+                logger.error("Kalshi API error %s: %s", response.status_code, response.text)
+                response.raise_for_status()
 
-        return response.json()
+            return response.json()
+        return {}
 
     # -------------------------------------------------------------------------
     # Public Market Data Endpoints

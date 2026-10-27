@@ -1723,15 +1723,15 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     except Exception:
                         pass
 
-            # Anti-Cluster Stagger Shield: Never allow more than 2 unshielded (pre-Stage-1) plays at the exact same time!
-            # Once a play hits Stage-1 (+6c) and locks its Breakeven Shield, it becomes a 0%-risk runner and unlocks the next slot!
+            # Anti-Cluster Stagger Shield: Never allow more than 2 filled unshielded (pre-Stage-1) plays at the exact same time,
+            # while allowing up to 3 resting Maker bids across different games/props so we never sit idle waiting on 1 bid!
             unshielded_open_count = sum(
                 1
                 for tk_o, tr_o in tracked_open_positions.items()
                 if not tr_o.get("stage1_alerted", False)
-            ) + len(resting_buy_tickers)
+            )
 
-            if total_cents >= min_stake_c and len(resting_buy_tickers) < tier["max_concurrent"] and unshielded_open_count < 2:
+            if total_cents >= min_stake_c and len(resting_buy_tickers) < min(3, tier["max_concurrent"]) and unshielded_open_count < 2:
                 shard_cents = {0: 0, 1: 0, 2: 0, 3: 0}
                 for b_item in bal.get("balance_breakdown", []):
                     idx = b_item.get("exchange_index")
@@ -1865,20 +1865,21 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 continue
 
                             clean_title = m.get("yes_sub_title") or m.get("title", t)
-                            # Fast-Settlement Velocity Cap: Quarters/Periods resolve in ~10m, Halves in ~20m, Player Props mid-game!
+                            # Fast-Settlement Velocity Cap: Quarters/Periods resolve in ~8m, Player Props in ~12m, Halves in ~20m!
                             eff_mins = max(0.0, mins_to_exp)
                             is_q_series = any(q in series for q in ("1Q", "2Q", "3Q", "4Q", "1P", "2P", "3P"))
+                            is_prop_mkt = len(t.split("-")) >= 4
                             if is_q_series:
                                 eff_mins = min(eff_mins, 8.0)
+                            elif is_prop_mkt:
+                                eff_mins = min(eff_mins, 12.0)
                             elif any(h in series for h in ("1H", "2H")):
                                 eff_mins = min(eff_mins, 20.0)
-                            elif len(t.split("-")) >= 4:
-                                eff_mins = min(eff_mins, 30.0)
-                            # "Hot Quarter King" Priority (-30.0 bonus): ALWAYS attack the hot 12-min Quarter (1Q-4Q / 1P-3P)
-                            # BEFORE Halftime or Full-Game lines so we cash out at $1.00 in 5-8 minutes without sweating the next quarter!
-                            quarter_king_bonus = -30.0 if is_q_series else 0.0
+                            # "Hot Quarter & Player Prop King" Priority: ALWAYS attack 12-min Quarters (-30.0) and Hot Player Props (-25.0)
+                            # BEFORE Halftime or Full-Game lines!
+                            quarter_king_bonus = -30.0 if is_q_series else (-25.0 if is_prop_mkt else 0.0)
                             # "One-Way Ratchet" Bonus: Prefer Over Totals & Player Props (where stats can ONLY go up, never backwards!)
-                            is_one_way_ratchet = ("TOTAL" in series) or ("BTTS" in series) or ("CORNERS" in series) or (len(t.split("-")) >= 4)
+                            is_one_way_ratchet = ("TOTAL" in series) or ("BTTS" in series) or ("CORNERS" in series) or is_prop_mkt
                             ratchet_bonus = -12.0 if is_one_way_ratchet else 0.0
                             # Alt-Line Cushion Priority ("Buying Points / Safer Strike First"):
                             # Within the 76c-87c zone on the same game/player, prefer the LOWER strike number first
@@ -1886,16 +1887,24 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             import re as _re
                             _m_strike = _re.search(r"(\d+(?:\.\d+)?)$", t.split("-")[-1])
                             alt_line_safety_tiebreaker = float(_m_strike.group(1)) * 0.04 if _m_strike else 0.0
-                            # Velocity Priority Score: Hot Quarter First + Tightest spread + One-Way Ratchet + safest Alt-Line strike
+                            # Velocity Priority Score: Hot Quarter/Prop First + Tightest spread + One-Way Ratchet + safest Alt-Line strike
                             vel_score = (spread_c * 25.0) + eff_mins + quarter_king_bonus + ratchet_bonus + alt_line_safety_tiebreaker
                             candidates.append((vel_score, mins_to_exp, t, clean_title, shard_key))
                     except Exception:
                         pass
 
-                # Sort by Fastest Capital Turnover Velocity (1c spreads & closest to finishing first!)
+                # Sort by Fastest Capital Turnover Velocity, then deduplicate to max 2 alt-strikes per game/player
+                # so one game with 10 alt-lines never pushes Player Props or other sports out of the inspection queue!
                 candidates.sort(key=lambda x: x[0])
+                dedup_candidates = []
+                seen_entity_counts: dict[str, int] = {}
+                for cand in candidates:
+                    ek = _entity_key(cand[2])
+                    if seen_entity_counts.get(ek, 0) < 2:
+                        seen_entity_counts[ek] = seen_entity_counts.get(ek, 0) + 1
+                        dedup_candidates.append(cand)
 
-                for _vel, mins_left, t, title, shard_key in candidates[:35]:
+                for _vel, mins_left, t, title, shard_key in dedup_candidates[:40]:
                     event_prefix = _entity_key(t)
                     is_crypto_t = t.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB"))
                     is_index_t = t.startswith(("KXINX", "KXNASDAQ", "KXWTI"))
@@ -1903,6 +1912,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         event_prefix in active_events
                         or total_cents < min_stake_c
                         or unshielded_open_count >= 2
+                        or len(resting_buy_tickers) >= min(3, tier["max_concurrent"])
                         or (is_crypto_t and active_crypto_count >= 1)
                         or (is_index_t and active_index_count >= 1)
                     ):
@@ -1999,7 +2009,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                     )
                                     resting_buy_tickers.add(t)
                                     active_events.add(event_prefix)
-                                    unshielded_open_count += 1
                                     if is_crypto_t:
                                         active_crypto_count += 1
                                     if is_index_t:

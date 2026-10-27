@@ -1131,27 +1131,37 @@ class PreTradeEducator:
                 ov_wp = _rec_to_wp(ov_sum, prior_g=4.0)
                 ven_wp = _rec_to_wp(venue_sum, prior_g=2.0) if venue_sum else ov_wp
                 strength = 0.70 * ov_wp + 0.30 * ven_wp
-                # Blend with Explicit Franchise Power Tier Priors (so early-season 2-2 records still recognize Elite Contenders vs. Tanking Teams!)
+                # Blend with Sport-Aware Franchise Power Tier Priors (so early-season records still recognize Elite Contenders vs. Tanking Teams!)
                 tm_ab = (c_obj.get("team", {}).get("abbreviation") or "").upper()
-                elite_franchises = {"BOS", "OKC", "DEN", "CLE", "NYK", "MIN", "DAL", "HOU", "GSW", "KC", "DET", "BAL", "BUF", "PHI", "GB", "FLA", "EDM", "CAR", "DAL", "WPG", "RMA", "MCI", "FCB", "ARS", "LIV", "BAY", "INT"}
-                bad_tanking_franchises = {"WAS", "UTA", "BKN", "CHA", "POR", "TOR", "CAR", "NE", "NYG", "TEN", "LV", "CLE", "SJS", "ANA", "CBJ", "CHI"}
+                if series.startswith("KXNBA"):
+                    elite_franchises = {"BOS", "OKC", "DEN", "CLE", "NYK", "MIN", "DAL", "PHX", "GSW", "HOU", "LAL", "ORL", "IND", "MIL"}
+                    bad_tanking_franchises = {"WAS", "UTA", "BKN", "CHA", "POR", "DET", "TOR"}
+                elif series.startswith("KXNHL"):
+                    elite_franchises = {"FLA", "DAL", "EDM", "CAR", "VGK", "WPG", "COL", "NYR", "TOR", "NJD", "TBL", "VAN", "BOS"}
+                    bad_tanking_franchises = {"SJS", "CHI", "ANA", "CBJ", "MTL", "CGY", "PHI"}
+                elif series.startswith("KXNFL"):
+                    elite_franchises = {"KC", "DET", "BAL", "BUF", "SF", "PHI", "GB", "HOU", "MIN", "WAS", "ATL", "PIT"}
+                    bad_tanking_franchises = {"CAR", "NE", "NYG", "TEN", "LV", "CLE", "JAX", "NO", "MIA"}
+                else:
+                    elite_franchises = {"RMA", "MCI", "FCB", "ARS", "LIV", "BAY", "INT", "PSG", "B04", "ATM", "JUV", "NAP", "DOR"}
+                    bad_tanking_franchises = {"SOU", "IPS", "WOL", "LEC", "VLL", "LAS", "MON", "VEN", "CAG", "BOC", "KIL"}
                 if tm_ab in elite_franchises:
-                    strength = min(0.90, strength + 0.07)
+                    strength = min(0.92, strength + 0.09)
                 elif tm_ab in bad_tanking_franchises:
-                    strength = max(0.15, strength - 0.07)
+                    strength = max(0.15, strength - 0.09)
                 rank_val = int(c_obj.get("curatedRank", {}).get("current", 99) or 99)
                 if 1 <= rank_val <= 10:
-                    strength = min(0.92, strength + 0.14)
+                    strength = min(0.93, strength + 0.14)
                 elif 11 <= rank_val <= 25:
-                    strength = min(0.86, strength + 0.08)
-                tier_lbl = "ELITE" if strength >= 0.65 else ("GOOD" if strength >= 0.56 else ("BAD" if strength <= 0.43 else "MED"))
+                    strength = min(0.87, strength + 0.08)
+                tier_lbl = "ELITE" if strength >= 0.63 else ("GOOD" if strength >= 0.55 else ("BAD" if strength <= 0.43 else "MED"))
                 rank_str = f"#{rank_val} " if 1 <= rank_val <= 25 else ""
-                return strength, f"{rank_str}{ tier_lbl }({ov_sum})", tier_lbl
+                return strength, f"{rank_str}{tier_lbl}({ov_sum})", tier_lbl
 
             my_str, my_lbl, my_tier = _parse_comp_strength(my_comp)
             opp_str, opp_lbl, opp_tier = _parse_comp_strength(opp_comp)
             edge = my_str - opp_str
-            tag = f" | STANDINGS[{my_lbl} vs {opp_lbl}, edge={edge:+.2f}]" if abs(edge) >= 0.06 or my_tier != opp_tier else ""
+            tag = f" | STANDINGS[{my_lbl} vs {opp_lbl}, edge={edge:+.2f}]"
             return edge, tag
 
         # C2. Deep ESPN Live Box Score, Quarter/Halftime Linescore & Matchup Verification
@@ -2157,8 +2167,34 @@ class PreTradeEducator:
                             f"VETO [Whip-Saw Percentage Volatility]: Price ping-ponging ({total_path_c}c total swing for only "
                             f"{momentum_delta:+d}c net move, efficiency={eff_ratio:.0%})!"
                         ), 0.0
-                    if 2 <= momentum_delta <= 14 and pullback_from_peak_c <= 1 and eff_ratio >= 0.60:
-                        tape_velocity_tag = f" | +STAIR-STEP-VELOCITY(Eff={eff_ratio:.0%})"
+
+                    # Gate 2D: Sustained Plateau & Trend Hold Filter (Prevents Buying 5-Second Flash Pops That Drop -1c to -2c!)
+                    # Require that the last 4 prints have stayed supported within <=3c of `newest_c`, AND if the contract
+                    # climbed >= +6c recently, require at least >=25s of sustained plateau hold time across the last 4 trades!
+                    last_4_p = t_prices[:min(4, len(t_prices))]
+                    if min(last_4_p) < (newest_c - 3):
+                        self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+                        self.save_memory()
+                        return False, (
+                            f"VETO [Unheld Flash Pop — No Plateau Support]: Last 4 prints ({last_4_p}) haven't stabilized within 3c of {newest_c}c yet "
+                            "— waiting for price to hold steady so it doesn't dip 1-2% after entry!"
+                        ), 0.0
+                    plateau_dwell_sec = 60.0
+                    if len(trades) >= 4:
+                        try:
+                            t4_dt = datetime.fromisoformat(trades[3]["created_time"].replace("Z", "+00:00"))
+                            plateau_dwell_sec = max(0.0, (now_utc - t4_dt).total_seconds())
+                        except Exception:
+                            plateau_dwell_sec = 60.0
+                    if momentum_delta >= 6 and plateau_dwell_sec < 25.0 and not is_quarter_mkt:
+                        self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+                        self.save_memory()
+                        return False, (
+                            f"VETO [Too-Fast Pop Without Plateau Hold]: Climbed +{momentum_delta}c in only {plateau_dwell_sec:.0f}s "
+                            "— waiting >=25s at plateau to confirm support!"
+                        ), 0.0
+                    if 0 <= momentum_delta <= 14 and pullback_from_peak_c <= 1 and min(last_4_p) >= (newest_c - 2):
+                        tape_velocity_tag = f" | +PLATEAU-HOLD({plateau_dwell_sec:.0f}s, Eff={eff_ratio:.0%})"
         except Exception as e:
             return False, f"VETO: Trade tape unavailable ({e})", 0.0
 
@@ -2176,7 +2212,37 @@ class PreTradeEducator:
         if tape_velocity_tag:
             ext_reason += tape_velocity_tag
 
-        # 4. Self-Learning Series & Archetype Confidence Multiplier + A+ Whale Wall Boost
+        # 4. Institutional 0-100 Team/Player Pedigree & Trend Confidence Score + Minimum 75/100 Gate:
+        conf_score = 76
+        if "STANDINGS[ELITE" in ext_reason or "STANDINGS[#" in ext_reason or "FANTASY-ALPHA" in ext_reason:
+            conf_score += 10
+        elif "STANDINGS[GOOD" in ext_reason or "STARTER#1" in ext_reason:
+            conf_score += 5
+        elif "STANDINGS[BAD" in ext_reason:
+            conf_score -= 12  # Penalize bad/tanking teams heavily so weak leads get vetoed!
+        if "vs BAD(" in ext_reason:
+            conf_score += 4   # Bonus when playing AGAINST a bad/tanking opponent!
+        elif "vs ELITE(" in ext_reason and not is_under_no:
+            conf_score -= 5   # Caution when leading against an Elite powerhouse opponent!
+        if "+PLATEAU-HOLD" in ext_reason:
+            conf_score += 5
+        if imbalance_ratio >= 2.25:
+            conf_score += 5
+        elif imbalance_ratio >= 1.75:
+            conf_score += 3
+        if "PINNACLE-SHARP" in ext_reason or "VEGAS-STEAM" in ext_reason:
+            conf_score += 4
+        if "CLOCK-FROZEN" in ext_reason or "LATE-CLOCK" in ext_reason or is_under_no:
+            conf_score += 4
+        conf_score = max(10, min(99, conf_score))
+        if conf_score < 75:
+            self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+            self.save_memory()
+            return False, (
+                f"VETO [Low Team Pedigree / Confidence Score: {conf_score}/100 < 75 min]: Shaky team quality or matchup ({ext_reason})"
+            ), 0.0
+        self.memory.setdefault("last_conf_scores", {})[ticker] = conf_score
+
         conf_mult = 1.0
         if series_pnl > 0:
             conf_mult = 1.15  # Boost allocation 15% on proven profitable series
@@ -2201,7 +2267,7 @@ class PreTradeEducator:
 
         self.save_memory()
         reason = (
-            f"APPROVED [Whale={imbalance_ratio:.2f}x | Depth=${yes_depth:.0f} | LastTrade={last_trade_mins_ago:.1f}m | Tape={momentum_delta:+d}c | {ext_reason}]"
+            f"APPROVED [CONF={conf_score}/100 | Whale={imbalance_ratio:.2f}x | Depth=${yes_depth:.0f} | LastTrade={last_trade_mins_ago:.1f}m | Tape={momentum_delta:+d}c | {ext_reason}]"
         )
         return True, reason, conf_mult
 
@@ -2595,19 +2661,19 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 exp_dlr = float(pos.get("market_exposure_dollars", "0") or 0)
                 avg_entry_cents = int(round((exp_dlr / abs(pos_fp)) * 100)) if exp_dlr > 0 else 80
                 max_orig_cnt = int(tracked_open_positions.get(ticker, {}).get("max_count", whole_pos) or whole_pos)
+                pos_conf_score = int(educator.memory.get("last_conf_scores", {}).get(ticker, 83) or 83)
                 # Stage-1 is ONLY banked when >=40% of contracts have ACTUALLY filled & cashed out (never on an unfilled touch!)
                 stage1_banked = (max_orig_cnt >= 6 and whole_pos <= int(max_orig_cnt * 0.58))
-                # TIGHT -10c STOP-LOSS CAP (Rule 4):
-                # - Once Stage-1 (60% of contracts) has sold at +6c, lock the remaining 40% runner's floor at `avg_entry_cents - 3`
-                #   so `(0.60 * +6c) + (0.40 * -3c) = +2.4c` GUARANTEED NET PROFIT!
-                # - Before Stage-1 banks, cap maximum loss at `-10c` (`avg_entry_cents - 10`, minimum 62c) so a losing play
-                #   only costs ~$5-$6 (1.3% of account), NEVER a -35c to -54c crash!
+                # CONFIDENCE-TUNED STOP-LOSS & STAGE-1 SHIELD:
+                # - Elite Powerhouse Teams (`pos_conf_score >= 85/100`): full `-10c` stop-loss buffer so a 1-play blip never shakes us out!
+                # - Medium-Confidence Teams (`pos_conf_score < 82/100`): tighter `-8c` leash + 70% Stage-1 early profit lock!
+                max_stop_dist = 10 if pos_conf_score >= 82 else 8
                 if stage1_banked:
                     stop_floor_c = max(65, avg_entry_cents - 3)
                 elif peaked >= avg_entry_cents + 4:
-                    stop_floor_c = max(64, avg_entry_cents - 7)
+                    stop_floor_c = max(64, avg_entry_cents - min(7, max_stop_dist - 2))
                 else:
-                    stop_floor_c = max(62, avg_entry_cents - 10)
+                    stop_floor_c = max(62, avg_entry_cents - max_stop_dist)
                 thesis_broken_guillotine = (0 < cur_bid <= stop_floor_c) and (cur_ask <= stop_floor_c + 4)
                 if thesis_broken_guillotine:
                     logger.warning(
@@ -2687,9 +2753,10 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     wave_tp = max(fast_tp + 3, min(96, avg_entry_cents + 11))
 
                     if uncovered >= 4:
-                        fast_cnt = max(2, int(round(uncovered * 0.60)))
+                        s1_ratio = 0.60 if pos_conf_score >= 82 else 0.70
+                        fast_cnt = max(2, int(round(uncovered * s1_ratio)))
                         wave_cnt = uncovered - fast_cnt
-                        legs = [(fast_cnt, fast_tp, "Stage-1 Fast-Flip (+6c Target)"), (wave_cnt, wave_tp, "Stage-2 Wave-Rider (+11c Target)")]
+                        legs = [(fast_cnt, fast_tp, f"Stage-1 Fast-Flip (+6c, {int(s1_ratio*100)}%)"), (wave_cnt, wave_tp, "Stage-2 Wave-Rider (+11c Target)")]
                     else:
                         legs = [(uncovered, fast_tp, "Fast-Flip Harvest (+6c Target)")]
 
@@ -3011,8 +3078,9 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             if not approved:
                                 continue
 
-                            # Front-of-Queue Spread-Capture Entry Discount: bid (side_bid + 1) on 2c-3c spreads to save +1c for free!
-                            bid_cents = max(side_bid + 1, side_ask - 2) if spread >= 2 else (side_ask - 1)
+                            # Join the Whale Bid Wall (`side_bid`) on 1c-2c spreads so the Whale Wall sits AT our entry price (zero -1c/-2c post-fill drop!),
+                            # and only step +1c (`side_bid + 1`) on a 3c spread:
+                            bid_cents = side_bid if spread <= 2 else (side_bid + 1)
                             entry_order_side = "ask" if is_under_cand else "bid"
                             eff_yes_entry_c = max(1, min(99, 100 - bid_cents)) if is_under_cand else bid_cents
                             price_str = f"{eff_yes_entry_c / 100:.4f}"

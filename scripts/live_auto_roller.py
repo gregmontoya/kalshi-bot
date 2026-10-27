@@ -750,12 +750,21 @@ class PreTradeEducator:
                     else:
                         cur_pts = _comp_window_pts(competitors[0]) + _comp_window_pts(competitors[1])
                     prog_pct = (cur_pts / target_val) * 100.0
-                    if prog_pct < 65.0:
+                    # Period-Aware Scoring Pace Curve:
+                    # - Quarter/Half Totals (req_periods is not None): require >= 60% of that Quarter/Half total banked
+                    # - Full-Game Totals: P1 >= 36% (144% pace), P2 >= 56% (112% pace), P3 >= 66%, P4 >= 76%
+                    if req_periods is not None:
+                        req_tot_pct = 60.0
+                    elif is_soccer:
+                        req_tot_pct = 55.0 if live_period == 1 else 68.0
+                    else:
+                        req_tot_pct = {1: 36.0, 2: 56.0, 3: 66.0}.get(live_period, 76.0)
+                    if prog_pct < req_tot_pct:
                         return False, (
                             f"VETO [ESPN {period_tag} Total]: Only {cur_pts:.0f}/{target_val:.1f} pts scored "
-                            f"({prog_pct:.0f}% < 65% min in P{live_period} {clock_disp})"
+                            f"({prog_pct:.0f}% < {req_tot_pct:.0f}% min for P{live_period} {clock_disp})"
                         )
-                    lock_tag = (" | PROP-LOCK" if prog_pct >= 80.0 else "") + vegas_steam_tag
+                    lock_tag = (" | PROP-LOCK" if prog_pct >= (req_tot_pct + 12.0) else "") + vegas_steam_tag
                     return True, f"ESPN {period_tag} Total Verified ({cur_pts:.0f}/{target_val:.1f} = {prog_pct:.0f}% banked{lock_tag} | P{live_period} {clock_disp})"
 
                 if "SPREAD" in series and len(competitors) >= 2 and m_suf and m_suf.group(1):
@@ -866,20 +875,32 @@ class PreTradeEducator:
                                             elif series == "KXNFLREC" and sg_name == "receiving":
                                                 found_stat = float(s_map.get("REC", "0") or 0)
                         if found_stat is not None:
-                            if fouls_val >= 5:
-                                return False, f"VETO [ESPN Boxscore]: {title} has {fouls_val} personal fouls (foul trouble risk!)"
+                            # Period-Aware NBA Starter Foul-Trouble Bench Shield:
+                            # 3 fouls in Q1 or 4 fouls in Q2 forces coaches to bench starters for the rest of the half!
+                            max_allowed_fouls = {1: 3, 2: 4}.get(live_period, 5)
+                            if fouls_val >= max_allowed_fouls:
+                                return False, (
+                                    f"VETO [ESPN Foul-Trouble Bench Shield]: {title} has {fouls_val} fouls in P{live_period} "
+                                    f"(>={max_allowed_fouls} max — starter bench risk!)"
+                                )
                             prog_pct = (found_stat / target_val) * 100.0
-                            if prog_pct < 65.0:
-                                return False, f"VETO [ESPN Boxscore]: {title} only at {found_stat:.0f}/{target_val:.0f} ({prog_pct:.0f}% < 65% live progress min)"
-                            # Late-Clock Crunch Veto: Never buy a prop in the final 2 mins of Q4 if still <82% of target!
+                            # Period-Aware Hot-Hand Player Prop Pace Curve:
+                            # Catch hot starters in Q1 (>=42% = 168% pace) & Q2 (>=56% = 112%+ pace), while requiring >=68% in Q3 & >=78% in Q4!
+                            req_prop_pct = {1: 42.0, 2: 56.0, 3: 68.0}.get(live_period, 78.0)
+                            if prog_pct < req_prop_pct:
+                                return False, (
+                                    f"VETO [ESPN Boxscore]: {title} at {found_stat:.0f}/{target_val:.0f} "
+                                    f"({prog_pct:.0f}% < {req_prop_pct:.0f}% P{live_period} hot-pace min)"
+                                )
+                            # Late-Clock Crunch Veto: Never buy a prop in the final 3 mins of Q4 if still <84% of target!
                             try:
                                 clk_m = float(str(clock_disp).split(":")[0]) if ":" in str(clock_disp) else 5.0
                             except Exception:
                                 clk_m = 5.0
-                            if live_period >= 4 and clk_m < 2.0 and prog_pct < 82.0:
+                            if live_period >= 4 and clk_m < 3.0 and prog_pct < 84.0:
                                 return False, (
                                     f"VETO [Late Clock Crunch]: Only {clock_disp} left in P{live_period} and {title} is at "
-                                    f"{found_stat:.0f}/{target_val:.0f} ({prog_pct:.0f}% < 82% min for final 2m)"
+                                    f"{found_stat:.0f}/{target_val:.0f} ({prog_pct:.0f}% < 84% min for final 3m)"
                                 )
                             # Blowout / Garbage-Time Bench Shield: Veto Q3/Q4 player props in 22+ pt blowouts unless >=90% banked!
                             if len(competitors) >= 2 and live_period >= 3 and prog_pct < 90.0:
@@ -890,10 +911,10 @@ class PreTradeEducator:
                                         f"VETO [Blowout Bench Risk]: Game margin is {gm_margin:.0f} pts in P{live_period} "
                                         f"— starters risk getting benched in garbage time!"
                                     )
-                            lock_tag = " | PROP-LOCK" if prog_pct >= 80.0 else ""
+                            lock_tag = " | PROP-LOCK" if prog_pct >= (req_prop_pct + 12.0) else ""
                             if str(clock_disp).strip() in ("0:00", "0.0", ""):
                                 lock_tag += " | CLOCK-FROZEN"
-                            return True, f"ESPN Boxscore Verified ({found_stat:.0f}/{target_val:.0f} = {prog_pct:.0f}% banked{lock_tag} | MIN={mins_played} | PF={fouls_val})"
+                            return True, f"ESPN Boxscore Verified ({found_stat:.0f}/{target_val:.0f} = {prog_pct:.0f}% banked in P{live_period}{lock_tag} | MIN={mins_played} | PF={fouls_val})"
 
                 return True, f"ESPN Matchup Live ({event_slug} active in P{live_period} {clock_disp})"
             except Exception as e:

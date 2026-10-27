@@ -1112,7 +1112,8 @@ class PreTradeEducator:
         imbalance_ratio = (yes_depth + 1.0) / (no_depth + 1.0)
 
         is_quarter_mkt = any(q in series for q in ("1Q", "2Q", "3Q", "4Q", "1P", "2P", "3P"))
-        eff_min_depth = min(min_book_depth_dlr, 90.0) if is_quarter_mkt else min_book_depth_dlr
+        is_prop_mkt = len(ticker.split("-")) >= 4
+        eff_min_depth = min(min_book_depth_dlr, 90.0) if is_quarter_mkt else (min(min_book_depth_dlr, 150.0) if is_prop_mkt else min_book_depth_dlr)
         if yes_depth < eff_min_depth:
             self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
             self.save_memory()

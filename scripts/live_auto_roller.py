@@ -42,9 +42,11 @@ IMESSAGE_TARGET = os.environ.get("IMESSAGE_TARGET", "+19493107304")
 
 
 async def send_phone_alert(client: KalshiClient, title: str, message: str) -> None:
-    """Sends instant push notification to phone via macOS iMessage, ntfy.sh, and Telegram."""
+    """Sends instant 24/7 push notification to phone via macOS iMessage, Cloud SMS, Telegram, Slack, and ntfy.sh."""
     logger.info(f"📱 PHONE ALERT: {title} — {message}")
-    # 1. Direct macOS iMessage text to +19493107304 (First priority!)
+    hc = await client.get_client()
+
+    # 1. Direct macOS iMessage text to +19493107304 when Mac is awake
     if IMESSAGE_TARGET and sys.platform == "darwin":
         try:
             import subprocess
@@ -60,9 +62,8 @@ async def send_phone_alert(client: KalshiClient, title: str, message: str) -> No
         except Exception:
             pass
 
-    # 2. Cloud-native push via ntfy.sh (works 24/7 on GitHub Actions & local)
+    # 2. Cloud-native push via ntfy.sh (works 24/7 on GitHub Actions & local with 0 setup)
     try:
-        hc = await client.get_client()
         await hc.post(
             f"https://ntfy.sh/{NTFY_TOPIC}",
             content=message.encode("utf-8"),
@@ -71,15 +72,49 @@ async def send_phone_alert(client: KalshiClient, title: str, message: str) -> No
     except Exception:
         pass
 
-    # 3. Optional Telegram Bot push
+    # 3. Telegram Bot 24/7 Instant Push (works on Mac & GitHub Cloud when Mac is OFF)
     tg_token = os.environ.get("TELEGRAM_BOT_TOKEN") or getattr(settings, "TELEGRAM_BOT_TOKEN", None)
     tg_chat = os.environ.get("TELEGRAM_CHAT_ID") or getattr(settings, "TELEGRAM_CHAT_ID", None)
     if tg_token and tg_chat:
         try:
-            hc = await client.get_client()
             await hc.post(
                 f"https://api.telegram.org/bot{tg_token}/sendMessage",
                 json={"chat_id": tg_chat, "text": f"*{title}*\n{message}", "parse_mode": "Markdown"},
+            )
+        except Exception:
+            pass
+
+    # 4. Slack Incoming Webhook 24/7 Instant Push (works on Mac & GitHub Cloud when Mac is OFF)
+    slack_webhook = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
+    if slack_webhook:
+        try:
+            await hc.post(
+                slack_webhook,
+                json={"text": f"*{title}*\n{message}"},
+            )
+        except Exception:
+            pass
+
+    # 5. Direct 24/7 Cloud SMS to +19493107304 (Textbelt or Twilio when Mac is OFF or SMS_ALWAYS=1)
+    textbelt_key = os.environ.get("TEXTBELT_API_KEY", "").strip()
+    if textbelt_key and IMESSAGE_TARGET and (sys.platform != "darwin" or os.environ.get("SMS_ALWAYS") == "1"):
+        try:
+            await hc.post(
+                "https://textbelt.com/text",
+                data={"phone": IMESSAGE_TARGET, "message": f"{title}\n{message}", "key": textbelt_key},
+            )
+        except Exception:
+            pass
+
+    tw_sid = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
+    tw_tok = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
+    tw_from = os.environ.get("TWILIO_FROM_NUMBER", "").strip()
+    if tw_sid and tw_tok and tw_from and IMESSAGE_TARGET and (sys.platform != "darwin" or os.environ.get("SMS_ALWAYS") == "1"):
+        try:
+            await hc.post(
+                f"https://api.twilio.com/2010-04-01/Accounts/{tw_sid}/Messages.json",
+                data={"To": IMESSAGE_TARGET, "From": tw_from, "Body": f"{title}\n{message}"},
+                auth=(tw_sid, tw_tok),
             )
         except Exception:
             pass

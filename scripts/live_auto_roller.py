@@ -2928,8 +2928,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             # "Hot Quarter & Player Prop King" Priority: ALWAYS attack 12-min Quarters (-30.0) and Hot Player Props (-25.0)
                             # BEFORE Halftime or Full-Game lines!
                             quarter_king_bonus = -30.0 if is_q_series else (-25.0 if is_prop_mkt else 0.0)
-                            # "One-Way Ratchet" Bonus: Prefer Over Totals & Player Props (where stats can ONLY go up, never backwards!)
-                            is_one_way_ratchet = ("TOTAL" in series) or ("BTTS" in series) or ("CORNERS" in series) or is_prop_mkt
+                            # "One-Way Ratchet" Bonus: ONLY for Player Props (NEVER prioritize unbanked Over/Under Totals over Moneylines!)
+                            is_one_way_ratchet = is_prop_mkt
                             ratchet_bonus = -12.0 if is_one_way_ratchet else 0.0
                             # Alt-Line Cushion Priority ("Buying Points / Safer Strike First"):
                             # Within the 76c-87c zone on the same game/player, prefer the LOWER strike number first

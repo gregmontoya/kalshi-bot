@@ -785,13 +785,14 @@ class PreTradeEducator:
                                 f"VETO [1H Time-in-Play Gate]: Full-game spread in P{live_period} {clock_disp} traps cash through Halftime "
                                 f"(use 1Q/2Q/1H spread instead!)"
                             )
-                        # Require team to ALREADY be covering the spread by at least +3.5 points (2+ possessions above the spread line!)
-                        if margin <= 0 or margin < (strike_val + 3.5):
+                        # Require team to ALREADY be covering the spread: +0.5 goals for NHL/Soccer, +3.5 points for Basketball/Football!
+                        req_spread_buf = 0.5 if ("NHL" in series or is_soccer) else 3.5
+                        if margin <= 0 or margin < (strike_val + req_spread_buf):
                             return False, (
                                 f"VETO [ESPN {period_tag} Spread Cushion]: {tm_prefix} margin is {margin:+.0f} ({my_pts:.0f}-{opp_pts:.0f}) "
-                                f"vs -{strike_val:.1f} spread (requires +{strike_val + 3.5:.1f} min lead) in P{live_period} {clock_disp}"
+                                f"vs -{strike_val:.1f} spread (requires +{strike_val + req_spread_buf:.1f} min lead) in P{live_period} {clock_disp}"
                             )
-                        lock_tag = " | PROP-LOCK" if margin >= (strike_val + 5.5) else ""
+                        lock_tag = " | PROP-LOCK" if margin >= (strike_val + req_spread_buf + 1.0) else ""
                         return True, f"ESPN {period_tag} Spread Verified ({tm_prefix} {my_pts:.0f}-{opp_pts:.0f}, margin {margin:+.0f} vs -{strike_val:.1f}{lock_tag} | P{live_period} {clock_disp})"
 
                 if req_periods is not None and "TOTAL" not in series and "SPREAD" not in series and len(competitors) >= 2:
@@ -1134,7 +1135,7 @@ class PreTradeEducator:
             )
             trades = trades_resp.get("trades", [])
             if not trades:
-                if not is_quarter_mkt:
+                if not (is_quarter_mkt or is_prop_mkt):
                     self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
                     self.save_memory()
                     return False, "VETO: Zero recent trades on tape (inactive market)", 0.0
@@ -1143,7 +1144,7 @@ class PreTradeEducator:
                 now_utc = datetime.now(timezone.utc)
                 last_ts = datetime.fromisoformat(trades[0]["created_time"].replace("Z", "+00:00"))
                 last_trade_mins_ago = max(0.0, (now_utc - last_ts).total_seconds() / 60.0)
-                max_stale_m = 45.0 if is_quarter_mkt else 10.0
+                max_stale_m = 60.0 if (is_quarter_mkt or is_prop_mkt) else 10.0
                 if last_trade_mins_ago > max_stale_m:
                     self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
                     self.save_memory()

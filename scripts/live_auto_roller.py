@@ -2631,20 +2631,20 @@ async def run_autonomous_loop(duration_seconds: int = 0):
             equity_cents = total_cents + port_cents
             educator.record_equity_snapshot(total_cents, port_cents, equity_cents)
 
-            # HARD DAILY CIRCUIT BREAKER (Max -$40.00 Daily Drawdown Stop):
+            # HARD DAILY / OVERNIGHT CIRCUIT BREAKER (Max -$50.00 Drawdown Stop -> $351.00 Hard Floor):
             cb_state = educator.memory.setdefault("daily_circuit_breaker", {})
             today_str = now_utc.strftime("%Y-%m-%d")
-            if cb_state.get("day") != today_str or cb_state.get("protected_floor_cents") is None:
+            if cb_state.get("protected_floor_cents") is None:
                 cb_state["day"] = today_str
                 cb_state["start_equity_cents"] = equity_cents
-                cb_state["protected_floor_cents"] = max(10000, equity_cents - 4000)
+                cb_state["protected_floor_cents"] = max(10000, equity_cents - 5000)
                 cb_state["tripped"] = False
                 educator.save_memory()
-            daily_floor_c = int(cb_state.get("protected_floor_cents", 40000))
+            daily_floor_c = int(cb_state.get("protected_floor_cents", 35100))
             if equity_cents > int(cb_state.get("start_equity_cents", equity_cents)):
-                # Ratchet daily start equity & floor UP as we win during the day!
+                # Ratchet daily start equity & floor UP as we win during the night (always keeping a -$50.00 max drawdown cushion)!
                 cb_state["start_equity_cents"] = equity_cents
-                cb_state["protected_floor_cents"] = max(daily_floor_c, equity_cents - 4000)
+                cb_state["protected_floor_cents"] = max(daily_floor_c, equity_cents - 5000)
                 daily_floor_c = int(cb_state["protected_floor_cents"])
                 educator.save_memory()
             if equity_cents <= daily_floor_c and not cb_state.get("tripped", False):
@@ -2752,6 +2752,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         "entry_ts": float(prev_tr.get("entry_ts") or time.time()),
                         "scratch_requeued": bool(prev_tr.get("scratch_requeued", False)),
                         "stage2_ratcheted": bool(prev_tr.get("stage2_ratcheted", False)),
+                        "avg_entry_cents": int(prev_tr.get("avg_entry_cents", 0) or 0),
                     }
                     educator.save_memory()
                 elif cnt < 1.0 and t in tracked_open_positions:
@@ -2901,7 +2902,18 @@ async def run_autonomous_loop(duration_seconds: int = 0):
 
                 peaked = peak_bids.get(ticker, cur_bid)
                 exp_dlr = float(pos.get("market_exposure_dollars", "0") or 0)
-                avg_entry_cents = int(round((exp_dlr / abs(pos_fp)) * 100)) if exp_dlr > 0 else 80
+                raw_entry_cents = int(round((exp_dlr / abs(pos_fp)) * 100)) if exp_dlr > 0 else 80
+                # Reciprocal NO Cost-Basis Fix:
+                # For a `NO` position (`is_no_pos`), Kalshi sometimes reports `market_exposure_dollars` as `(1.00 - no_price)` (the YES complement)
+                # or as `no_price` directly. Since our strategy ALWAYS enters in the 70c-93c favorite/cushioned zone,
+                # if `raw_entry_cents < 50`, our true NO entry price was `100 - raw_entry_cents`!
+                avg_entry_cents = (100 - raw_entry_cents) if (is_no_pos and raw_entry_cents < 50) else raw_entry_cents
+                mem_entry = int(educator.memory.get("last_entry_cents", {}).get(ticker, 0) or 0)
+                prev_saved_entry = int(tracked_open_positions.get(ticker, {}).get("avg_entry_cents", 0) or 0) or mem_entry
+                if 68 <= prev_saved_entry <= 94:
+                    avg_entry_cents = prev_saved_entry
+                elif 68 <= avg_entry_cents <= 94 and ticker in tracked_open_positions:
+                    tracked_open_positions[ticker]["avg_entry_cents"] = avg_entry_cents
                 max_orig_cnt = int(tracked_open_positions.get(ticker, {}).get("max_count", whole_pos) or whole_pos)
                 pos_conf_score = int(educator.memory.get("last_conf_scores", {}).get(ticker, 83) or 83)
                 # Stage-1 is ONLY banked when >=40% of contracts have ACTUALLY filled & cashed out (never on an unfilled touch!)
@@ -2931,13 +2943,21 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     sb_still_valid = False
                     if cur_bid >= 60:
                         try:
+                            sb_tag = (
+                                f"[PLUS-SPREAD-NO] {ticker}"
+                                if ("SPREAD" in ticker and is_no_pos)
+                                else (f"[UNDER-NO] {ticker}" if is_no_pos else ticker)
+                            )
                             sb_still_valid, _ = await educator.verify_external_research(
-                                client, ticker, f"[UNDER-NO] {ticker}" if is_no_pos else ticker
+                                client, ticker, sb_tag
                             )
                         except Exception:
                             sb_still_valid = False
-                    eff_floor_c = (stop_floor_c - 4) if sb_still_valid else stop_floor_c
-                    if cur_bid <= 56 or (cur_bid <= eff_floor_c and stop_breach_counts[ticker] >= 2):
+                    if sb_still_valid and cur_bid >= 58:
+                        eff_floor_c = max(56, stop_floor_c - 6)
+                    else:
+                        eff_floor_c = stop_floor_c
+                    if cur_bid <= 54 or (cur_bid <= eff_floor_c and stop_breach_counts[ticker] >= 2):
                         thesis_broken_guillotine = True
                     else:
                         logger.info(
@@ -3570,6 +3590,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                         authenticated=True,
                                     )
                                     resting_buy_tickers.add(t)
+                                    peak_bids[t] = bid_cents
+                                    educator.memory.setdefault("last_entry_cents", {})[t] = bid_cents
                                     active_events.add(event_prefix)
                                     active_matchups.add(matchup_slug)
                                     locked_buy_shards.add(shard_key)

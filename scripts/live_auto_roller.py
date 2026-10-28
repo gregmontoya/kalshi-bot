@@ -2220,9 +2220,9 @@ class PreTradeEducator:
                         return False, f"VETO: Negative tape drift ({momentum_delta}c over last {len(window_10)} trades — only buying rising/flat leaders)", 0.0
 
                     # Gate 2A-0: Multi-Timeframe Anti-Falling-Knife & Live Orderbook Divergence Shield:
-                    # 1) Zero Down-Tick Law: Last print (`newest_c`) must NOT be lower than the print immediately before it (`t_prices[1]`) or the 3-print average!
+                    # 1) Zero Down-Tick Law: Last print (`newest_c`) must NOT be lower than the print immediately before it (`t_prices[1]`) or >1c below the 3-print average!
                     prev_3_avg = sum(t_prices[1:4]) / max(1, len(t_prices[1:4]))
-                    if newest_c < t_prices[1] or newest_c < (prev_3_avg - 0.5):
+                    if newest_c < t_prices[1] or (newest_c < t_prices[1] and newest_c < (prev_3_avg - 1.0)) or newest_c < (prev_3_avg - 1.2):
                         self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
                         self.save_memory()
                         return False, (
@@ -3043,18 +3043,21 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 uncovered = whole_pos - whole_covered
                 if uncovered >= 1:
                     undercut_ask = max(cur_bid + 1, cur_ask - 1)
+                    is_low_entry_wave = (avg_entry_cents <= 76)
+                    s1_step = 7 if is_low_entry_wave else 5
+                    s2_step = 13 if is_low_entry_wave else 9
                     if pos_meta.get("scratch_requeued", False) and not stage1_banked:
                         fast_tp = max(cur_bid + 1, avg_entry_cents + 1)
                         wave_tp = max(fast_tp + 1, avg_entry_cents + 3)
                     elif pos_meta.get("stage2_ratcheted", False) and stage1_banked:
                         fast_tp = max(cur_bid + 1, min(95, avg_entry_cents + 6))
                         wave_tp = fast_tp
-                    elif undercut_ask >= avg_entry_cents + 5:
-                        fast_tp = min(95, avg_entry_cents + 6, undercut_ask)
-                        wave_tp = max(fast_tp + 3, min(97, avg_entry_cents + 9))
+                    elif undercut_ask >= avg_entry_cents + s1_step:
+                        fast_tp = min(95, avg_entry_cents + s1_step + 1, undercut_ask)
+                        wave_tp = max(fast_tp + 3, min(97, avg_entry_cents + s2_step))
                     else:
-                        fast_tp = max(cur_bid + 1, min(94, avg_entry_cents + 5))
-                        wave_tp = max(fast_tp + 3, min(97, avg_entry_cents + 9))
+                        fast_tp = max(cur_bid + 1, min(94, avg_entry_cents + s1_step))
+                        wave_tp = max(fast_tp + 3, min(97, avg_entry_cents + s2_step))
 
                     # Whale Ask-Wall Front-Runner (Reciprocal Orderbook Inspection):
                     # An Ask Wall on our side at price `P` is a Bid Wall on the opposing side at `100 - P`.
@@ -3108,7 +3111,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
             tier = get_scaling_tier(equity_cents)
             min_stake_c = tier["min_stake_cents"]
             quota_st = educator.get_daily_quota_status()
-            min_leader_ask = 76
+            min_leader_ask = 72
             max_leader_ask = 90
             logger.info(
                 f"Heartbeat [{tier['name']}] | Cash: ${total_cents/100:.2f} | Portfolio: ${port_cents/100:.2f} | Total Equity: ${equity_cents/100:.2f} (Floor=${daily_floor_c/100:.2f}) | Daily Quota: {quota_st['completed_bets']}/{quota_st['target_bets']} ({quota_st['wins']}W-{quota_st['losses']}L, Pace={quota_st['expected_by_now']})"

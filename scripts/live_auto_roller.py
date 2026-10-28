@@ -665,16 +665,17 @@ class PreTradeEducator:
         q_map = self.memory.setdefault("daily_quota_tracker", {})
         q_day = q_map.setdefault(
             day_str,
-            {"target_bets": 25, "completed_bets": 0, "wins": 0, "losses": 0, "net_pnl_dlr": 0.0},
+            {"target_bets": 40, "completed_bets": 0, "wins": 0, "losses": 0, "net_pnl_dlr": 0.0},
         )
-        # Expected pace across 24h day (~1.04 bets/hour)
+        q_day["target_bets"] = 40
+        # Expected pace across 24h day (~1.67 bets/hour)
         frac_day = max(0.05, (now_local.hour + now_local.minute / 60.0) / 24.0)
-        expected_by_now = round(25.0 * frac_day, 1)
+        expected_by_now = round(40.0 * frac_day, 1)
         done = int(q_day.get("completed_bets", 0))
-        behind_pace = (expected_by_now - done) >= 1.5 and done < 25
-        quota_met = done >= 25
+        behind_pace = (expected_by_now - done) >= 1.5 and done < 40
+        quota_met = done >= 40
         return {
-            "target_bets": 25,
+            "target_bets": 40,
             "completed_bets": done,
             "expected_by_now": expected_by_now,
             "behind_pace": behind_pace,
@@ -2143,7 +2144,9 @@ class PreTradeEducator:
         arch_pnl = float(arch_st.get("realized_pnl", 0.0) or 0.0)
         st_state_eval = self.memory.get("streak_state", {})
         in_defense_mode = int(st_state_eval.get("win_streak", 0) or 0) == 0 or float(st_state_eval.get("house_money_pool_dlr", 0.0) or 0.0) <= 0.0
-        req_imbalance = (1.85 if (series_pnl < -1.00 or arch_pnl < -5.00) else 1.35) + (0.20 if in_defense_mode else 0.0)
+        q_status_eval = self.get_daily_quota_status()
+        quota_pace_relief = -0.15 if q_status_eval.get("behind_pace", False) else 0.0
+        req_imbalance = max(1.25, (1.60 if (series_pnl < -1.00 or arch_pnl < -5.00) else 1.30) + (0.15 if in_defense_mode else 0.0) + quota_pace_relief)
 
         is_under_no = title.startswith("[UNDER-NO]")
         top_yes_bids = sorted(ob.yes_bids, key=lambda x: x.price, reverse=True)[:5]
@@ -2193,7 +2196,7 @@ class PreTradeEducator:
                 now_utc = datetime.now(timezone.utc)
                 last_ts = datetime.fromisoformat(trades[0]["created_time"].replace("Z", "+00:00"))
                 last_trade_mins_ago = max(0.0, (now_utc - last_ts).total_seconds() / 60.0)
-                max_stale_m = 60.0 if (is_quarter_mkt or is_prop_mkt) else 10.0
+                max_stale_m = 60.0 if (is_quarter_mkt or is_prop_mkt) else (18.0 if q_status_eval.get("behind_pace", False) else 12.0)
                 if last_trade_mins_ago > max_stale_m:
                     self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
                     self.save_memory()
@@ -3146,7 +3149,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 if not tr_o.get("stage1_alerted", False) and float(tr_o.get("stake", 0) or 0) >= 15.0
             )
 
-            max_conc = 4 if equity_cents >= 40000 else min(3, tier["max_concurrent"])
+            max_conc = 5 if equity_cents >= 38000 else min(4, tier["max_concurrent"] + 1)
             if (
                 not educator.memory.get("manual_pause_buys", False)
                 and not cb_state.get("tripped", False)

@@ -1,9 +1,9 @@
 name: Kalshi 24/7 Autonomous Cloud Trader
 
 on:
-  schedule:
-    # Safety-net cron every 5 minutes, 24/7/365 on GitHub Cloud
-    - cron: '*/5 * * * *'
+  # schedule:
+  #   # PAUSED FOR ENGINEERING REMEDIATION & AUDIT
+  #   - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
       force_cloud_burst_seconds:

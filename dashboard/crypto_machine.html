@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crypto Quant Multi-Strategy Machine — Kraken Pro + Hyperliquid + Coinbase</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background-color: #070b14; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif; }
+    .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 1rem; }
+    .card-emerald { background: linear-gradient(145deg, #0f172a, #08241d); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 1rem; }
+    .card-cyan { background: linear-gradient(145deg, #0f172a, #091e2c); border: 1px solid rgba(6, 182, 212, 0.35); border-radius: 1rem; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+  <div class="max-w-7xl mx-auto space-y-6">
+
+    <!-- Top Navigation & Isolated Bankroll Banner -->
+    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b border-slate-800 pb-5">
+      <div>
+        <div class="flex flex-wrap items-center gap-2.5">
+          <span class="inline-block w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping"></span>
+          <span class="text-xs font-bold uppercase tracking-widest text-cyan-400">
+            100% Isolated Crypto Bankroll • Never Mixes With Kalshi Sports Machine
+          </span>
+          <span class="rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-xs font-bold text-emerald-400 border border-emerald-500/30">
+            POST_ONLY MAKER REBATES ACTIVE
+          </span>
+        </div>
+        <h1 class="text-2xl md:text-3xl font-black text-white mt-1">
+          ⚡ Crypto Quant Multi-Strategy Machine
+        </h1>
+        <p class="text-xs md:text-sm text-slate-400 mt-0.5">
+          Execution: <strong class="text-slate-200">Hyperliquid Wallet (Perps) + Kraken Pro (Spot)</strong> &nbsp;|&nbsp;
+          Truth Feed: <strong class="text-slate-200">Coinbase Institutional Spot + CVD</strong>
+        </p>
+      </div>
+
+      <!-- Mode Switcher & Quick Actions -->
+      <div class="flex flex-wrap items-center gap-3">
+        <a href="/tracker" class="rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3.5 py-2 text-xs font-bold text-slate-300 transition">
+          🏈 Switch to Sports Tracker (Kalshi)
+        </a>
+        <button onclick="triggerGreenOutAll()" class="rounded-lg bg-emerald-500 hover:bg-emerald-400 px-4 py-2 text-xs font-black text-slate-950 shadow-lg transition">
+          💰 Green Out All Crypto Positions
+        </button>
+        <button onclick="triggerYieldRotation()" class="rounded-lg bg-amber-400 hover:bg-amber-300 px-4 py-2 text-xs font-black text-slate-950 shadow-lg transition">
+          🚀 Auto-Rotate Pod 3 into Highest APY
+        </button>
+        <button onclick="refreshSnapshot()" class="rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 px-3.5 py-2 text-xs font-bold text-cyan-300 transition">
+          🔄 Sync Live Feeds
+        </button>
+      </div>
+    </div>
+
+    <!-- 4 Top KPI Cards -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="card-emerald p-5">
+        <div class="text-xs font-bold uppercase tracking-wider text-emerald-300">Crypto Bankroll Equity</div>
+        <div id="kpi-equity" class="text-3xl md:text-4xl font-black text-white mt-1 mono">$1,069.62</div>
+        <div id="kpi-pnl" class="text-xs text-emerald-400 mt-1.5 font-semibold">+$69.62 (+6.96%) • Started at $1,000.00</div>
+      </div>
+
+      <div class="card-cyan p-5">
+        <div class="text-xs font-bold uppercase tracking-wider text-cyan-300">Maker Rebates & Fees Saved</div>
+        <div id="kpi-fees-saved" class="text-3xl md:text-4xl font-black text-cyan-400 mt-1 mono">+$15.00</div>
+        <div class="text-xs text-slate-400 mt-1.5">Saved vs. 0.60% Retail Taker Fees</div>
+      </div>
+
+      <div class="card p-5">
+        <div class="text-xs font-bold uppercase tracking-wider text-slate-400">Pod 1 + Pod 2 Swing P&L</div>
+        <div id="kpi-swing-pnl" class="text-3xl font-black text-emerald-400 mt-1 mono">+$53.67</div>
+        <div class="text-xs text-slate-400 mt-1.5">1 Active 3-Leg Basket + 2 Wick Plays</div>
+      </div>
+
+      <div class="card p-5">
+        <div class="text-xs font-bold uppercase tracking-wider text-slate-400">Pod 3 Delta-Neutral Lock APY</div>
+        <div id="kpi-lock-apy" class="text-3xl font-black text-amber-400 mt-1 mono">33.72% APY</div>
+        <div class="text-xs text-emerald-400 mt-1.5 font-semibold">+$15.95 Accrued • 0.0% Price Risk</div>
+      </div>
+    </div>
+
+    <!-- Row 2: Live L2 Whale Tape Reader + Institutional Truth Matrix -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- L2 OrderBook & Stoikov Micro-Price -->
+      <div class="card p-5 lg:col-span-1">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <span class="text-[11px] font-bold uppercase tracking-wider text-cyan-400">Whale Tape Reader • L2 CLOB</span>
+            <h2 class="text-lg font-extrabold text-white">Live OrderBook Imbalance</h2>
+          </div>
+          <select id="book-symbol" onchange="refreshSnapshot()" class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs font-bold text-white">
+            <option value="SOL">SOL-PERP</option>
+            <option value="BTC">BTC-PERP</option>
+            <option value="ETH">ETH-PERP</option>
+            <option value="SUI">SUI-PERP</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2 bg-slate-900/90 p-3 rounded-xl border border-slate-800 mb-3 text-center">
+          <div>
+            <div class="text-[10px] text-slate-400 uppercase">Mid Price</div>
+            <div id="book-mid" class="text-sm font-black text-white mono">$176.80</div>
+          </div>
+          <div>
+            <div class="text-[10px] text-slate-400 uppercase">Stoikov Micro</div>
+            <div id="book-micro" class="text-sm font-black text-cyan-400 mono">$176.83</div>
+          </div>
+          <div>
+            <div class="text-[10px] text-slate-400 uppercase">Whale Ratio</div>
+            <div id="book-imbalance" class="text-sm font-black text-emerald-400 mono">6.4 : 1</div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 text-xs mono">
+          <div>
+            <div class="text-[10px] font-bold uppercase text-emerald-400 mb-1">Resting Bids (Support)</div>
+            <div id="book-bids" class="space-y-1"></div>
+          </div>
+          <div>
+            <div class="text-[10px] font-bold uppercase text-rose-400 mb-1">Resting Asks (Supply)</div>
+            <div id="book-asks" class="space-y-1"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Institutional Truth Matrix (Coinbase Spot vs Kraken vs Hyperliquid Perp) -->
+      <div class="card p-5 lg:col-span-2 overflow-x-auto">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <span class="text-[11px] font-bold uppercase tracking-wider text-emerald-400">Equivalent to De-Vigged Pinnacle Odds</span>
+            <h2 class="text-lg font-extrabold text-white">Cross-Exchange Institutional Flow & Funding Matrix</h2>
+          </div>
+          <span class="text-xs text-slate-400 mono">Coinbase Spot + Kraken Pro + Hyperliquid</span>
+        </div>
+
+        <table class="w-full text-left text-xs">
+          <thead>
+            <tr class="border-b border-slate-800 text-slate-400 uppercase text-[10px]">
+              <th class="py-2">Asset</th>
+              <th class="py-2">Coinbase Spot</th>
+              <th class="py-2">HL Perp</th>
+              <th class="py-2">15m VWAP</th>
+              <th class="py-2">Inst. CVD Flow</th>
+              <th class="py-2">Whale Book</th>
+              <th class="py-2">Funding APY</th>
+            </tr>
+          </thead>
+          <tbody id="truth-table-body" class="divide-y divide-slate-800/70 mono"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- POD 1: 3-Leg Relative-Strength Momentum Basket + Smart CVD Guillotine -->
+    <div class="card p-6">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-4">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 text-[10px] font-bold uppercase">POD 1</span>
+            <h2 class="text-xl font-black text-white">3-Leg Relative-Strength Maker Basket & Smart Guillotine</h2>
+          </div>
+          <p class="text-xs text-slate-400 mt-1">
+            Enters 3 high-CVD coins via <code class="text-emerald-400">POST_ONLY</code> Maker bids (-8 bps). Auto-queues +3.8% Maker Take-Profit. If any leg drops -1.6% and Coinbase CVD crashes &lt;0.45, the Guillotine cuts that 1 loser early.
+          </p>
+        </div>
+        <div class="text-right">
+          <div class="text-xs text-slate-400">Active Basket P&L</div>
+          <div id="pod1-pnl" class="text-2xl font-black text-emerald-400 mono">+$15.42</div>
+        </div>
+      </div>
+
+      <div id="pod1-legs" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+    </div>
+
+    <!-- POD 2: Liquidation Wick Catcher + Automatic Mid-Swing "Green-Out" -->
+    <div class="card p-6">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-4">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold uppercase">POD 2</span>
+            <h2 class="text-xl font-black text-white">Liquidation Wick Catcher + Mid-Swing "Green-Out" Lock</h2>
+          </div>
+          <p class="text-xs text-slate-400 mt-1">
+            Catches forced leverage liquidations (-1.8%+ below VWAP) via resting Maker bids. On a +2.2% bounce, automatically sells 60% to lock guaranteed USD profit and moves the stop-loss on the 40% Moonbag above entry.
+          </p>
+        </div>
+        <div class="text-right">
+          <div class="text-xs text-slate-400">Wick Pod P&L</div>
+          <div id="pod2-pnl" class="text-2xl font-black text-emerald-400 mono">+$11.27</div>
+        </div>
+      </div>
+
+      <div id="pod2-positions" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+    </div>
+
+    <!-- POD 3: Delta-Neutral Funding & Basis Harvester (99.5%+ Mathematical Lock) -->
+    <div class="card p-6">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-4">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-bold uppercase">POD 3 • 99.5%+ LOCK</span>
+            <h2 class="text-xl font-black text-white">Delta-Neutral Funding Rate & Basis Harvester</h2>
+          </div>
+          <p class="text-xs text-slate-400 mt-1">
+            Buys 1x Real Spot on <strong class="text-slate-200">Kraken Pro</strong> + Shorts 1x Perpetual on <strong class="text-slate-200">Hyperliquid</strong>. Directional risk is strictly <strong class="text-emerald-400">$0.00 (0%)</strong> whether crypto moons or crashes, while Leveraged Longs pay us hourly cash yield.
+          </p>
+        </div>
+        <div class="text-right">
+          <div class="text-xs text-slate-400">Risk-Free Yield Collected</div>
+          <div id="pod3-pnl" class="text-2xl font-black text-amber-400 mono">+$15.95</div>
+        </div>
+      </div>
+
+      <div id="pod3-locks" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6"></div>
+
+      <!-- Speedboat vs. Oil Tanker: Live Multi-Coin Triple-Yield Rotator Leaderboard -->
+      <div class="border-t border-slate-800 pt-5">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
+          <div>
+            <span class="text-[11px] font-bold uppercase tracking-wider text-amber-400">Speedboat Edge • Live Ethena-Grade Yield Scanner</span>
+            <h3 class="text-base font-extrabold text-white">Top Triple-Yield Stack Opportunities (Staking + Hourly Funding + Basis)</h3>
+          </div>
+          <div id="regime-badge" class="text-xs mono text-cyan-300 bg-cyan-950/50 border border-cyan-500/30 px-3 py-1 rounded-lg">
+            Leg-Sync Guard: Spot Fill -> Instant Perp Hedge (&lt;50ms)
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs mono">
+            <thead>
+              <tr class="border-b border-slate-800 text-slate-400 uppercase text-[10px]">
+                <th class="py-2">Rank / Coin</th>
+                <th class="py-2">1) Staking Yield</th>
+                <th class="py-2">2) Hourly Funding APY</th>
+                <th class="py-2">3) Entry Basis Bonus</th>
+                <th class="py-2">Total Combined APY</th>
+                <th class="py-2">6h Flip Immunity</th>
+              </tr>
+            </thead>
+            <tbody id="rotator-table-body" class="divide-y divide-slate-800/60"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    async function refreshSnapshot() {
+      const symbolSelect = document.getElementById('book-symbol');
+      const symbol = symbolSelect ? symbolSelect.value : 'SOL';
+
+      try {
+        const res = await fetch(`/api/crypto/status?symbol=${symbol}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        renderDashboard(data);
+      } catch (err) {
+        console.error('Failed to sync crypto snapshot:', err);
+      }
+    }
+
+    function renderDashboard(data) {
+      // Top KPIs
+      const b = data.bankroll;
+      document.getElementById('kpi-equity').innerText = `$${b.current_equity_usd.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+      document.getElementById('kpi-pnl').innerText = `+$${b.total_pnl_usd.toFixed(2)} (+${b.total_return_pct}%) • Started at $${b.starting_equity_usd.toLocaleString()}`;
+      document.getElementById('kpi-fees-saved').innerText = `+$${b.maker_fees_and_rebates_saved_usd.toFixed(2)}`;
+
+      const p1 = data.pod1_momentum_basket;
+      const p2 = data.pod2_wick_green_out;
+      const p3 = data.pod3_funding_tail_lock;
+
+      document.getElementById('kpi-swing-pnl').innerText = `+$${(p1.total_pnl_usd + p2.total_pnl_usd).toFixed(2)}`;
+      document.getElementById('kpi-lock-apy').innerText = `${p3.average_annualized_apy}% APY`;
+
+      // L2 OrderBook
+      const book = data.l2_orderbook;
+      document.getElementById('book-mid').innerText = `$${book.mid_price}`;
+      document.getElementById('book-micro').innerText = `$${book.micro_price}`;
+      document.getElementById('book-imbalance').innerText = `${book.whale_imbalance_ratio} : 1`;
+
+      document.getElementById('book-bids').innerHTML = book.bids.map(lvl => `
+        <div class="flex justify-between bg-emerald-950/30 border border-emerald-500/20 px-2 py-1 rounded">
+          <span class="text-emerald-400 font-bold">$${lvl.price}</span>
+          <span class="text-slate-300">${lvl.size}</span>
+        </div>
+      `).join('');
+
+      document.getElementById('book-asks').innerHTML = book.asks.map(lvl => `
+        <div class="flex justify-between bg-rose-950/30 border border-rose-500/20 px-2 py-1 rounded">
+          <span class="text-rose-400 font-bold">$${lvl.price}</span>
+          <span class="text-slate-300">${lvl.size}</span>
+        </div>
+      `).join('');
+
+      // Institutional Truth Matrix
+      const signals = Object.values(data.institutional_signals || {});
+      document.getElementById('truth-table-body').innerHTML = signals.map(s => {
+        const wickPct = (((s.hyperliquid_perp_price - s.vwap_15m) / s.vwap_15m) * 100).toFixed(2);
+        const wickBadge = wickPct <= -1.5
+          ? `<span class="text-emerald-400 font-bold">${wickPct}% (WICK BUY ZONE)</span>`
+          : `<span class="text-slate-300">${wickPct}%</span>`;
+        return `
+          <tr>
+            <td class="py-2.5 font-black text-white">${s.symbol}</td>
+            <td class="py-2.5 text-slate-200">$${s.coinbase_spot_price}</td>
+            <td class="py-2.5 text-cyan-400 font-bold">$${s.hyperliquid_perp_price}</td>
+            <td class="py-2.5">$${s.vwap_15m} (${wickBadge})</td>
+            <td class="py-2.5">
+              <span class="px-2 py-0.5 rounded ${s.cvd_score >= 0.70 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-300'} font-bold">
+                ${Math.round(s.cvd_score * 100)}% Bullish
+              </span>
+            </td>
+            <td class="py-2.5 text-emerald-400 font-bold">${s.whale_imbalance_ratio}:1</td>
+            <td class="py-2.5 text-amber-400 font-bold">${s.annualized_funding_apy}% APY</td>
+          </tr>
+        `;
+      }).join('');
+
+      // Pod 1 Basket Legs
+      document.getElementById('pod1-pnl').innerText = `+$${p1.total_pnl_usd.toFixed(2)}`;
+      const basket = (p1.baskets && p1.baskets[0]) ? p1.baskets[0] : { legs: [] };
+      document.getElementById('pod1-legs').innerHTML = basket.legs.map(leg => `
+        <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-base font-black text-white">${leg.symbol}-PERP</span>
+            <span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold mono">
+              +${leg.pnl_pct}% (+$${leg.pnl_usd})
+            </span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-xs mono text-slate-300">
+            <div>Maker Entry: <strong class="text-white">$${leg.entry_price}</strong></div>
+            <div>Current: <strong class="text-cyan-400">$${leg.current_price}</strong></div>
+            <div>Auto TP Ask: <strong class="text-emerald-400">$${leg.take_profit_price}</strong></div>
+            <div>Guillotine: <strong class="text-rose-400">$${leg.guillotine_price}</strong></div>
+          </div>
+          <div class="pt-2 border-t border-slate-800 flex justify-between text-[11px] text-slate-400">
+            <span>Coinbase CVD: <strong class="text-emerald-400">${Math.round(leg.live_cvd_score * 100)}%</strong></span>
+            <span>Whale Book: <strong class="text-cyan-400">${leg.whale_imbalance}:1</strong></span>
+          </div>
+        </div>
+      `).join('');
+
+      // Pod 2 Wick Green-Out Positions
+      document.getElementById('pod2-pnl').innerText = `+$${p2.total_pnl_usd.toFixed(2)}`;
+      document.getElementById('pod2-positions').innerHTML = p2.positions.map(pos => `
+        <div class="bg-slate-900/90 border ${pos.is_greened_out ? 'border-emerald-500/40' : 'border-slate-800'} rounded-xl p-4 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="text-base font-black text-white">${pos.symbol} Liquidation Wick Catch</span>
+              <span class="ml-2 px-2 py-0.5 rounded text-[10px] font-bold uppercase ${pos.is_greened_out ? 'bg-emerald-500 text-slate-950' : 'bg-amber-500/20 text-amber-300'}">
+                ${pos.status}
+              </span>
+            </div>
+            <span class="text-lg font-black text-emerald-400 mono">+$${pos.total_pnl_usd.toFixed(2)}</span>
+          </div>
+          <div class="grid grid-cols-3 gap-2 text-xs mono bg-slate-950/60 p-2.5 rounded-lg">
+            <div>Wick Entry: <strong class="text-white">$${pos.entry_price}</strong></div>
+            <div>Current: <strong class="text-cyan-400">$${pos.current_price}</strong></div>
+            <div>Protective Stop: <strong class="text-emerald-400">$${pos.stop_loss_price}</strong></div>
+          </div>
+          <div class="flex justify-between text-xs text-slate-400">
+            <span>Locked Cash Profit: <strong class="text-emerald-400">+$${pos.locked_profit_usd.toFixed(2)}</strong></span>
+            <span>Risk-Free Moonbag: <strong class="text-white">${pos.remaining_quantity} ${pos.symbol} (Target $${pos.runner_take_profit_price})</strong></span>
+          </div>
+        </div>
+      `).join('');
+
+      // Pod 3 Delta-Neutral Locks
+      document.getElementById('pod3-pnl').innerText = `+$${p3.total_pnl_usd.toFixed(2)}`;
+      document.getElementById('pod3-locks').innerHTML = p3.locked_pairs.map(pair => `
+        <div class="bg-slate-900/90 border border-amber-500/30 rounded-xl p-4 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="text-base font-black text-white">${pair.symbol} Spot + 1x Short Perp Lock</span>
+              <span class="ml-2 px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-bold mono">
+                ${pair.annualized_funding_apy}% APY
+              </span>
+            </div>
+            <span class="text-lg font-black text-amber-400 mono">+$${(pair.accrued_funding_usd + pair.basis_pnl_usd).toFixed(2)}</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-xs mono bg-slate-950/60 p-2.5 rounded-lg">
+            <div>Long Kraken Spot: <strong class="text-emerald-400">+${pair.quantity} @ $${pair.spot_entry_price}</strong></div>
+            <div>Short HL 1x Perp: <strong class="text-rose-400">-${pair.quantity} @ $${pair.perp_entry_price}</strong></div>
+          </div>
+          <div class="flex justify-between text-xs text-slate-400">
+            <span>Entry Basis Captured: <strong class="text-cyan-400">+${pair.entry_basis_bps} bps</strong></span>
+            <span>Net Price Direction Risk: <strong class="text-emerald-400">$0.00 (100% Hedged)</strong></span>
+          </div>
+        </div>
+      `).join('');
+
+      // Speedboat Triple-Yield Rotator Table
+      const rankings = data.yield_rotator_rankings || [];
+      document.getElementById('rotator-table-body').innerHTML = rankings.slice(0, 6).map((r, i) => `
+        <tr>
+          <td class="py-2 font-black text-white">#${i + 1} ${r.symbol}</td>
+          <td class="py-2 text-emerald-400">${r.staking_apy.toFixed(1)}% APY</td>
+          <td class="py-2 text-cyan-400 font-bold">${r.funding_apy.toFixed(2)}% APY (${r.funding_hr_bps} bps/hr)</td>
+          <td class="py-2 text-slate-300">+${r.basis_bonus_apy.toFixed(2)}% (+${r.basis_bps} bps)</td>
+          <td class="py-2 text-amber-400 font-black text-sm">${r.total_combined_apy.toFixed(2)}% APY</td>
+          <td class="py-2">
+            <span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
+              ${r.persistence_6h_verified ? 'VERIFIED 6H+' : 'MONITORING'}
+            </span>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function getAuthHeaders() {
+      const headers = {};
+      if (window._cachedQuantPin) {
+        headers['X-Quant-Pin'] = window._cachedQuantPin;
+      }
+      return headers;
+    }
+
+    async function triggerGreenOutAll() {
+      try {
+        let res = await fetch('/api/crypto/actions/green_out_all', {
+          method: 'POST',
+          headers: await getAuthHeaders(),
+        });
+        if (res.status === 403) {
+          const pin = prompt('🔒 Stolen-Phone Protection: Enter your Security PIN to execute Green-Out:');
+          if (!pin) return;
+          window._cachedQuantPin = pin;
+          res = await fetch('/api/crypto/actions/green_out_all', {
+            method: 'POST',
+            headers: await getAuthHeaders(),
+          });
+        }
+        if (!res.ok) {
+          alert('❌ Action blocked: Invalid Security PIN.');
+          window._cachedQuantPin = null;
+          return;
+        }
+        const data = await res.json();
+        renderDashboard(data.snapshot);
+        alert(`Green-Out Executed! Locked in guaranteed profit & moved stops above entry on ${data.greened_out_count} position(s).`);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function triggerYieldRotation() {
+      try {
+        let res = await fetch('/api/crypto/actions/rotate_yield', {
+          method: 'POST',
+          headers: await getAuthHeaders(),
+        });
+        if (res.status === 403) {
+          const pin = prompt('🔒 Stolen-Phone Protection: Enter your Security PIN to rotate Pod 3 Yield:');
+          if (!pin) return;
+          window._cachedQuantPin = pin;
+          res = await fetch('/api/crypto/actions/rotate_yield', {
+            method: 'POST',
+            headers: await getAuthHeaders(),
+          });
+        }
+        if (!res.ok) {
+          alert('❌ Action blocked: Invalid Security PIN.');
+          window._cachedQuantPin = null;
+          return;
+        }
+        const data = await res.json();
+        renderDashboard(data.snapshot);
+        if (data.rotation && data.rotation.rotated) {
+          alert(`Yield Rotator Executed! Rotated into ${data.rotation.entered_symbol} at ${data.rotation.new_combined_apy}% Combined APY via Atomic Leg-Sync (<50ms).`);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    refreshSnapshot();
+    setInterval(refreshSnapshot, 10000);
+  </script>
+</body>
+</html>

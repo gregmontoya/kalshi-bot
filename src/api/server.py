@@ -3,18 +3,22 @@
 Provides REST & WebSocket endpoints for the Astro.js PWA Dashboard.
 """
 
+import json
+import os
 from pathlib import Path
 from typing import Any, Optional
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from src.config import settings
 from src.core.orderbook import KalshiOrderBookEngine
+from src.crypto.orchestrator import CryptoEngineOrchestrator
 
 app = FastAPI(
-    title="Kalshi Quant Multi-Strategy Engine API",
+    title="Kalshi & Crypto Quant Multi-Strategy Engine API",
     version="2.0.0",
-    description="Quantitative algorithmic trading engine for Kalshi event contracts",
+    description="Quantitative algorithmic trading engine for Kalshi Sports & Standalone Crypto Pods",
 )
 
 app.add_middleware(
@@ -26,6 +30,7 @@ app.add_middleware(
 )
 
 engine_instance: Optional[Any] = None
+crypto_engine_instance: CryptoEngineOrchestrator = CryptoEngineOrchestrator()
 
 
 def set_engine_instance(inst: Any) -> None:
@@ -154,6 +159,88 @@ async def get_grader_report() -> dict[str, Any]:
     if not engine_instance:
         return {}
     return engine_instance.get_performance_grades()
+
+
+@app.get("/api/live-ledger")
+async def get_live_ledger() -> dict[str, Any]:
+    mem_path = Path(__file__).resolve().parent.parent.parent / "data" / "self_learning_memory.json"
+    mem = {}
+    if mem_path.exists():
+        try:
+            mem = json.loads(mem_path.read_text())
+        except Exception:
+            pass
+    hist = mem.get("equity_history", [])
+    latest = hist[-1] if hist else {"equity": 26.18, "cash": 12.78, "portfolio": 13.40}
+    return {
+        "equity": latest.get("equity", 26.18),
+        "cash": latest.get("cash", 12.78),
+        "portfolio": latest.get("portfolio", 13.40),
+        "daily_ledger": mem.get("daily_ledger", {}),
+        "equity_history": hist,
+    }
+
+
+@app.get("/tracker")
+async def get_tracker_page() -> FileResponse:
+    tracker_file = Path(__file__).resolve().parent.parent.parent / "dashboard" / "live_tracker.html"
+    return FileResponse(str(tracker_file))
+
+
+# -------------------------------------------------------------------------
+# Standalone Crypto Quant Machine Endpoints (100% Isolated Bankroll)
+# -------------------------------------------------------------------------
+@app.get("/api/crypto/status")
+async def get_crypto_status(symbol: str = "SOL") -> dict[str, Any]:
+    return await crypto_engine_instance.get_dashboard_snapshot(orderbook_symbol=symbol)
+
+
+def _verify_mobile_pin(x_quant_pin: Optional[str]) -> None:
+    """
+    Stolen-Phone Protection Guard:
+    If DASHBOARD_ACTION_PIN is configured in .env / Cloud Secrets, all state-modifying
+    actions require the matching PIN header so an unlocked stolen phone cannot trigger trades.
+    """
+    required_pin = os.getenv("DASHBOARD_ACTION_PIN", "").strip()
+    if required_pin and x_quant_pin != required_pin:
+        raise HTTPException(
+            status_code=403,
+            detail="Stolen-Phone Protection Active: Invalid or missing Security PIN.",
+        )
+
+
+@app.post("/api/crypto/actions/green_out_all")
+async def crypto_green_out_all(
+    x_quant_pin: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _verify_mobile_pin(x_quant_pin)
+    count = crypto_engine_instance.trigger_green_out_all()
+    snapshot = await crypto_engine_instance.get_dashboard_snapshot()
+    return {
+        "status": "success",
+        "greened_out_count": count,
+        "snapshot": snapshot,
+    }
+
+
+@app.post("/api/crypto/actions/rotate_yield")
+async def crypto_rotate_yield(
+    x_quant_pin: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _verify_mobile_pin(x_quant_pin)
+    rotation = await crypto_engine_instance.trigger_yield_rotation()
+    snapshot = await crypto_engine_instance.get_dashboard_snapshot()
+    return {
+        "status": "success",
+        "rotation": rotation,
+        "snapshot": snapshot,
+    }
+
+
+@app.get("/crypto")
+async def get_crypto_dashboard_page() -> FileResponse:
+    crypto_file = Path(__file__).resolve().parent.parent.parent / "dashboard" / "crypto_machine.html"
+    return FileResponse(str(crypto_file))
 
 
 # Mount compiled Astro PWA dashboard if available

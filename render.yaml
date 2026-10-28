@@ -4,11 +4,19 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python src/main.py start --mode LIVE --port $PORT & python scripts/live_auto_roller.py
+    startCommand: python src/main.py start --mode LIVE --port $PORT & python scripts/live_auto_roller.py & python scripts/crypto_24_7_roller.py
     envVars:
       - key: KALSHI_ENV
         value: prod
       - key: KALSHI_KEY_ID
         sync: false
       - key: KALSHI_PRIVATE_KEY
+        sync: false
+      - key: HYPERLIQUID_WALLET_ADDRESS
+        sync: false
+      - key: HYPERLIQUID_AGENT_PRIVATE_KEY
+        sync: false
+      - key: KRAKEN_API_KEY
+        sync: false
+      - key: KRAKEN_API_SECRET
         sync: false

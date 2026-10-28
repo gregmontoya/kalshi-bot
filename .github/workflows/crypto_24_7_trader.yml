@@ -1,0 +1,70 @@
+name: Crypto 24/7 Autonomous Cloud Trader
+
+on:
+  schedule:
+    # Safety-net cron every 5 minutes, 24/7/365 on GitHub Cloud
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      force_cloud_burst_seconds:
+        description: 'Optional: Force a cloud burst duration in seconds even if Mac was recently online'
+        required: false
+        default: '0'
+
+concurrency:
+  group: crypto-live-roller
+  cancel-in-progress: true
+
+jobs:
+  crypto-trade-loop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check if Local Mac Crypto Engine is Awake (Zero-Downtime Cloud Failover)
+        id: mac_check
+        env:
+          FORCE_BURST: ${{ github.event.inputs.force_cloud_burst_seconds }}
+        run: |
+          if [ -n "$FORCE_BURST" ] && [ "$FORCE_BURST" != "0" ]; then
+            echo "🚀 Running Continuous Cloud Crypto Loop (${FORCE_BURST}s)..."
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            echo "burst_sec=$FORCE_BURST" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          HB=$(curl -s -m 5 "https://ntfy.sh/crypto-greg-hb-3fc522ce/json?poll=1&since=150s" || true)
+          if echo "$HB" | grep -q "mac-crypto-online"; then
+            echo "🟢 Local Mac Crypto Engine is online and actively trading. Cloud Standby yielding cleanly."
+            echo "should_run=false" >> $GITHUB_OUTPUT
+            echo "burst_sec=0" >> $GITHUB_OUTPUT
+          else
+            echo "⚡ Local Mac is offline/shut down! Activating Continuous 28-Minute GitHub Cloud Crypto Quant Engine!"
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            echo "burst_sec=1680" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout Engine
+        if: steps.mac_check.outputs.should_run == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        if: steps.mac_check.outputs.should_run == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Fast Core Dependencies
+        if: steps.mac_check.outputs.should_run == 'true'
+        run: pip install -q httpx cryptography pydantic pydantic-settings python-dotenv pyyaml numpy websockets
+
+      - name: Execute 24/7 Cloud Autonomous Crypto Burst
+        if: steps.mac_check.outputs.should_run == 'true'
+        env:
+          HYPERLIQUID_WALLET_ADDRESS: ${{ secrets.HYPERLIQUID_WALLET_ADDRESS }}
+          HYPERLIQUID_AGENT_PRIVATE_KEY: ${{ secrets.HYPERLIQUID_AGENT_PRIVATE_KEY }}
+          KRAKEN_API_KEY: ${{ secrets.KRAKEN_API_KEY }}
+          KRAKEN_API_SECRET: ${{ secrets.KRAKEN_API_SECRET }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BURST_SEC: ${{ steps.mac_check.outputs.burst_sec }}
+        run: |
+          python scripts/crypto_24_7_roller.py --duration "$BURST_SEC" || true

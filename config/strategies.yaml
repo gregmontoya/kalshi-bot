@@ -1,17 +1,25 @@
 # Hot-Reloadable Strategy Pod Configuration & Institutional Risk Rules
+# Enforced at startup by scripts/live_auto_roller.py and src/risk/remediated_engine_guards.py
 
 global:
-  trading_mode: "PAPER"         # PAPER or LIVE
-  environment: "DEMO"           # DEMO or PROD
+  trading_mode: "PAPER"         # PAPER (default fail-closed) or LIVE
+  environment: "PROD"           # DEMO or PROD (read-only market data in PAPER mode)
   maker_first: true             # Post resting orders only ($0.00 fee)
-  batch_contracts_minimum: 10   # Avoid whole-cent fee rounding on single contracts
+  batch_contracts_minimum: 5    # Minimum contracts per order
   default_cancel_on_pause: true
   default_sell_position_floor: 0
 
 risk:
-  max_daily_drawdown_dollars: 500.00
-  max_portfolio_exposure_pct: 0.35
-  max_leg_exposure_dollars: 100.00
+  max_daily_drawdown_dollars: 15.00
+  max_trade_risk_pct: 0.005           # 0.5% of equity max planned risk per trade (~$1.79 at $358.72)
+  max_aggregate_risk_pct: 0.020       # 2.0% of equity max aggregate planned risk (~$7.17 at $358.72)
+  max_portfolio_exposure_pct: 0.25    # Max 25% total capital deployed across all open positions
+  max_leg_exposure_dollars: 25.00     # Hard dollar cap per single position during recovery phase
+  max_concurrent_positions: 5         # Strict N_open + N_reserved <= 5 invariant
+  daily_trade_cap: 20                 # Hard stop on new entries when reached; never relaxes gates when behind
+  max_evidence_age_sec: 15.0          # Max age for external scoreboard & sharp odds validation
+  require_sharp_odds: true            # Fail-closed: veto any sport/market missing de-vigged sharp probability
+  allow_unverified_challenger: false  # Never bypass scoreboard verification for Challenger tennis
   sell_position_floor: 0
   cancel_on_pause: true
 
@@ -33,7 +41,7 @@ pod_2_sharp_value_green_out:
   entry_zone: [0.38, 0.58]
   min_sharp_edge_dollars: 0.05
   green_out_gain_dollars: 0.16
-  default_contracts: 25
+  default_contracts: 15
 
 pod_3_tail_lock_harvester:
   enabled: true
@@ -41,7 +49,7 @@ pod_3_tail_lock_harvester:
   min_win_probability: 0.992
   max_seconds_remaining: 120
   opp_timeouts_allowed: 0
-  default_contracts: 50
+  default_contracts: 25
 
 whale_tape_reader:
   enabled: true

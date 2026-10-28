@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kalshi Quant Engine — Daily Balance & Winnings Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+  <style>
+    body { background-color: #070b14; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif; }
+    .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 1rem; }
+    .card-highlight { background: linear-gradient(145deg, #0f172a, #0b221e); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 1rem; }
+    .tab-active { background-color: #10b981; color: #052e16; font-weight: 700; }
+    .tab-inactive { background-color: #1e293b; color: #94a3b8; font-weight: 600; }
+  </style>
+</head>
+<body class="min-h-screen p-5 md:p-8">
+  <div class="max-w-6xl mx-auto space-y-6">
+
+    <!-- Top Header -->
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-5">
+      <div>
+        <div class="flex items-center gap-2.5">
+          <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+          <span class="text-xs font-bold uppercase tracking-widest text-emerald-400">Kalshi Live Account • Daily Balance & Profit Tracker</span>
+        </div>
+        <h1 class="text-2xl md:text-3xl font-black text-white mt-1">
+          Daily Account Balance & Winnings
+        </h1>
+      </div>
+      <div class="flex items-center gap-3">
+        <a href="/crypto" class="rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 px-3.5 py-2 text-xs font-extrabold text-cyan-300 transition">
+          ⚡ Switch to Crypto Machine (Kraken / Wallet)
+        </a>
+        <div class="card px-4 py-2 text-right">
+          <div class="text-[11px] uppercase tracking-wider text-slate-400">Current Tier</div>
+          <div id="active-tier" class="text-sm font-extrabold text-emerald-400">TIER 1 ($15–$60 Growth)</div>
+        </div>
+        <div class="card px-4 py-2 text-right">
+          <div class="text-[11px] uppercase tracking-wider text-slate-400">Live Sync</div>
+          <div id="last-updated" class="text-sm font-mono font-bold text-cyan-400">Active (15s)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4 Big Easy-to-Read Summary Numbers -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="card-highlight p-5">
+        <div class="text-xs font-bold uppercase tracking-wider text-emerald-300">Current Total Balance</div>
+        <div id="kpi-equity" class="text-4xl font-black text-white mt-1">$26.18</div>
+        <div id="kpi-equity-sub" class="text-xs text-emerald-400 mt-1.5 font-semibold">Started Day 1 at $25.00 (+$1.18)</div>
+      </div>
+      <div class="card p-5">
+        <div class="text-xs font-bold uppercase tracking-wider text-slate-400">Cash + Open Bets</div>
+        <div class="text-2xl font-extrabold text-white mt-2">
+          <span id="kpi-cash" class="text-cyan-400">$12.78</span>
+          <span class="text-slate-500 text-lg"> + </span>
+          <span id="kpi-portfolio" class="text-amber-400">$13.40</span>
+        </div>
+        <div class="text-xs text-slate-400 mt-2">Cash Available + 2 Active WTA Plays</div>
+      </div>
+      <div class="card p-5">
+        <div class="text-xs font-bold uppercase tracking-wider text-slate-400">Expected After Current Plays</div>
+        <div id="kpi-projected" class="text-4xl font-black text-emerald-400 mt-1">$29.10</div>
+        <div class="text-xs text-emerald-300 mt-1.5 font-semibold">+$3.97 Profit Queued @ 96¢</div>
+      </div>
+      <div class="card p-5">
+        <div class="text-xs font-bold uppercase tracking-wider text-slate-400">7-Day Target Balance</div>
+        <div class="text-4xl font-black text-cyan-400 mt-1">$95.00+</div>
+        <div class="text-xs text-slate-400 mt-1.5">At ~18%–22% Daily Compounding</div>
+      </div>
+    </div>
+
+    <!-- MAIN DAILY LINE CHART (Clean, Large, With Dollar Labels on Every Day) -->
+    <div class="card p-6">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <div>
+          <h2 id="chart-title" class="text-xl font-extrabold text-white">📊 Day-by-Day Account Balance ($ USD)</h2>
+          <p id="chart-subtitle" class="text-sm text-slate-400 mt-0.5">
+            Solid Green = Your Actual Balance by Day &nbsp;|&nbsp; Dashed Blue = Daily Compounding Target Path
+          </p>
+        </div>
+        <div class="flex gap-2">
+          <button id="btn-daily" onclick="switchView('daily')" class="tab-active px-4 py-2 rounded-lg text-xs uppercase tracking-wider transition">
+            📅 Daily View (Day 1 – Day 7)
+          </button>
+          <button id="btn-today" onclick="switchView('today')" class="tab-inactive px-4 py-2 rounded-lg text-xs uppercase tracking-wider transition">
+            ⚡ Today's Trades (Day 1 Detail)
+          </button>
+        </div>
+      </div>
+
+      <div class="h-96 w-full">
+        <canvas id="dailyChart"></canvas>
+      </div>
+    </div>
+
+    <!-- DAY-BY-DAY WINNINGS TABLE -->
+    <div class="card p-6 overflow-x-auto">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="text-xl font-extrabold text-white">📅 Daily Winnings & Balance Sheet</h2>
+          <p class="text-sm text-slate-400">Updates automatically every night as trades settle — tracks your daily balance going up or down</p>
+        </div>
+      </div>
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="border-b-2 border-slate-800 text-slate-400 text-xs uppercase tracking-wider">
+            <th class="py-3.5 px-4">Day / Date</th>
+            <th class="py-3.5 px-4">Starting Balance</th>
+            <th class="py-3.5 px-4">Day Low</th>
+            <th class="py-3.5 px-4">Day High</th>
+            <th class="py-3.5 px-4">Ending / Live Balance</th>
+            <th class="py-3.5 px-4">Daily Profit ($)</th>
+            <th class="py-3.5 px-4">Daily Return (%)</th>
+            <th class="py-3.5 px-4">Status / Notes</th>
+          </tr>
+        </thead>
+        <tbody id="daily-table-body" class="divide-y divide-slate-800 text-sm">
+          <tr class="bg-emerald-500/5">
+            <td class="py-4 px-4 font-bold text-white">Day 1 • Sun Oct 25</td>
+            <td class="py-4 px-4 font-mono text-slate-300">$25.00</td>
+            <td class="py-4 px-4 font-mono text-slate-400">$24.79</td>
+            <td class="py-4 px-4 font-mono text-emerald-400">$29.85</td>
+            <td id="row-day1-bal" class="py-4 px-4 font-mono text-lg font-black text-white">$26.18</td>
+            <td id="row-day1-pnl" class="py-4 px-4 font-mono font-bold text-emerald-400">+$1.18</td>
+            <td id="row-day1-pct" class="py-4 px-4 font-mono font-bold text-emerald-400">+4.7%</td>
+            <td class="py-4 px-4"><span class="px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-500/20 text-emerald-300">🟢 LIVE (Target $29.10 w/ 2 WTA Plays)</span></td>
+          </tr>
+          <tr>
+            <td class="py-3.5 px-4 font-semibold text-slate-300">Day 2 • Mon Oct 26</td>
+            <td class="py-3.5 px-4 font-mono text-slate-400">$29.10</td>
+            <td class="py-3.5 px-4 font-mono text-slate-500">—</td>
+            <td class="py-3.5 px-4 font-mono text-slate-500">—</td>
+            <td class="py-3.5 px-4 font-mono font-semibold text-cyan-400">$35.00 (Target)</td>
+            <td class="py-3.5 px-4 font-mono text-cyan-400">+$5.90</td>
+            <td class="py-3.5 px-4 font-mono text-cyan-400">+20.2%</td>
+            <td class="py-3.5 px-4 text-xs text-slate-400">Monday Night NFL + NBA + ATP/WTA Tennis</td>
+          </tr>
+          <tr>
+            <td class="py-3.5 px-4 font-semibold text-slate-300">Day 3 • Tue Oct 27</td>
+            <td class="py-3.5 px-4 font-mono text-slate-400">$35.00</td>
+            <td class="py-3.5 px-4 font-mono text-slate-500">—</td>
+            <td class="py-3.5 px-4 font-mono text-slate-500">—</td>
+            <td class="py-3.5 px-4 font-mono font-semibold text-cyan-400">$43.00 (Target)</td>
+            <td class="py-3.5 px-4 font-mono text-cyan-400">+$8.00</td>
+            <td class="py-3.5 px-4 font-mono text-cyan-400">+22.8%</td>
+            <td class="py-3.5 px-4 text-xs text-slate-400">NBA + NHL + UEFA Champions League + CFB</td>
+          </tr>
+          <tr>
+            <td class="py-3.5 px-4 font-semibold text-slate-300">Day 4 • Wed Oct 28</td>
+            <td class="py-3.5 px-4 font-mono text-slate-400">$43.00</td>
+            <td class="py-3.5 px-4 font-mono text-slate-500">—</td>
+            <td class="py-3.5 px-4 font-mono text-slate-500">—</td>
+            <td class="py-3.5 px-4 font-mono font-semibold text-cyan-400">$53.00 (Target)</td>
+            <td class="py-3.5 px-4 font-mono text-cyan-400">+$10.00</td>
+            <td class="py-3.5 px-4 font-mono text-cyan-400">+23.2%</td>
+            <td class="py-3.5 px-4 text-xs text-slate-400">Full NBA Slate + UCL + Mid-Week College Football</td>
+          </tr>
+          <tr>
+            <td class="py-3.5 px-4 font-semibold text-slate-300">Day 5 • Thu Oct 29</td>
+            <td class="py-3.5 px-4 font-mono text-slate-400">$53.00</td>
+            <td class="py-3.5 px-4 font-mono text-slate-500">—</td>
+            <td class="py-3.5 px-4 font-mono text-slate-500">—</td>
+            <td class="py-3.5 px-4 font-mono font-semibold text-cyan-400">$65.00 (Target)</td>
+            <td class="py-3.5 px-4 font-mono text-cyan-400">+$12.00</td>
+            <td class="py-3.5 px-4 font-mono text-cyan-400">+22.6%</td>
+            <td class="py-3.5 px-4 text-xs text-slate-400">Unlocks TIER 2 ($60+ Acceleration) • TNF + NBA</td>
+          </tr>
+          <tr>
+            <td class="py-3.5 px-4 font-semibold text-slate-300">Day 6 • Fri Oct 30</td>
+            <td class="py-3.5 px-4 font-mono text-slate-400">$65.00</td>
+            <td class="py-3.5 px-4 font-mono text-slate-500">—</td>
+            <td class="py-3.5 px-4 font-mono text-slate-500">—</td>
+            <td class="py-3.5 px-4 font-mono font-semibold text-cyan-400">$79.00 (Target)</td>
+            <td class="py-3.5 px-4 font-mono text-cyan-400">+$14.00</td>
+            <td class="py-3.5 px-4 font-mono text-cyan-400">+21.5%</td>
+            <td class="py-3.5 px-4 text-xs text-slate-400">Friday College Football + NBA + NHL</td>
+          </tr>
+          <tr>
+            <td class="py-3.5 px-4 font-semibold text-slate-300">Day 7 • Sat Oct 31</td>
+            <td class="py-3.5 px-4 font-mono text-slate-400">$79.00</td>
+            <td class="py-3.5 px-4 font-mono text-slate-500">—</td>
+            <td class="py-3.5 px-4 font-mono text-slate-500">—</td>
+            <td class="py-3.5 px-4 font-mono font-semibold text-cyan-400">$96.00 (Target)</td>
+            <td class="py-3.5 px-4 font-mono text-cyan-400">+$17.00</td>
+            <td class="py-3.5 px-4 font-mono text-cyan-400">+21.5%</td>
+            <td class="py-3.5 px-4 text-xs text-slate-400">60-Game College Football Saturday Marathon!</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- TODAY'S SETTLED & ACTIVE TRADES -->
+    <div class="card p-6 overflow-x-auto">
+      <h2 class="text-xl font-extrabold text-white mb-1">🏆 Today's Individual Trades (Day 1 Scorecard)</h2>
+      <p class="text-sm text-slate-400 mb-4">Real-money picks executed today + your 2 active WTA matches waiting to cash out at 96¢</p>
+      <table class="w-full text-left border-collapse text-sm">
+        <thead>
+          <tr class="border-b border-slate-800 text-slate-400 text-xs uppercase">
+            <th class="py-3 px-3">Sport</th>
+            <th class="py-3 px-3">Match / Team</th>
+            <th class="py-3 px-3">Contracts</th>
+            <th class="py-3 px-3">Bought At</th>
+            <th class="py-3 px-3">Sold / Target</th>
+            <th class="py-3 px-3">Status</th>
+            <th class="py-3 px-3 text-right">Net Profit</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800">
+          <tr>
+            <td class="py-3 px-3">🏀 NBA</td>
+            <td class="py-3 px-3 font-bold text-white">Detroit Pistons</td>
+            <td class="py-3 px-3 font-mono">10x</td>
+            <td class="py-3 px-3 font-mono">62¢ ($6.20)</td>
+            <td class="py-3 px-3 font-mono text-emerald-400 font-bold">90¢ ($9.00)</td>
+            <td class="py-3 px-3"><span class="px-2 py-0.5 rounded text-xs font-bold bg-emerald-500/20 text-emerald-300">✅ WON</span></td>
+            <td class="py-3 px-3 text-right font-mono font-bold text-emerald-400">+$2.80 (+45%)</td>
+          </tr>
+          <tr>
+            <td class="py-3 px-3">🏈 NFL</td>
+            <td class="py-3 px-3 font-bold text-white">Seattle Seahawks</td>
+            <td class="py-3 px-3 font-mono">10x</td>
+            <td class="py-3 px-3 font-mono">83¢ ($8.30)</td>
+            <td class="py-3 px-3 font-mono text-emerald-400 font-bold">92¢ ($9.20)</td>
+            <td class="py-3 px-3"><span class="px-2 py-0.5 rounded text-xs font-bold bg-emerald-500/20 text-emerald-300">✅ WON</span></td>
+            <td class="py-3 px-3 text-right font-mono font-bold text-emerald-400">+$0.90 (+11%)</td>
+          </tr>
+          <tr>
+            <td class="py-3 px-3">🏀 NBA</td>
+            <td class="py-3 px-3 font-bold text-white">Memphis Grizzlies</td>
+            <td class="py-3 px-3 font-mono">17x</td>
+            <td class="py-3 px-3 font-mono">73¢ ($12.34)</td>
+            <td class="py-3 px-3 font-mono text-emerald-400 font-bold">90¢ ($15.20)</td>
+            <td class="py-3 px-3"><span class="px-2 py-0.5 rounded text-xs font-bold bg-emerald-500/20 text-emerald-300">✅ WON</span></td>
+            <td class="py-3 px-3 text-right font-mono font-bold text-emerald-400">+$2.86 (+23%)</td>
+          </tr>
+          <tr>
+            <td class="py-3 px-3">🎾 WTA</td>
+            <td class="py-3 px-3 font-bold text-white">Nikola Bartunkova</td>
+            <td class="py-3 px-3 font-mono">10x</td>
+            <td class="py-3 px-3 font-mono">64¢ ($6.40)</td>
+            <td class="py-3 px-3 font-mono text-cyan-400 font-bold">96¢ ($9.60 Queued)</td>
+            <td class="py-3 px-3"><span class="px-2 py-0.5 rounded text-xs font-bold bg-cyan-500/20 text-cyan-300">🟢 ACTIVE</span></td>
+            <td class="py-3 px-3 text-right font-mono font-bold text-cyan-400">+$3.20 Target</td>
+          </tr>
+          <tr>
+            <td class="py-3 px-3">🎾 WTA</td>
+            <td class="py-3 px-3 font-bold text-white">Elise Mertens</td>
+            <td class="py-3 px-3 font-mono">7x</td>
+            <td class="py-3 px-3 font-mono">85¢ ($5.95)</td>
+            <td class="py-3 px-3 font-mono text-cyan-400 font-bold">96¢ ($6.72 Queued)</td>
+            <td class="py-3 px-3"><span class="px-2 py-0.5 rounded text-xs font-bold bg-cyan-500/20 text-cyan-300">🟢 ACTIVE</span></td>
+            <td class="py-3 px-3 text-right font-mono font-bold text-cyan-400">+$0.77 Target</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <script>
+    Chart.register(ChartDataLabels);
+    const ctx = document.getElementById('dailyChart').getContext('2d');
+
+    const gradGreen = ctx.createLinearGradient(0, 0, 0, 360);
+    gradGreen.addColorStop(0, 'rgba(16, 185, 129, 0.35)');
+    gradGreen.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
+
+    let currentView = 'daily';
+    let latestEquity = 26.18;
+
+    const dailyConfig = () => ({
+      labels: [
+        'Start\n(Oct 25)',
+        'Day 1\n(Today Live)',
+        'Day 1 Tonight\n(After 2 WTA)',
+        'Day 2\n(Mon Oct 26)',
+        'Day 3\n(Tue Oct 27)',
+        'Day 4\n(Wed Oct 28)',
+        'Day 5\n(Thu Oct 29)',
+        'Day 6\n(Fri Oct 30)',
+        'Day 7\n(Sat Oct 31)'
+      ],
+      datasets: [
+        {
+          label: 'Your Actual Account Balance ($)',
+          data: [25.00, latestEquity, null, null, null, null, null, null, null],
+          borderColor: '#10b981',
+          backgroundColor: gradGreen,
+          borderWidth: 4,
+          pointBackgroundColor: '#10b981',
+          pointBorderColor: '#ffffff',
+          pointBorderWidth: 2,
+          pointRadius: 7,
+          fill: true,
+          tension: 0.25,
+          datalabels: {
+            align: 'top',
+            offset: 8,
+            color: '#34d399',
+            font: { weight: '900', size: 13 },
+            formatter: (v) => v ? '$' + v.toFixed(2) : ''
+          }
+        },
+        {
+          label: '7-Day Compounding Target Path ($)',
+          data: [25.00, latestEquity, 29.10, 35.00, 43.00, 53.00, 65.00, 79.00, 96.00],
+          borderColor: '#38bdf8',
+          borderDash: [6, 6],
+          borderWidth: 2.5,
+          pointBackgroundColor: '#0284c7',
+          pointBorderColor: '#38bdf8',
+          pointRadius: 5,
+          fill: false,
+          tension: 0.3,
+          datalabels: {
+            align: 'bottom',
+            offset: 8,
+            color: '#7dd3fc',
+            font: { weight: '700', size: 11 },
+            formatter: (v, ctx) => ctx.dataIndex >= 2 ? '$' + v.toFixed(2) : ''
+          }
+        }
+      ]
+    });
+
+    const todayConfig = () => ({
+      labels: [
+        'Start Day 1',
+        'After Pistons\n(+$2.80)',
+        'After Seahawks\n(+$0.90)',
+        'After Grizzlies\n(+$2.86)',
+        'Old Stop Bug\n(Fixed!)',
+        'Live Right Now',
+        'Tonight Target\n(2 WTA @ 96¢)'
+      ],
+      datasets: [
+        {
+          label: 'Day 1 Intraday Balance ($)',
+          data: [25.00, 27.80, 28.70, 29.85, 24.79, latestEquity, 29.10],
+          borderColor: '#10b981',
+          backgroundColor: gradGreen,
+          borderWidth: 4,
+          pointBackgroundColor: ['#94a3b8', '#10b981', '#10b981', '#10b981', '#f59e0b', '#38bdf8', '#10b981'],
+          pointBorderColor: '#ffffff',
+          pointBorderWidth: 2,
+          pointRadius: 7,
+          fill: true,
+          tension: 0.25,
+          datalabels: {
+            align: 'top',
+            offset: 8,
+            color: '#f8fafc',
+            font: { weight: '800', size: 13 },
+            formatter: (v) => '$' + v.toFixed(2)
+          }
+        }
+      ]
+    });
+
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: dailyConfig(),
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: { padding: { top: 30, bottom: 15, left: 10, right: 20 } },
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: { color: '#e2e8f0', font: { size: 13, weight: 'bold' }, padding: 20 }
+          },
+          tooltip: {
+            backgroundColor: '#0f172a',
+            titleColor: '#fff',
+            bodyColor: '#34d399',
+            borderColor: '#334155',
+            borderWidth: 1,
+            padding: 12,
+            callbacks: {
+              label: (c) => ` ${c.dataset.label}: $${c.parsed.y.toFixed(2)}`
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#cbd5e1', font: { size: 12, weight: '600' } },
+            grid: { color: 'rgba(148, 163, 184, 0.08)' }
+          },
+          y: {
+            ticks: {
+              color: '#cbd5e1',
+              font: { size: 12, weight: '600' },
+              callback: (v) => '$' + v
+            },
+            grid: { color: 'rgba(148, 163, 184, 0.12)' }
+          }
+        }
+      }
+    });
+
+    function switchView(mode) {
+      currentView = mode;
+      const bDaily = document.getElementById('btn-daily');
+      const bToday = document.getElementById('btn-today');
+      if (mode === 'daily') {
+        bDaily.className = 'tab-active px-4 py-2 rounded-lg text-xs uppercase tracking-wider transition';
+        bToday.className = 'tab-inactive px-4 py-2 rounded-lg text-xs uppercase tracking-wider transition';
+        document.getElementById('chart-title').textContent = '📊 Day-by-Day Account Balance ($ USD)';
+        document.getElementById('chart-subtitle').textContent = 'Solid Green = Your Actual Balance by Day  |  Dashed Blue = Daily Compounding Target Path';
+        chart.data = dailyConfig();
+      } else {
+        bToday.className = 'tab-active px-4 py-2 rounded-lg text-xs uppercase tracking-wider transition';
+        bDaily.className = 'tab-inactive px-4 py-2 rounded-lg text-xs uppercase tracking-wider transition';
+        document.getElementById('chart-title').textContent = '⚡ Today’s Trade-by-Trade Balance Progression';
+        document.getElementById('chart-subtitle').textContent = 'Every step of your account balance today from $25.00 start to $29.10 tonight target';
+        chart.data = todayConfig();
+      }
+      chart.update();
+    }
+
+    async function refreshLiveLedger() {
+      try {
+        const res = await fetch('http://127.0.0.1:8000/api/live-ledger');
+        if (!res.ok) return;
+        const d = await res.json();
+        if (d.equity) {
+          latestEquity = d.equity;
+          const diff = d.equity - 25.00;
+          const pct = (diff / 25.00) * 100.0;
+          document.getElementById('kpi-equity').textContent = '$' + d.equity.toFixed(2);
+          document.getElementById('kpi-cash').textContent = '$' + d.cash.toFixed(2);
+          document.getElementById('kpi-portfolio').textContent = '$' + d.portfolio.toFixed(2);
+          document.getElementById('row-day1-bal').textContent = '$' + d.equity.toFixed(2);
+          document.getElementById('row-day1-pnl').textContent = (diff >= 0 ? '+$' : '-$') + Math.abs(diff).toFixed(2);
+          document.getElementById('row-day1-pct').textContent = (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%';
+          document.getElementById('last-updated').textContent = 'Synced ' + new Date().toLocaleTimeString();
+          chart.data = currentView === 'daily' ? dailyConfig() : todayConfig();
+          chart.update('none');
+        }
+      } catch (e) {}
+    }
+    setInterval(refreshLiveLedger, 15000);
+    refreshLiveLedger();
+  </script>
+</body>
+</html>

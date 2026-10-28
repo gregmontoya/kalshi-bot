@@ -1,0 +1,64 @@
+# Hot-Reloadable Crypto Multi-Strategy Pod Configuration & Institutional Risk Rules
+# 100% Isolated Bankroll from Kalshi Sports Machine
+
+global:
+  trading_mode: "PAPER"             # PAPER (Shadow Live Orderbooks) or LIVE
+  primary_execution_venue: "HYPERLIQUID" # HYPERLIQUID (Wallet) or KRAKEN_PRO
+  spot_leg_venue: "KRAKEN_PRO"      # Used for Delta-Neutral Spot + Perp locks
+  truth_feed_venue: "COINBASE"      # Institutional Spot & CVD Truth Source
+  maker_first: true                 # Strictly POST_ONLY resting limit orders
+  hyperliquid_maker_rebate_bps: -1.0 # -0.01% Maker rebate (pays you to provide liquidity)
+  kraken_maker_fee_bps: 16.0        # 0.16% Kraken Pro base maker fee (0.00% at volume)
+  kraken_taker_fee_bps: 26.0        # 0.26% Kraken Pro taker fee
+  reduce_only_exits: true           # Equivalent to sell_position_floor: 0 (never flip short)
+  cancel_on_volatility_spike: true  # Equivalent to cancel_on_pause: true
+
+bankroll:
+  starting_equity_usd: 1000.00      # Isolated Crypto Bankroll (separate from Kalshi Sports)
+  max_leverage: 2.0                 # Conservative 1x-2x max cap
+
+risk:
+  max_daily_drawdown_usd: 75.00     # 7.5% daily circuit breaker
+  max_portfolio_exposure_pct: 0.60  # Max 60% of crypto bankroll deployed simultaneously
+  max_leg_exposure_usd: 250.00      # Max USD per single coin leg
+  sub_second_sniper_guard_pct: 0.35 # Pull resting maker bids if BTC moves >0.35% in 3 seconds
+  max_funding_overheat_bps_hr: 5.0  # Downgrade longs if hourly funding > 0.05%/hr ("20mph headwind")
+
+# POD 1: 3-Leg Relative-Strength Momentum Basket + Institutional CVD Guillotine
+pod_1_crypto_momentum_basket:
+  enabled: true
+  universe: ["BTC", "ETH", "SOL", "SUI", "AVAX", "LINK", "XRP", "DOGE"]
+  basket_size: 3
+  leg_notional_usd: 200.00          # $200 per leg = $600 total basket
+  min_whale_imbalance_ratio: 3.0    # Bid depth >= 3.0x Ask depth within 0.5% of mid
+  min_cvd_score: 0.65               # Institutional Coinbase/Kraken buying pressure score (0-1)
+  maker_entry_offset_bps: 8.0       # Rest POST_ONLY limit bid 8 bps (0.08%) below best ask
+  take_profit_pct: 3.80             # Auto-queue Maker Take-Profit sell at +3.8%
+  guillotine_drop_pct: -1.60        # If leg drops -1.6%, check live Coinbase Institutional CVD
+  guillotine_hold_cvd_score: 0.58   # If institutional spot flow is still >= 58% bullish, HOLD
+  guillotine_exit_cvd_score: 0.45   # If institutional spot flow crashed < 45%, fire Guillotine exit
+
+# POD 2: Liquidation Wick Catcher + Automatic Mid-Swing "Green-Out"
+pod_2_wick_value_green_out:
+  enabled: true
+  universe: ["BTC", "ETH", "SOL", "SUI", "AVAX", "XRP"]
+  notional_per_trade_usd: 250.00
+  min_wick_dislocation_pct: 1.80    # Coin dipped >= 1.8% below 15m VWAP while BTC Spot is stable
+  maker_bid_depth_offset_bps: 15.0  # Catch the bottom of the liquidation cascade via POST_ONLY
+  green_out_bounce_pct: 2.20        # On +2.2% bounce, sell 60% & move stop to entry + 0.5% ("Free Ride")
+  scale_out_fraction: 0.60          # Sell 60% on Green-Out, keep 40% risk-free moonbag
+  runner_take_profit_pct: 5.50      # Final target for the remaining 40% moonbag
+
+# POD 3: Delta-Neutral Funding & Basis Lock Harvester (99.5%+ Mathematical Lock)
+pod_3_funding_tail_lock:
+  enabled: true
+  universe: ["BTC", "ETH", "SOL", "SUI", "DOGE"]
+  pair_notional_usd: 300.00         # $150 Long Kraken Spot + $150 Short Hyperliquid 1x Perp
+  min_annualized_funding_apy: 18.0  # Enter when annualized perp funding rate >= 18% APY
+  min_perp_basis_premium_bps: 12.0  # Perp trading >= 12 bps (0.12%) richer than Kraken/Coinbase Spot
+  exit_funding_apy_floor: 5.0       # Unwind delta-neutral lock if funding cools below 5% APY
+  basis_convergence_take_profit_bps: -2.0 # Or lock instant spread profit when perp premium mean-reverts
+
+whale_tape_reader:
+  enabled: true
+  imbalance_ratio_threshold: 5.0    # 5:1 L2 orderbook bid/ask dollar wall alert

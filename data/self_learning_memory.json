@@ -1,27 +1,37 @@
 {
   "series_stats": {
-    "KXNHLGAME": {
-      "realized_pnl": -3.46,
+    "KXNFLGAME": {
+      "realized_pnl": 0.67,
       "wins": 1,
       "losses": 1
     },
-    "KXLIGAMXGAME": {
-      "realized_pnl": -0.44,
-      "wins": 0,
-      "losses": 0
+    "KXNBAGAME": {
+      "realized_pnl": -29.7,
+      "wins": 3,
+      "losses": 2
+    },
+    "KXNHLGAME": {
+      "realized_pnl": 4.28,
+      "wins": 4,
+      "losses": 1
     },
     "KXWTAMATCH": {
-      "realized_pnl": 7.32,
-      "wins": 1,
-      "losses": 0
+      "realized_pnl": 19.9,
+      "wins": 2,
+      "losses": 2
     },
     "KXATPMATCH": {
-      "realized_pnl": -36.05,
+      "realized_pnl": -18.13,
+      "wins": 1,
+      "losses": 3
+    },
+    "KXLIGAMXGAME": {
+      "realized_pnl": -0.75,
       "wins": 0,
       "losses": 1
     },
     "KXINXU": {
-      "realized_pnl": -4.2,
+      "realized_pnl": -4.41,
       "wins": 0,
       "losses": 1
     },
@@ -30,113 +40,100 @@
       "wins": 1,
       "losses": 0
     },
-    "KXBTCD": {
-      "realized_pnl": 2.61,
-      "wins": 1,
-      "losses": 0
-    },
     "KXETHD": {
       "realized_pnl": 1.05,
       "wins": 1,
       "losses": 0
     },
+    "KXBTCD": {
+      "realized_pnl": 2.61,
+      "wins": 1,
+      "losses": 0
+    },
     "KXLALIGAGAME": {
-      "realized_pnl": 12.8,
+      "realized_pnl": 12.12,
       "wins": 1,
       "losses": 0
     },
     "KXNBA1H": {
-      "realized_pnl": -13.4412,
-      "wins": 0,
+      "realized_pnl": -4.27,
+      "wins": 1,
       "losses": 1
     },
     "KXNBA1HSPREAD": {
-      "realized_pnl": 7.93,
-      "wins": 1,
+      "realized_pnl": 19.49,
+      "wins": 2,
       "losses": 0
+    },
+    "KXNBASPREAD": {
+      "realized_pnl": -27.76,
+      "wins": 5,
+      "losses": 2
     },
     "KXNBATEAMTOTAL": {
       "realized_pnl": 9.9,
       "wins": 1,
       "losses": 0
     },
-    "KXNBASPREAD": {
-      "realized_pnl": -17.23,
-      "wins": 1,
-      "losses": 1
-    },
-    "KXNBAGAME": {
-      "realized_pnl": 9.35,
-      "wins": 1,
-      "losses": 0
-    },
     "KXNBATOTAL": {
-      "realized_pnl": -18.04,
-      "wins": 0,
-      "losses": 1
+      "realized_pnl": 4.9,
+      "wins": 6,
+      "losses": 3
     },
     "KXNFLPASSYDS": {
-      "realized_pnl": -46.0045,
-      "wins": 0,
-      "losses": 1
-    },
-    "KXNFLTEAMTOTAL": {
-      "realized_pnl": -15.95,
+      "realized_pnl": -47.95,
       "wins": 0,
       "losses": 1
     },
     "KXNHLTOTAL": {
-      "realized_pnl": 10.9,
-      "wins": 3,
-      "losses": 0
+      "realized_pnl": -6.83,
+      "wins": 4,
+      "losses": 2
+    },
+    "KXNFLTEAMTOTAL": {
+      "realized_pnl": -16.9,
+      "wins": 0,
+      "losses": 1
     },
     "KXNFLSPREAD": {
-      "realized_pnl": 24.92,
+      "realized_pnl": 23.81,
       "wins": 2,
       "losses": 0
     },
     "KXSERIEAGAME": {
-      "realized_pnl": -167.2224,
-      "wins": 0,
+      "realized_pnl": -147.07,
+      "wins": 1,
       "losses": 1
     },
     "KXSERIEATOTAL": {
-      "realized_pnl": -108.5,
-      "wins": 0,
-      "losses": 1
-    },
-    "KXNHLSPREAD": {
-      "realized_pnl": -5.78,
+      "realized_pnl": -114.56,
       "wins": 0,
       "losses": 1
     },
     "KXNCAAFGAME": {
-      "realized_pnl": 4.34,
+      "realized_pnl": 4.05,
       "wins": 1,
       "losses": 0
     },
+    "KXNHLSPREAD": {
+      "realized_pnl": -6.33,
+      "wins": 0,
+      "losses": 1
+    },
     "KXATPCHALLENGERMATCH": {
-      "realized_pnl": -2.82,
-      "wins": 1,
+      "realized_pnl": 1.21,
+      "wins": 2,
       "losses": 1
     },
     "KXNHLGOAL": {
-      "realized_pnl": 3.85,
+      "realized_pnl": 3.93,
       "wins": 1,
       "losses": 0
     }
   },
-  "evaluated_plays": 10380,
-  "vetoed_plays": 10011,
-  "tracked_open_positions": {
-    "KXWTAMATCH-26OCT26ZAKLIN-LIN": {
-      "count": 122,
-      "stake": 101.26,
-      "max_count": 244,
-      "max_stake": 202.52,
-      "stage1_alerted": true
-    }
-  },
+  "evaluated_plays": 10437,
+  "vetoed_plays": 10068,
+  "tracked_open_positions": {},
   "greened_out_tickers": [],
   "daily_ledger": {
     "2026-10-25": {
@@ -176,62 +173,6 @@
     }
   },
   "equity_history": [
-    {
-      "date": "2026-10-27",
-      "time": "14:23",
-      "equity": 612.95,
-      "cash": 604.72,
-      "portfolio": 8.23
-    },
-    {
-      "date": "2026-10-27",
-      "time": "14:23",
-      "equity": 612.27,
-      "cash": 343.44,
-      "portfolio": 268.83
-    },
-    {
-      "date": "2026-10-27",
-      "time": "14:23",
-      "equity": 615.36,
-      "cash": 343.44,
-      "portfolio": 271.92
-    },
-    {
-      "date": "2026-10-27",
-      "time": "14:23",
-      "equity": 612.27,
-      "cash": 343.44,
-      "portfolio": 268.83
-    },
-    {
-      "date": "2026-10-27",
-      "time": "14:24",
-      "equity": 610.59,
-      "cash": 344.38,
-      "portfolio": 266.21
-    },
-    {
-      "date": "2026-10-27",
-      "time": "14:24",
-      "equity": 438.3,
-      "cash": 398.55,
-      "portfolio": 39.75
-    },
-    {
-      "date": "2026-10-27",
-      "time": "14:24",
-      "equity": 440.27,
-      "cash": 440.06,
-      "portfolio": 0.21
-    },
-    {
-      "date": "2026-10-27",
-      "time": "14:24",
-      "equity": 440.13,
-      "cash": 440.06,
-      "portfolio": 0.07
-    },
     {
       "date": "2026-10-27",
       "time": "14:25",
@@ -3675,6 +3616,62 @@
       "equity": 358.72,
       "cash": 358.72,
       "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-28",
+      "time": "09:28",
+      "equity": 358.72,
+      "cash": 358.72,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-28",
+      "time": "09:29",
+      "equity": 358.72,
+      "cash": 358.72,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-28",
+      "time": "09:31",
+      "equity": 358.72,
+      "cash": 358.72,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-28",
+      "time": "09:32",
+      "equity": 358.72,
+      "cash": 358.72,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-28",
+      "time": "09:33",
+      "equity": 358.72,
+      "cash": 358.72,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-28",
+      "time": "09:34",
+      "equity": 358.72,
+      "cash": 358.72,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-28",
+      "time": "09:35",
+      "equity": 358.72,
+      "cash": 358.72,
+      "portfolio": 0.0
+    },
+    {
+      "date": "2026-10-28",
+      "time": "09:36",
+      "equity": 358.72,
+      "cash": 358.72,
+      "portfolio": 0.0
     }
   ],
   "harvested_tickers": [
@@ -3802,7 +3799,7 @@
       "net_pnl_dlr": -577.26
     },
     "2026-10-28": {
-      "target_bets": 40,
+      "target_bets": 20,
       "completed_bets": 1,
       "wins": 0,
       "losses": 1,
@@ -3811,376 +3808,862 @@
   },
   "trade_autopsy_log": [
     {
-      "timestamp": "2026-10-27 11:02:21",
-      "ticker": "KXSERIEAGAME-26OCT27SASLAZ-LAZ",
-      "archetype": "SOCCER_MONEYLINE",
+      "timestamp": "2026-10-26T02:32:15.775455Z",
+      "ticker": "KXNFLGAME-26OCT25KCSEA-SEA",
       "outcome": "WIN",
-      "entry_cents": 86,
-      "peak_cents": 95,
-      "exit_cents": 94,
-      "net_pnl_dlr": 26.6,
-      "diagnosis": "CLEAN_MAKER_HARVEST",
-      "exit_reason": "STAGE1_AND_STAGE2_MAKER_HARVEST"
+      "entry_cents": 83,
+      "peak_cents": 92,
+      "exit_cents": 92,
+      "net_pnl_dlr": 0.79,
+      "fees_dlr": 0.11,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
     },
     {
-      "timestamp": "2026-10-27 14:22:11",
-      "ticker": "KXSERIEATOTAL-26OCT27ROMCAG-4",
-      "archetype": "FULL_GAME_TOTAL",
+      "timestamp": "2026-10-26T01:55:58.410059Z",
+      "ticker": "KXNBAGAME-26OCT25DETPHI-DET",
+      "outcome": "WIN",
+      "entry_cents": 62,
+      "peak_cents": 90,
+      "exit_cents": 90,
+      "net_pnl_dlr": 2.62,
+      "fees_dlr": 0.18,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-26T03:16:51.804122Z",
+      "ticker": "KXNBAGAME-26OCT25MEMSAC-MEM",
+      "outcome": "WIN",
+      "entry_cents": 73,
+      "peak_cents": 89,
+      "exit_cents": 89,
+      "net_pnl_dlr": 2.77,
+      "fees_dlr": 0.09,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-26T03:11:08.097313Z",
+      "ticker": "KXNHLGAME-26OCT25MINVAN-MIN",
+      "outcome": "WIN",
+      "entry_cents": 65,
+      "peak_cents": 90,
+      "exit_cents": 90,
+      "net_pnl_dlr": 0.49,
+      "fees_dlr": 0.01,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-26T03:55:49.76932Z",
+      "ticker": "KXNFLGAME-26OCT26DALPHI-DAL",
+      "outcome": "LOSS",
+      "entry_cents": 67,
+      "peak_cents": 67,
+      "exit_cents": 67,
+      "net_pnl_dlr": -0.12,
+      "fees_dlr": 0.12,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-26T16:17:38.178619Z",
+      "ticker": "KXWTAMATCH-26OCT25SASBAR-BAR",
+      "outcome": "LOSS",
+      "entry_cents": 64,
+      "peak_cents": 64,
+      "exit_cents": 64,
+      "net_pnl_dlr": -0.2,
+      "fees_dlr": 0.2,
+      "market_result": "no",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-26T16:17:14.08736Z",
+      "ticker": "KXATPMATCH-26OCT25TABJOD-JOD",
       "outcome": "LOSS",
       "entry_cents": 76,
-      "peak_cents": 45,
-      "exit_cents": 45,
-      "net_pnl_dlr": -108.5,
-      "diagnosis": "LATE_PACE_OR_GAME_SCRIPT_STALL",
-      "exit_reason": "THESIS_BROKEN_GUILLOTINE"
+      "peak_cents": 76,
+      "exit_cents": 74,
+      "net_pnl_dlr": -0.01,
+      "fees_dlr": 0.01,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
     },
     {
-      "timestamp": "2026-10-27 14:23:57",
+      "timestamp": "2026-10-26T05:03:18.008938Z",
+      "ticker": "KXWTAMATCH-26OCT25KASGIB-GIB",
+      "outcome": "LOSS",
+      "entry_cents": 76,
+      "peak_cents": 76,
+      "exit_cents": 75,
+      "net_pnl_dlr": -0.46,
+      "fees_dlr": 0.3,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-26T04:50:12.147399Z",
+      "ticker": "KXLIGAMXGAME-26OCT25TIJSLA-TIJ",
+      "outcome": "LOSS",
+      "entry_cents": 86,
+      "peak_cents": 86,
+      "exit_cents": 85,
+      "net_pnl_dlr": -0.75,
+      "fees_dlr": 0.31,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-26T05:59:27.340162Z",
+      "ticker": "KXWTAMATCH-26OCT25UCHMER-MER",
+      "outcome": "WIN",
+      "entry_cents": 85,
+      "peak_cents": 96,
+      "exit_cents": 96,
+      "net_pnl_dlr": 0.75,
+      "fees_dlr": 0.02,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-26T16:43:42.791596Z",
+      "ticker": "KXINXU-26OCT26H1600-T7674.9999",
+      "outcome": "LOSS",
+      "entry_cents": 83,
+      "peak_cents": 83,
+      "exit_cents": 48,
+      "net_pnl_dlr": -4.41,
+      "fees_dlr": 0.21,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": true,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-26T17:12:36.781224Z",
+      "ticker": "KXNASDAQ100U-26OCT26H1600-T29209.99",
+      "outcome": "WIN",
+      "entry_cents": 83,
+      "peak_cents": 88,
+      "exit_cents": 88,
+      "net_pnl_dlr": 3.63,
+      "fees_dlr": 0.0,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-26T18:36:00.198404Z",
+      "ticker": "KXETHD-26OCT2615-T2309.99",
+      "outcome": "WIN",
+      "entry_cents": 95,
+      "peak_cents": 98,
+      "exit_cents": 98,
+      "net_pnl_dlr": 1.05,
+      "fees_dlr": 0.0,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-26T18:33:28.254663Z",
+      "ticker": "KXBTCD-26OCT2615-T79899.99",
+      "outcome": "WIN",
+      "entry_cents": 91,
+      "peak_cents": 95,
+      "exit_cents": 95,
+      "net_pnl_dlr": 2.61,
+      "fees_dlr": 0.0,
+      "market_result": "no",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-26T21:43:21.373897Z",
+      "ticker": "KXLALIGAGAME-26OCT26SEVOSA-SEV",
+      "outcome": "WIN",
+      "entry_cents": 80,
+      "peak_cents": 89,
+      "exit_cents": 89,
+      "net_pnl_dlr": 12.12,
+      "fees_dlr": 0.68,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-26T23:32:27.464242Z",
+      "ticker": "KXNBA1H-26OCT26MINCLE-MIN",
+      "outcome": "WIN",
+      "entry_cents": 77,
+      "peak_cents": 86,
+      "exit_cents": 86,
+      "net_pnl_dlr": 11.56,
+      "fees_dlr": 0.0,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T00:06:26.763032Z",
+      "ticker": "KXNHLGAME-26OCT26LANYR-LA",
+      "outcome": "WIN",
+      "entry_cents": 76,
+      "peak_cents": 84,
+      "exit_cents": 84,
+      "net_pnl_dlr": 8.75,
+      "fees_dlr": 0.6,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-26T23:47:26.720607Z",
+      "ticker": "KXNBA1HSPREAD-26OCT26MINCLE-MIN3",
+      "outcome": "WIN",
+      "entry_cents": 80,
+      "peak_cents": 89,
+      "exit_cents": 89,
+      "net_pnl_dlr": 11.56,
+      "fees_dlr": 0.0,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T00:46:23.241506Z",
+      "ticker": "KXNBASPREAD-26OCT26MINCLE-MIN2",
+      "outcome": "LOSS",
+      "entry_cents": 77,
+      "peak_cents": 77,
+      "exit_cents": 48,
+      "net_pnl_dlr": -34.26,
+      "fees_dlr": 2.26,
+      "market_result": "no",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T00:40:20.447226Z",
+      "ticker": "KXNBAGAME-26OCT26MINCLE-MIN",
+      "outcome": "LOSS",
+      "entry_cents": 76,
+      "peak_cents": 76,
+      "exit_cents": 69,
+      "net_pnl_dlr": -10.03,
+      "fees_dlr": 1.99,
+      "market_result": "no",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T00:58:03.282485Z",
+      "ticker": "KXNBATEAMTOTAL-26OCT26MINCLE-CLE106",
+      "outcome": "WIN",
+      "entry_cents": 81,
+      "peak_cents": 90,
+      "exit_cents": 90,
+      "net_pnl_dlr": 9.9,
+      "fees_dlr": 0.0,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T01:19:29.845276Z",
+      "ticker": "KXNBATOTAL-26OCT26MINCLE-223",
+      "outcome": "LOSS",
+      "entry_cents": 86,
+      "peak_cents": 86,
+      "exit_cents": 76,
+      "net_pnl_dlr": -12.09,
+      "fees_dlr": 1.6,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": true,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T01:01:18.379262Z",
+      "ticker": "KXNBA1HSPREAD-26OCT26PHXOKC-OKC6",
+      "outcome": "WIN",
+      "entry_cents": 76,
+      "peak_cents": 85,
+      "exit_cents": 85,
+      "net_pnl_dlr": 7.93,
+      "fees_dlr": 0.0,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T01:45:15.474814Z",
+      "ticker": "KXNBAGAME-26OCT26DALMIA-MIA",
+      "outcome": "LOSS",
+      "entry_cents": 81,
+      "peak_cents": 81,
+      "exit_cents": 46,
+      "net_pnl_dlr": -34.05,
+      "fees_dlr": 1.85,
+      "market_result": "no",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T01:42:26.950046Z",
+      "ticker": "KXNBATOTAL-26OCT26DALMIA-218",
+      "outcome": "LOSS",
+      "entry_cents": 82,
+      "peak_cents": 82,
+      "exit_cents": 78,
+      "net_pnl_dlr": -4.5,
+      "fees_dlr": 0.97,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": true,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T01:48:34.174289Z",
+      "ticker": "KXNBATOTAL-26OCT26MINCLE-245",
+      "outcome": "WIN",
+      "entry_cents": 84,
+      "peak_cents": 92,
+      "exit_cents": 92,
+      "net_pnl_dlr": 0.49,
+      "fees_dlr": 0.02,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T01:54:38.078375Z",
+      "ticker": "KXNBATOTAL-26OCT26CHIBOS-228",
+      "outcome": "WIN",
+      "entry_cents": 85,
+      "peak_cents": 94,
+      "exit_cents": 94,
+      "net_pnl_dlr": 6.37,
+      "fees_dlr": 0.26,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T01:56:02.22205Z",
+      "ticker": "KXNBATOTAL-26OCT26DALMIA-222",
+      "outcome": "WIN",
+      "entry_cents": 76,
+      "peak_cents": 85,
+      "exit_cents": 85,
+      "net_pnl_dlr": 7.42,
+      "fees_dlr": 0.51,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T02:19:15.339605Z",
+      "ticker": "KXNBASPREAD-26OCT26INDMIL-MIL2",
+      "outcome": "WIN",
+      "entry_cents": 85,
+      "peak_cents": 94,
+      "exit_cents": 94,
+      "net_pnl_dlr": 7.13,
+      "fees_dlr": 0.29,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T02:43:40.857291Z",
+      "ticker": "KXNFLPASSYDS-26OCT26DALPHI-DALDPRESCOTT4-250",
+      "outcome": "LOSS",
+      "entry_cents": 78,
+      "peak_cents": 78,
+      "exit_cents": 36,
+      "net_pnl_dlr": -47.95,
+      "fees_dlr": 1.76,
+      "market_result": "no",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T02:47:22.820137Z",
+      "ticker": "KXNHLTOTAL-26OCT26TORCGY-6",
+      "outcome": "WIN",
+      "entry_cents": 84,
+      "peak_cents": 90,
+      "exit_cents": 90,
+      "net_pnl_dlr": 0.06,
+      "fees_dlr": 0.0,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T02:35:20.353445Z",
+      "ticker": "KXNBATOTAL-26OCT26ATLHOU-228",
+      "outcome": "WIN",
+      "entry_cents": 76,
+      "peak_cents": 84,
+      "exit_cents": 84,
+      "net_pnl_dlr": 8.75,
+      "fees_dlr": 0.6,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T02:42:28.461001Z",
+      "ticker": "KXNBASPREAD-26OCT26ATLHOU-HOU9",
+      "outcome": "WIN",
+      "entry_cents": 81,
+      "peak_cents": 90,
+      "exit_cents": 90,
+      "net_pnl_dlr": 8.87,
+      "fees_dlr": 0.48,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T03:00:23.565414Z",
+      "ticker": "KXNFLTEAMTOTAL-26OCT26DALPHI-DAL32",
+      "outcome": "LOSS",
+      "entry_cents": 79,
+      "peak_cents": 79,
+      "exit_cents": 64,
+      "net_pnl_dlr": -16.9,
+      "fees_dlr": 0.95,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": true,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T02:53:18.037006Z",
+      "ticker": "KXNBASPREAD-26OCT26ATLHOU-HOU11",
+      "outcome": "WIN",
+      "entry_cents": 80,
+      "peak_cents": 88,
+      "exit_cents": 88,
+      "net_pnl_dlr": 8.85,
+      "fees_dlr": 0.5,
+      "market_result": "no",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T03:08:10.502775Z",
+      "ticker": "KXNBATOTAL-26OCT26MEMUTA-215",
+      "outcome": "WIN",
+      "entry_cents": 78,
+      "peak_cents": 86,
+      "exit_cents": 86,
+      "net_pnl_dlr": 8.8,
+      "fees_dlr": 0.55,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T02:55:37.378963Z",
+      "ticker": "KXNBATOTAL-26OCT26ATLHOU-226",
+      "outcome": "WIN",
+      "entry_cents": 86,
+      "peak_cents": 94,
+      "exit_cents": 94,
+      "net_pnl_dlr": 9.02,
+      "fees_dlr": 0.33,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T03:00:37.889893Z",
+      "ticker": "KXNHLGAME-26OCT26TORCGY-CGY",
+      "outcome": "WIN",
+      "entry_cents": 75,
+      "peak_cents": 81,
+      "exit_cents": 81,
+      "net_pnl_dlr": 0.05,
+      "fees_dlr": 0.01,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T03:04:27.689572Z",
+      "ticker": "KXNFLSPREAD-26OCT26DALPHI-DAL4",
+      "outcome": "WIN",
+      "entry_cents": 79,
+      "peak_cents": 88,
+      "exit_cents": 88,
+      "net_pnl_dlr": 8.82,
+      "fees_dlr": 0.53,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T03:27:54.533756Z",
+      "ticker": "KXNBAGAME-26OCT26MEMUTA-MEM",
+      "outcome": "WIN",
+      "entry_cents": 85,
+      "peak_cents": 94,
+      "exit_cents": 94,
+      "net_pnl_dlr": 8.99,
+      "fees_dlr": 0.36,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T03:16:03.795337Z",
+      "ticker": "KXNFLSPREAD-26OCT26DALPHI-DAL11",
+      "outcome": "WIN",
+      "entry_cents": 86,
+      "peak_cents": 94,
+      "exit_cents": 94,
+      "net_pnl_dlr": 14.99,
+      "fees_dlr": 0.58,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T04:25:03.467342Z",
+      "ticker": "KXNBATOTAL-26OCT26GSWDEN-236",
+      "outcome": "LOSS",
+      "entry_cents": 84,
+      "peak_cents": 84,
+      "exit_cents": 68,
+      "net_pnl_dlr": -19.36,
+      "fees_dlr": 1.32,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": true,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T04:53:12.506955Z",
+      "ticker": "KXWTAMATCH-26OCT26ZAKLIN-LIN",
+      "outcome": "WIN",
+      "entry_cents": 83,
+      "peak_cents": 92,
+      "exit_cents": 92,
+      "net_pnl_dlr": 19.81,
+      "fees_dlr": 0.93,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T16:37:04.708719Z",
+      "ticker": "KXATPMATCH-26OCT27MPEFIL-FIL",
+      "outcome": "WIN",
+      "entry_cents": 83,
+      "peak_cents": 92,
+      "exit_cents": 92,
+      "net_pnl_dlr": 20.24,
+      "fees_dlr": 0.95,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T18:02:18.001893Z",
+      "ticker": "KXSERIEAGAME-26OCT27SASLAZ-LAZ",
+      "outcome": "WIN",
+      "entry_cents": 86,
+      "peak_cents": 94,
+      "exit_cents": 94,
+      "net_pnl_dlr": 25.5,
+      "fees_dlr": 1.1,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T21:22:11.385176Z",
+      "ticker": "KXSERIEATOTAL-26OCT27ROMCAG-4",
+      "outcome": "LOSS",
+      "entry_cents": 76,
+      "peak_cents": 76,
+      "exit_cents": 45,
+      "net_pnl_dlr": -114.56,
+      "fees_dlr": 6.06,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": true,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-27T21:24:06.584179Z",
       "ticker": "KXSERIEAGAME-26OCT27ROMCAG-ROM",
-      "archetype": "SOCCER_MONEYLINE",
       "outcome": "LOSS",
       "entry_cents": 87,
       "peak_cents": 87,
       "exit_cents": 33,
-      "net_pnl_dlr": -166.86,
-      "diagnosis": "SCOREBOARD_MOMENTUM_FLIP",
-      "exit_reason": "THESIS_BROKEN_GUILLOTINE"
+      "net_pnl_dlr": -172.57,
+      "fees_dlr": 5.38,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": true,
+      "reconciled_from_exchange_fills": true
     },
     {
-      "timestamp": "2026-10-27 14:24:01",
-      "ticker": "KXSERIEAGAME-26OCT27ROMCAG-ROM",
-      "archetype": "SOCCER_MONEYLINE",
-      "outcome": "LOSS",
-      "entry_cents": 87,
-      "peak_cents": 87,
-      "exit_cents": 32,
-      "net_pnl_dlr": -167.75,
-      "diagnosis": "SCOREBOARD_MOMENTUM_FLIP",
-      "exit_reason": "THESIS_BROKEN_GUILLOTINE"
-    },
-    {
-      "timestamp": "2026-10-27 14:24:06",
-      "ticker": "KXSERIEAGAME-26OCT27ROMCAG-ROM",
-      "archetype": "SOCCER_MONEYLINE",
-      "outcome": "LOSS",
-      "entry_cents": 87,
-      "peak_cents": 87,
-      "exit_cents": 34,
-      "net_pnl_dlr": -67.84,
-      "diagnosis": "SCOREBOARD_MOMENTUM_FLIP",
-      "exit_reason": "THESIS_BROKEN_GUILLOTINE"
-    },
-    {
-      "timestamp": "2026-10-27 17:45:57",
-      "ticker": "KXNBA1H-26OCT27DETNYK-DET",
-      "archetype": "FAST_PERIOD_MARKET",
+      "timestamp": "2026-10-28T00:31:22.334925Z",
+      "ticker": "KXNHLGAME-26OCT27FLAWPG-FLA",
       "outcome": "WIN",
-      "entry_cents": 78,
-      "peak_cents": 84,
-      "exit_cents": 86,
-      "net_pnl_dlr": 5.64,
-      "diagnosis": "CLEAN_MAKER_HARVEST",
-      "exit_reason": "STAGE1_AND_STAGE2_MAKER_HARVEST"
+      "entry_cents": 80,
+      "peak_cents": 88,
+      "exit_cents": 88,
+      "net_pnl_dlr": 5.05,
+      "fees_dlr": 0.33,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
     },
     {
-      "timestamp": "2026-10-27 18:01:34",
+      "timestamp": "2026-10-28T01:02:24.230263Z",
       "ticker": "KXNBA1H-26OCT27DETNYK-DET",
-      "archetype": "FAST_PERIOD_MARKET",
       "outcome": "LOSS",
-      "entry_cents": 89,
+      "entry_cents": 84,
       "peak_cents": 84,
       "exit_cents": 77,
-      "net_pnl_dlr": -12.6,
-      "diagnosis": "SCOREBOARD_MOMENTUM_FLIP",
-      "exit_reason": "TIGHT_10C_STOP_LOSS"
+      "net_pnl_dlr": -15.83,
+      "fees_dlr": 1.51,
+      "market_result": "no",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
     },
     {
-      "timestamp": "2026-10-27 18:01:56",
-      "ticker": "KXNBA1H-26OCT27DETNYK-DET",
-      "archetype": "FAST_PERIOD_MARKET",
-      "outcome": "LOSS",
-      "entry_cents": 89,
-      "peak_cents": 84,
-      "exit_cents": 73,
-      "net_pnl_dlr": -16.48,
-      "diagnosis": "SCOREBOARD_MOMENTUM_FLIP",
-      "exit_reason": "TIGHT_10C_STOP_LOSS"
-    },
-    {
-      "timestamp": "2026-10-27 18:02:04",
-      "ticker": "KXNBA1H-26OCT27DETNYK-DET",
-      "archetype": "FAST_PERIOD_MARKET",
-      "outcome": "LOSS",
-      "entry_cents": 89,
-      "peak_cents": 84,
-      "exit_cents": 71,
-      "net_pnl_dlr": -14.94,
-      "diagnosis": "SCOREBOARD_MOMENTUM_FLIP",
-      "exit_reason": "TIGHT_10C_STOP_LOSS"
-    },
-    {
-      "timestamp": "2026-10-27 18:02:24",
-      "ticker": "KXNBA1H-26OCT27DETNYK-DET",
-      "archetype": "FAST_PERIOD_MARKET",
-      "outcome": "LOSS",
-      "entry_cents": 89,
-      "peak_cents": 84,
-      "exit_cents": 70,
-      "net_pnl_dlr": -15.58,
-      "diagnosis": "SCOREBOARD_MOMENTUM_FLIP",
-      "exit_reason": "TIGHT_10C_STOP_LOSS"
-    },
-    {
-      "timestamp": "2026-10-27 18:04:11",
-      "ticker": "KXNHLGAME-26OCT27NJDAL-NJ",
-      "archetype": "FULL_GAME_MONEYLINE",
-      "outcome": "LOSS",
-      "entry_cents": 81,
-      "peak_cents": 75,
-      "exit_cents": 68,
-      "net_pnl_dlr": -8.84,
-      "diagnosis": "SCOREBOARD_MOMENTUM_FLIP",
-      "exit_reason": "TIGHT_10C_STOP_LOSS"
-    },
-    {
-      "timestamp": "2026-10-27 18:20:21",
-      "ticker": "KXNHLSPREAD-26OCT27NYINSH-NYI2",
-      "archetype": "FULL_GAME_SPREAD",
-      "outcome": "LOSS",
-      "entry_cents": 80,
-      "peak_cents": 79,
-      "exit_cents": 63,
-      "net_pnl_dlr": -5.78,
-      "diagnosis": "SCOREBOARD_MOMENTUM_FLIP",
-      "exit_reason": "TIGHT_10C_STOP_LOSS"
-    },
-    {
-      "timestamp": "2026-10-27 18:25:06",
-      "ticker": "KXNHLTOTAL-26OCT27CBJPHI-7",
-      "archetype": "FULL_GAME_TOTAL",
-      "outcome": "LOSS",
-      "entry_cents": 87,
-      "peak_cents": 59,
-      "exit_cents": 56,
-      "net_pnl_dlr": -9.3,
-      "diagnosis": "LATE_PACE_OR_GAME_SCRIPT_STALL",
-      "exit_reason": "TIGHT_10C_STOP_LOSS"
-    },
-    {
-      "timestamp": "2026-10-27 18:25:08",
-      "ticker": "KXNHLTOTAL-26OCT27CBJPHI-7",
-      "archetype": "FULL_GAME_TOTAL",
-      "outcome": "LOSS",
-      "entry_cents": 87,
-      "peak_cents": 59,
-      "exit_cents": 55,
-      "net_pnl_dlr": -8.32,
-      "diagnosis": "LATE_PACE_OR_GAME_SCRIPT_STALL",
-      "exit_reason": "TIGHT_10C_STOP_LOSS"
-    },
-    {
-      "timestamp": "2026-10-27 18:27:07",
-      "ticker": "KXNCAAFGAME-26OCT27DELWKU-DEL",
-      "archetype": "FULL_GAME_MONEYLINE",
-      "outcome": "WIN",
-      "entry_cents": 82,
-      "peak_cents": 91,
-      "exit_cents": 89,
-      "net_pnl_dlr": 4.34,
-      "diagnosis": "CLEAN_MAKER_HARVEST",
-      "exit_reason": "STAGE1_AND_STAGE2_MAKER_HARVEST"
-    },
-    {
-      "timestamp": "2026-10-27 18:50:30",
+      "timestamp": "2026-10-28T01:50:30.791334Z",
       "ticker": "KXNBASPREAD-26OCT27SACSAS-SAS16",
-      "archetype": "FULL_GAME_SPREAD",
       "outcome": "WIN",
       "entry_cents": 88,
       "peak_cents": 92,
-      "exit_cents": 88,
-      "net_pnl_dlr": 1.32,
-      "diagnosis": "STAGE1_PROFIT_SHIELD_SAVE",
-      "exit_reason": "STAGE1_PROFIT_SHIELD_EXIT"
+      "exit_cents": 92,
+      "net_pnl_dlr": 1.17,
+      "fees_dlr": 0.15,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
     },
     {
-      "timestamp": "2026-10-27 21:17:43",
+      "timestamp": "2026-10-28T01:04:11.534332Z",
+      "ticker": "KXNHLGAME-26OCT27NJDAL-NJ",
+      "outcome": "LOSS",
+      "entry_cents": 81,
+      "peak_cents": 81,
+      "exit_cents": 68,
+      "net_pnl_dlr": -10.06,
+      "fees_dlr": 1.22,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": true,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-28T01:27:05.284465Z",
+      "ticker": "KXNCAAFGAME-26OCT27DELWKU-DEL",
+      "outcome": "WIN",
+      "entry_cents": 82,
+      "peak_cents": 89,
+      "exit_cents": 89,
+      "net_pnl_dlr": 4.05,
+      "fees_dlr": 0.29,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-28T01:20:21.143342Z",
+      "ticker": "KXNHLSPREAD-26OCT27NYINSH-NYI2",
+      "outcome": "LOSS",
+      "entry_cents": 80,
+      "peak_cents": 80,
+      "exit_cents": 63,
+      "net_pnl_dlr": -6.33,
+      "fees_dlr": 0.55,
+      "market_result": "no",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-28T01:25:08.629309Z",
+      "ticker": "KXNHLTOTAL-26OCT27CBJPHI-7",
+      "outcome": "LOSS",
+      "entry_cents": 87,
+      "peak_cents": 87,
+      "exit_cents": 55,
+      "net_pnl_dlr": -10.19,
+      "fees_dlr": 0.52,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-28T04:18:20.848476Z",
       "ticker": "KXNHLTOTAL-26OCT27VANANA-8",
-      "archetype": "FULL_GAME_TOTAL",
       "outcome": "LOSS",
       "entry_cents": 83,
-      "peak_cents": 87,
-      "exit_cents": 64,
-      "net_pnl_dlr": -4.26,
-      "diagnosis": "LATE_PACE_OR_GAME_SCRIPT_STALL",
-      "exit_reason": "STAGE1_PROFIT_SHIELD_EXIT"
+      "peak_cents": 83,
+      "exit_cents": 77,
+      "net_pnl_dlr": -7.65,
+      "fees_dlr": 0.69,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
     },
     {
-      "timestamp": "2026-10-27 21:17:56",
-      "ticker": "KXNHLTOTAL-26OCT27VANANA-8",
-      "archetype": "FULL_GAME_TOTAL",
-      "outcome": "LOSS",
-      "entry_cents": 83,
-      "peak_cents": 87,
-      "exit_cents": 61,
-      "net_pnl_dlr": -9.02,
-      "diagnosis": "LATE_PACE_OR_GAME_SCRIPT_STALL",
-      "exit_reason": "TIGHT_10C_STOP_LOSS"
-    },
-    {
-      "timestamp": "2026-10-27 21:18:15",
-      "ticker": "KXNHLTOTAL-26OCT27VANANA-8",
-      "archetype": "FULL_GAME_TOTAL",
-      "outcome": "LOSS",
-      "entry_cents": 83,
-      "peak_cents": 87,
-      "exit_cents": 61,
-      "net_pnl_dlr": -8.58,
-      "diagnosis": "LATE_PACE_OR_GAME_SCRIPT_STALL",
-      "exit_reason": "TIGHT_10C_STOP_LOSS"
-    },
-    {
-      "timestamp": "2026-10-27 21:18:20",
-      "ticker": "KXNHLTOTAL-26OCT27VANANA-8",
-      "archetype": "FULL_GAME_TOTAL",
-      "outcome": "LOSS",
-      "entry_cents": 83,
-      "peak_cents": 87,
-      "exit_cents": 60,
-      "net_pnl_dlr": -7.13,
-      "diagnosis": "LATE_PACE_OR_GAME_SCRIPT_STALL",
-      "exit_reason": "TIGHT_10C_STOP_LOSS"
-    },
-    {
-      "timestamp": "2026-10-27 21:37:21",
+      "timestamp": "2026-10-28T04:37:19.083566Z",
       "ticker": "KXNHLTOTAL-26OCT27BUFSJ-6",
-      "archetype": "FULL_GAME_TOTAL",
       "outcome": "WIN",
       "entry_cents": 88,
-      "peak_cents": 90,
+      "peak_cents": 91,
       "exit_cents": 91,
       "net_pnl_dlr": 2.16,
-      "diagnosis": "STAGE1_PROFIT_SHIELD_SAVE",
-      "exit_reason": "STAGE1_AND_STAGE2_MAKER_HARVEST"
+      "fees_dlr": 0.0,
+      "market_result": "no",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
     },
     {
-      "timestamp": "2026-10-27 21:52:22",
+      "timestamp": "2026-10-28T05:01:42.685773Z",
+      "ticker": "KXNBASPREAD-26OCT27PORLAL-POR7",
+      "outcome": "WIN",
+      "entry_cents": 89,
+      "peak_cents": 90,
+      "exit_cents": 90,
+      "net_pnl_dlr": 0.6,
+      "fees_dlr": 0.3,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-28T04:52:21.146044Z",
       "ticker": "KXNHLTOTAL-26OCT27BUFSJ-5",
-      "archetype": "FULL_GAME_TOTAL",
       "outcome": "WIN",
       "entry_cents": 76,
-      "peak_cents": 76,
+      "peak_cents": 84,
       "exit_cents": 84,
       "net_pnl_dlr": 8.32,
-      "diagnosis": "CLEAN_MAKER_HARVEST",
-      "exit_reason": "STAGE1_AND_STAGE2_MAKER_HARVEST"
+      "fees_dlr": 0.0,
+      "market_result": "no",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
     },
     {
-      "timestamp": "2026-10-27 21:56:10",
+      "timestamp": "2026-10-28T04:56:10.381635Z",
       "ticker": "KXATPCHALLENGERMATCH-26OCT28SHIHSU-HSU",
-      "archetype": "FULL_GAME_MONEYLINE",
       "outcome": "LOSS",
       "entry_cents": 71,
       "peak_cents": 71,
       "exit_cents": 65,
-      "net_pnl_dlr": -7.5,
-      "diagnosis": "SCOREBOARD_MOMENTUM_FLIP",
-      "exit_reason": "TIGHT_10C_STOP_LOSS"
+      "net_pnl_dlr": -9.49,
+      "fees_dlr": 1.99,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": true,
+      "reconciled_from_exchange_fills": true
     },
     {
-      "timestamp": "2026-10-27 21:58:05",
+      "timestamp": "2026-10-28T04:57:55.809607Z",
       "ticker": "KXATPCHALLENGERMATCH-26OCT27HARVUK-HAR",
-      "archetype": "FULL_GAME_MONEYLINE",
       "outcome": "WIN",
       "entry_cents": 74,
-      "peak_cents": 76,
+      "peak_cents": 81,
       "exit_cents": 81,
       "net_pnl_dlr": 6.02,
-      "diagnosis": "CLEAN_MAKER_HARVEST",
-      "exit_reason": "STAGE1_AND_STAGE2_MAKER_HARVEST"
+      "fees_dlr": 0.0,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
     },
     {
-      "timestamp": "2026-10-27 22:01:45",
-      "ticker": "KXNBASPREAD-26OCT27PORLAL-POR7",
-      "archetype": "FULL_GAME_SPREAD",
-      "outcome": "WIN",
-      "entry_cents": 89,
-      "peak_cents": 89,
-      "exit_cents": 90,
-      "net_pnl_dlr": 0.9,
-      "diagnosis": "STAGE1_PROFIT_SHIELD_SAVE",
-      "exit_reason": "STAGE1_AND_STAGE2_MAKER_HARVEST"
-    },
-    {
-      "timestamp": "2026-10-27 22:05:35",
+      "timestamp": "2026-10-28T05:05:08.00796Z",
       "ticker": "KXNHLTOTAL-26OCT27BUFSJ-4",
-      "archetype": "FULL_GAME_TOTAL",
-      "outcome": "WIN",
-      "entry_cents": 82,
-      "peak_cents": 88,
-      "exit_cents": 89,
-      "net_pnl_dlr": 0.42,
-      "diagnosis": "CLEAN_MAKER_HARVEST",
-      "exit_reason": "STAGE1_AND_STAGE2_MAKER_HARVEST"
-    },
-    {
-      "timestamp": "2026-10-27 22:11:30",
-      "ticker": "KXNBASPREAD-26OCT27PORLAL-POR3",
-      "archetype": "FULL_GAME_SPREAD",
-      "outcome": "LOSS",
-      "entry_cents": 82,
-      "peak_cents": 81,
-      "exit_cents": 65,
-      "net_pnl_dlr": -18.36,
-      "diagnosis": "SCOREBOARD_MOMENTUM_FLIP",
-      "exit_reason": "TIGHT_10C_STOP_LOSS"
-    },
-    {
-      "timestamp": "2026-10-27 22:11:32",
-      "ticker": "KXNBASPREAD-26OCT27PORLAL-POR3",
-      "archetype": "FULL_GAME_SPREAD",
-      "outcome": "LOSS",
-      "entry_cents": 82,
-      "peak_cents": 81,
-      "exit_cents": 66,
-      "net_pnl_dlr": -3.68,
-      "diagnosis": "SCOREBOARD_MOMENTUM_FLIP",
-      "exit_reason": "TIGHT_10C_STOP_LOSS"
-    },
-    {
-      "timestamp": "2026-10-27 22:22:29",
-      "ticker": "KXNHLGOAL-26OCT27BUFSJ-SJMCELEBRINI71-1",
-      "archetype": "HOCKEY_SOCCER_PROP",
-      "outcome": "WIN",
-      "entry_cents": 85,
-      "peak_cents": 85,
-      "exit_cents": 92,
-      "net_pnl_dlr": 3.85,
-      "diagnosis": "CLEAN_MAKER_HARVEST",
-      "exit_reason": "STAGE1_AND_STAGE2_MAKER_HARVEST"
-    },
-    {
-      "timestamp": "2026-10-27 22:22:29",
-      "ticker": "KXATPCHALLENGERMATCH-26OCT28ZHASAK-SAK",
-      "archetype": "FULL_GAME_MONEYLINE",
       "outcome": "WIN",
       "entry_cents": 79,
-      "peak_cents": 79,
-      "exit_cents": 85,
-      "net_pnl_dlr": 4.68,
-      "diagnosis": "CLEAN_MAKER_HARVEST",
-      "exit_reason": "STAGE1_AND_STAGE2_MAKER_HARVEST"
+      "peak_cents": 86,
+      "exit_cents": 86,
+      "net_pnl_dlr": 0.47,
+      "fees_dlr": 0.0,
+      "market_result": "no",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
     },
     {
-      "timestamp": "2026-10-28 07:11:58",
+      "timestamp": "2026-10-28T05:11:32.638469Z",
+      "ticker": "KXNBASPREAD-26OCT27PORLAL-POR3",
+      "outcome": "LOSS",
+      "entry_cents": 82,
+      "peak_cents": 82,
+      "exit_cents": 65,
+      "net_pnl_dlr": -20.12,
+      "fees_dlr": 1.99,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-28T05:21:01.723047Z",
+      "ticker": "KXNHLGOAL-26OCT27BUFSJ-SJMCELEBRINI71-1",
+      "outcome": "WIN",
+      "entry_cents": 84,
+      "peak_cents": 91,
+      "exit_cents": 91,
+      "net_pnl_dlr": 3.93,
+      "fees_dlr": 0.0,
+      "market_result": "no",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-28T05:18:43.173287Z",
+      "ticker": "KXATPCHALLENGERMATCH-26OCT28ZHASAK-SAK",
+      "outcome": "WIN",
+      "entry_cents": 79,
+      "peak_cents": 85,
+      "exit_cents": 85,
+      "net_pnl_dlr": 4.68,
+      "fees_dlr": 0.0,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-28T12:37:20.554587Z",
+      "ticker": "KXATPMATCH-26OCT27HANSTR-STR",
+      "outcome": "LOSS",
+      "entry_cents": 84,
+      "peak_cents": 84,
+      "exit_cents": 72,
+      "net_pnl_dlr": -0.26,
+      "fees_dlr": 0.03,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": false,
+      "reconciled_from_exchange_fills": true
+    },
+    {
+      "timestamp": "2026-10-28T14:11:58.93413Z",
       "ticker": "KXATPMATCH-26OCT25GRINAK-GRI",
-      "archetype": "TENNIS_MATCH",
       "outcome": "LOSS",
       "entry_cents": 83,
       "peak_cents": 83,
-      "exit_cents": 47,
-      "net_pnl_dlr": -37.08,
-      "diagnosis": "SCOREBOARD_MOMENTUM_FLIP",
-      "exit_reason": "TIGHT_10C_STOP_LOSS"
+      "exit_cents": 48,
+      "net_pnl_dlr": -38.1,
+      "fees_dlr": 2.05,
+      "market_result": "yes",
+      "stopped_out_but_eventual_winner": true,
+      "reconciled_from_exchange_fills": true
     }
   ],
   "manual_pause_buys": true,
@@ -4276,9 +4759,9 @@
   },
   "streak_state": {
     "win_streak": 0,
-    "loss_streak": 1,
+    "loss_streak": 0,
     "house_money_pool_dlr": 0.0,
-    "mode": "CONSERVATIVE_DEFENSE(1L)"
+    "mode": "FIXED_FRACTIONAL_RISK_BUDGET"
   },
   "last_win_entry_cents": {
     "KXNHLGAME-26OCT27FLAWPG-FLA": 80,

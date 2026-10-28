@@ -1,0 +1,565 @@
+{
+  "updated_at": "2026-10-27T20:29:08.292223+00:00",
+  "cycle_count": 2,
+  "execution_ready": false,
+  "snapshot": {
+    "engine": "CRYPTO_QUANT_V2",
+    "isolated_from_kalshi_sports": true,
+    "trading_mode": "PAPER",
+    "is_paused": false,
+    "venues": {
+      "execution_perp": "Hyperliquid CLOB (Wallet)",
+      "execution_spot": "Kraken Pro",
+      "truth_feed": "Coinbase Institutional + Binance CVD"
+    },
+    "bankroll": {
+      "starting_equity_usd": 1000.0,
+      "current_equity_usd": 1042.78,
+      "total_pnl_usd": 42.78,
+      "total_return_pct": 4.28,
+      "maker_fees_and_rebates_saved_usd": 13.94
+    },
+    "l2_orderbook": {
+      "symbol": "SOL",
+      "venue": "HYPERLIQUID",
+      "best_bid": 101.05,
+      "best_ask": 101.06,
+      "mid_price": 101.055,
+      "micro_price": 101.0574,
+      "spread_bps": 0.99,
+      "bid_depth_usd": 2872817.01,
+      "ask_depth_usd": 2857087.95,
+      "whale_imbalance_ratio": 1.01,
+      "bids": [
+        {
+          "price": 101.05,
+          "size": 729.31
+        },
+        {
+          "price": 101.04,
+          "size": 940.12
+        },
+        {
+          "price": 101.03,
+          "size": 2694.62
+        },
+        {
+          "price": 101.02,
+          "size": 3456.41
+        },
+        {
+          "price": 101.01,
+          "size": 3230.87
+        },
+        {
+          "price": 101.0,
+          "size": 3640.12
+        }
+      ],
+      "asks": [
+        {
+          "price": 101.06,
+          "size": 250.94
+        },
+        {
+          "price": 101.07,
+          "size": 804.75
+        },
+        {
+          "price": 101.08,
+          "size": 2837.03
+        },
+        {
+          "price": 101.09,
+          "size": 1867.86
+        },
+        {
+          "price": 101.1,
+          "size": 5138.66
+        },
+        {
+          "price": 101.11,
+          "size": 2510.22
+        }
+      ]
+    },
+    "institutional_signals": {
+      "BTC": {
+        "symbol": "BTC",
+        "coinbase_spot_price": 80558.6899,
+        "kraken_spot_price": 80566.7458,
+        "hyperliquid_perp_price": 80675.5,
+        "vwap_15m": 80357.2767,
+        "cvd_score": 0.74,
+        "funding_rate_hourly_bps": 2.45,
+        "annualized_funding_apy": 214.62,
+        "perp_basis_bps": 14.5,
+        "whale_imbalance_ratio": 4.2,
+        "realized_vol_15m_pct": 0.85
+      },
+      "ETH": {
+        "symbol": "ETH",
+        "coinbase_spot_price": 2341.0067,
+        "kraken_spot_price": 2341.2408,
+        "hyperliquid_perp_price": 2344.05,
+        "vwap_15m": 2392.0384,
+        "cvd_score": 0.68,
+        "funding_rate_hourly_bps": 2.1,
+        "annualized_funding_apy": 183.96,
+        "perp_basis_bps": 13.0,
+        "whale_imbalance_ratio": 3.8,
+        "realized_vol_15m_pct": 0.85
+      },
+      "SOL": {
+        "symbol": "SOL",
+        "coinbase_spot_price": 100.8714,
+        "kraken_spot_price": 100.8815,
+        "hyperliquid_perp_price": 101.055,
+        "vwap_15m": 103.1127,
+        "cvd_score": 0.81,
+        "funding_rate_hourly_bps": 3.6,
+        "annualized_funding_apy": 315.36,
+        "perp_basis_bps": 18.2,
+        "whale_imbalance_ratio": 6.4,
+        "realized_vol_15m_pct": 0.85
+      },
+      "SUI": {
+        "symbol": "SUI",
+        "coinbase_spot_price": 0.922,
+        "kraken_spot_price": 0.9221,
+        "hyperliquid_perp_price": 0.924,
+        "vwap_15m": 0.9024,
+        "cvd_score": 0.77,
+        "funding_rate_hourly_bps": 4.1,
+        "annualized_funding_apy": 359.16,
+        "perp_basis_bps": 22.0,
+        "whale_imbalance_ratio": 5.1,
+        "realized_vol_15m_pct": 0.85
+      },
+      "AVAX": {
+        "symbol": "AVAX",
+        "coinbase_spot_price": 8.855,
+        "kraken_spot_price": 8.8559,
+        "hyperliquid_perp_price": 8.8674,
+        "vwap_15m": 8.755,
+        "cvd_score": 0.69,
+        "funding_rate_hourly_bps": 2.25,
+        "annualized_funding_apy": 197.1,
+        "perp_basis_bps": 14.0,
+        "whale_imbalance_ratio": 3.4,
+        "realized_vol_15m_pct": 0.85
+      },
+      "XRP": {
+        "symbol": "XRP",
+        "coinbase_spot_price": 1.3207,
+        "kraken_spot_price": 1.3208,
+        "hyperliquid_perp_price": 1.3222,
+        "vwap_15m": 1.3503,
+        "cvd_score": 0.64,
+        "funding_rate_hourly_bps": 1.95,
+        "annualized_funding_apy": 170.82,
+        "perp_basis_bps": 11.5,
+        "whale_imbalance_ratio": 2.9,
+        "realized_vol_15m_pct": 0.85
+      },
+      "DOGE": {
+        "symbol": "DOGE",
+        "coinbase_spot_price": 0.0781,
+        "kraken_spot_price": 0.0781,
+        "hyperliquid_perp_price": 0.0783,
+        "vwap_15m": 0.0775,
+        "cvd_score": 0.76,
+        "funding_rate_hourly_bps": 4.85,
+        "annualized_funding_apy": 424.86,
+        "perp_basis_bps": 24.5,
+        "whale_imbalance_ratio": 4.9,
+        "realized_vol_15m_pct": 0.85
+      },
+      "LINK": {
+        "symbol": "LINK",
+        "coinbase_spot_price": 11.4322,
+        "kraken_spot_price": 11.4333,
+        "hyperliquid_perp_price": 11.4505,
+        "vwap_15m": 11.3249,
+        "cvd_score": 0.72,
+        "funding_rate_hourly_bps": 3.1,
+        "annualized_funding_apy": 271.56,
+        "perp_basis_bps": 16.0,
+        "whale_imbalance_ratio": 3.7,
+        "realized_vol_15m_pct": 0.85
+      },
+      "NEAR": {
+        "symbol": "NEAR",
+        "coinbase_spot_price": 4.6149,
+        "kraken_spot_price": 4.6154,
+        "hyperliquid_perp_price": 4.6239,
+        "vwap_15m": 4.5663,
+        "cvd_score": 0.75,
+        "funding_rate_hourly_bps": 3.9,
+        "annualized_funding_apy": 341.64,
+        "perp_basis_bps": 19.5,
+        "whale_imbalance_ratio": 4.4,
+        "realized_vol_15m_pct": 0.85
+      }
+    },
+    "yield_rotator_rankings": [
+      {
+        "symbol": "NEAR",
+        "spot_price": 4.6149,
+        "perp_price": 4.6239,
+        "funding_hr_bps": 0.125,
+        "funding_apy": 10.95,
+        "staking_apy": 8.5,
+        "basis_bps": 19.5,
+        "basis_bonus_apy": 2.34,
+        "total_combined_apy": 21.79,
+        "persistence_6h_verified": false,
+        "leg_sync_mode": "MAKER_SPOT_FIRST_THEN_INSTANT_PERP_HEDGE"
+      },
+      {
+        "symbol": "SOL",
+        "spot_price": 100.8714,
+        "perp_price": 101.055,
+        "funding_hr_bps": 0.125,
+        "funding_apy": 10.95,
+        "staking_apy": 7.5,
+        "basis_bps": 18.2,
+        "basis_bonus_apy": 2.18,
+        "total_combined_apy": 20.63,
+        "persistence_6h_verified": false,
+        "leg_sync_mode": "MAKER_SPOT_FIRST_THEN_INSTANT_PERP_HEDGE"
+      },
+      {
+        "symbol": "SUI",
+        "spot_price": 0.922,
+        "perp_price": 0.924,
+        "funding_hr_bps": 0.125,
+        "funding_apy": 10.95,
+        "staking_apy": 4.5,
+        "basis_bps": 22.0,
+        "basis_bonus_apy": 2.64,
+        "total_combined_apy": 18.09,
+        "persistence_6h_verified": false,
+        "leg_sync_mode": "MAKER_SPOT_FIRST_THEN_INSTANT_PERP_HEDGE"
+      },
+      {
+        "symbol": "LINK",
+        "spot_price": 11.4322,
+        "perp_price": 11.4505,
+        "funding_hr_bps": 0.125,
+        "funding_apy": 10.95,
+        "staking_apy": 4.5,
+        "basis_bps": 16.0,
+        "basis_bonus_apy": 1.92,
+        "total_combined_apy": 17.37,
+        "persistence_6h_verified": false,
+        "leg_sync_mode": "MAKER_SPOT_FIRST_THEN_INSTANT_PERP_HEDGE"
+      },
+      {
+        "symbol": "ETH",
+        "spot_price": 2341.0067,
+        "perp_price": 2344.05,
+        "funding_hr_bps": 0.125,
+        "funding_apy": 10.95,
+        "staking_apy": 3.6,
+        "basis_bps": 13.0,
+        "basis_bonus_apy": 1.56,
+        "total_combined_apy": 16.11,
+        "persistence_6h_verified": false,
+        "leg_sync_mode": "MAKER_SPOT_FIRST_THEN_INSTANT_PERP_HEDGE"
+      },
+      {
+        "symbol": "AVAX",
+        "spot_price": 8.855,
+        "perp_price": 8.8674,
+        "funding_hr_bps": 0.089,
+        "funding_apy": 7.8,
+        "staking_apy": 5.8,
+        "basis_bps": 14.0,
+        "basis_bonus_apy": 1.68,
+        "total_combined_apy": 15.28,
+        "persistence_6h_verified": false,
+        "leg_sync_mode": "MAKER_SPOT_FIRST_THEN_INSTANT_PERP_HEDGE"
+      },
+      {
+        "symbol": "DOGE",
+        "spot_price": 0.0781,
+        "perp_price": 0.0783,
+        "funding_hr_bps": 0.125,
+        "funding_apy": 10.95,
+        "staking_apy": 0.0,
+        "basis_bps": 24.5,
+        "basis_bonus_apy": 2.94,
+        "total_combined_apy": 13.89,
+        "persistence_6h_verified": false,
+        "leg_sync_mode": "MAKER_SPOT_FIRST_THEN_INSTANT_PERP_HEDGE"
+      },
+      {
+        "symbol": "BTC",
+        "spot_price": 80558.6899,
+        "perp_price": 80675.5,
+        "funding_hr_bps": 0.125,
+        "funding_apy": 10.95,
+        "staking_apy": 0.0,
+        "basis_bps": 14.5,
+        "basis_bonus_apy": 1.74,
+        "total_combined_apy": 12.69,
+        "persistence_6h_verified": false,
+        "leg_sync_mode": "MAKER_SPOT_FIRST_THEN_INSTANT_PERP_HEDGE"
+      },
+      {
+        "symbol": "XRP",
+        "spot_price": 1.3207,
+        "perp_price": 1.3222,
+        "funding_hr_bps": 0.125,
+        "funding_apy": 10.95,
+        "staking_apy": 0.0,
+        "basis_bps": 11.5,
+        "basis_bonus_apy": 1.38,
+        "total_combined_apy": 12.33,
+        "persistence_6h_verified": false,
+        "leg_sync_mode": "MAKER_SPOT_FIRST_THEN_INSTANT_PERP_HEDGE"
+      }
+    ],
+    "regime_switch": {
+      "current_regime": "INSTITUTIONAL_ACCUMULATION_TREND",
+      "dynamic_allocation": {
+        "pod1_basket": "40%",
+        "pod2_wicks": "25%",
+        "pod3_funding_lock": "35%"
+      },
+      "leg_sync_guard": "MAKER_SPOT_FIRST_THEN_INSTANT_PERP_HEDGE (<50ms)"
+    },
+    "pod1_momentum_basket": {
+      "pod_name": "pod_1_crypto_momentum_basket",
+      "active_baskets_count": 1,
+      "baskets": [
+        {
+          "basket_id": "CBASKET-SOL-SUI-AVAX",
+          "created_at": "2026-10-27T20:29:05.715536+00:00",
+          "legs": [
+            {
+              "symbol": "SOL",
+              "venue": "HYPERLIQUID",
+              "entry_price": 174.2,
+              "current_price": 178.9,
+              "take_profit_price": 180.8196,
+              "guillotine_price": 171.4128,
+              "quantity": 1.1481,
+              "notional_usd": 200.0,
+              "cvd_score_at_entry": 0.81,
+              "live_cvd_score": 0.81,
+              "whale_imbalance": 6.4,
+              "status": "RESTING_TP_QUEUED",
+              "pnl_usd": 5.42,
+              "pnl_pct": 2.7,
+              "taker_fee_saved_usd": 1.22
+            },
+            {
+              "symbol": "SUI",
+              "venue": "HYPERLIQUID",
+              "entry_price": 2.08,
+              "current_price": 2.155,
+              "take_profit_price": 2.159,
+              "guillotine_price": 2.0467,
+              "quantity": 96.1538,
+              "notional_usd": 200.0,
+              "cvd_score_at_entry": 0.77,
+              "live_cvd_score": 0.77,
+              "whale_imbalance": 5.1,
+              "status": "RESTING_TP_QUEUED",
+              "pnl_usd": 7.23,
+              "pnl_pct": 3.61,
+              "taker_fee_saved_usd": 1.22
+            },
+            {
+              "symbol": "AVAX",
+              "venue": "HYPERLIQUID",
+              "entry_price": 27.3,
+              "current_price": 27.68,
+              "take_profit_price": 28.3374,
+              "guillotine_price": 26.8632,
+              "quantity": 7.326,
+              "notional_usd": 200.0,
+              "cvd_score_at_entry": 0.69,
+              "live_cvd_score": 0.69,
+              "whale_imbalance": 3.4,
+              "status": "RESTING_TP_QUEUED",
+              "pnl_usd": 2.8,
+              "pnl_pct": 1.39,
+              "taker_fee_saved_usd": 1.22
+            }
+          ],
+          "status": "ACTIVE",
+          "total_notional_usd": 600.0,
+          "total_pnl_usd": 15.45
+        }
+      ],
+      "total_pnl_usd": 15.45,
+      "fees_saved_usd": 3.66,
+      "live_candidates": [
+        {
+          "symbol": "BTC",
+          "spot_truth_price": 80558.6899,
+          "maker_entry_bid": 80610.9596,
+          "auto_tp_ask": 83674.1761,
+          "cvd_score": 0.74,
+          "whale_imbalance": "4.2:1"
+        },
+        {
+          "symbol": "ETH",
+          "spot_truth_price": 2341.0067,
+          "maker_entry_bid": 2342.1748,
+          "auto_tp_ask": 2431.1774,
+          "cvd_score": 0.68,
+          "whale_imbalance": "3.8:1"
+        },
+        {
+          "symbol": "SOL",
+          "spot_truth_price": 100.8714,
+          "maker_entry_bid": 100.9742,
+          "auto_tp_ask": 104.8112,
+          "cvd_score": 0.81,
+          "whale_imbalance": "6.4:1"
+        },
+        {
+          "symbol": "SUI",
+          "spot_truth_price": 0.922,
+          "maker_entry_bid": 0.9233,
+          "auto_tp_ask": 0.9584,
+          "cvd_score": 0.77,
+          "whale_imbalance": "5.1:1"
+        },
+        {
+          "symbol": "AVAX",
+          "spot_truth_price": 8.855,
+          "maker_entry_bid": 8.8603,
+          "auto_tp_ask": 9.197,
+          "cvd_score": 0.69,
+          "whale_imbalance": "3.4:1"
+        },
+        {
+          "symbol": "DOGE",
+          "spot_truth_price": 0.0781,
+          "maker_entry_bid": 0.0782,
+          "auto_tp_ask": 0.0812,
+          "cvd_score": 0.76,
+          "whale_imbalance": "4.9:1"
+        },
+        {
+          "symbol": "LINK",
+          "spot_truth_price": 11.4322,
+          "maker_entry_bid": 11.4413,
+          "auto_tp_ask": 11.8761,
+          "cvd_score": 0.72,
+          "whale_imbalance": "3.7:1"
+        },
+        {
+          "symbol": "NEAR",
+          "spot_truth_price": 4.6149,
+          "maker_entry_bid": 4.6202,
+          "auto_tp_ask": 4.7958,
+          "cvd_score": 0.75,
+          "whale_imbalance": "4.4:1"
+        }
+      ]
+    },
+    "pod2_wick_green_out": {
+      "pod_name": "pod_2_wick_value_green_out",
+      "positions": [
+        {
+          "position_id": "WICK-SOL-01",
+          "symbol": "SOL",
+          "venue": "HYPERLIQUID",
+          "entry_price": 173.5,
+          "current_price": 178.2,
+          "vwap_anchor": 178.9,
+          "initial_quantity": 1.4409,
+          "remaining_quantity": 0.57636,
+          "notional_usd": 250.0,
+          "green_out_target_price": 177.317,
+          "runner_take_profit_price": 183.0425,
+          "stop_loss_price": 174.2807,
+          "is_greened_out": true,
+          "locked_profit_usd": 4.08,
+          "unrealized_pnl_usd": 2.71,
+          "total_pnl_usd": 6.79,
+          "status": "GREENED_OUT_FREE_RIDE",
+          "created_at": "2026-10-27T20:29:05.715679+00:00"
+        },
+        {
+          "position_id": "WICK-ETH-02",
+          "symbol": "ETH",
+          "venue": "HYPERLIQUID",
+          "entry_price": 2512.0,
+          "current_price": 2558.0,
+          "vwap_anchor": 2565.0,
+          "initial_quantity": 0.0995,
+          "remaining_quantity": 0.0398,
+          "notional_usd": 250.0,
+          "green_out_target_price": 2567.264,
+          "runner_take_profit_price": 2650.16,
+          "stop_loss_price": 2523.304,
+          "is_greened_out": true,
+          "locked_profit_usd": 2.76,
+          "unrealized_pnl_usd": 1.83,
+          "total_pnl_usd": 4.59,
+          "status": "GREENED_OUT_FREE_RIDE",
+          "created_at": "2026-10-27T20:29:05.715687+00:00"
+        }
+      ],
+      "greened_out_count": 2,
+      "total_pnl_usd": 11.38,
+      "fees_saved_usd": 1.88
+    },
+    "pod3_funding_tail_lock": {
+      "pod_name": "pod_3_funding_tail_lock",
+      "locked_pairs": [
+        {
+          "pair_id": "DNLOCK-SUI-01",
+          "symbol": "SUI",
+          "spot_venue": "KRAKEN_PRO",
+          "perp_venue": "HYPERLIQUID",
+          "spot_entry_price": 2.135,
+          "perp_entry_price": 2.1397,
+          "current_spot_price": 2.14,
+          "current_perp_price": 2.1415,
+          "quantity": 70.257611,
+          "total_notional_usd": 300.0,
+          "entry_basis_bps": 22.01,
+          "current_basis_bps": 7.0,
+          "annualized_funding_apy": 366.3,
+          "accrued_funding_usd": 6.45,
+          "basis_pnl_usd": 2.25,
+          "net_delta_usd": 0.0,
+          "status": "LOCKED_HARVESTING",
+          "created_at": "2026-10-27T20:29:05.715698+00:00"
+        },
+        {
+          "pair_id": "DNLOCK-SOL-02",
+          "symbol": "SOL",
+          "spot_venue": "KRAKEN_PRO",
+          "perp_venue": "HYPERLIQUID",
+          "spot_entry_price": 176.4,
+          "perp_entry_price": 176.72,
+          "current_spot_price": 176.8,
+          "current_perp_price": 176.95,
+          "quantity": 0.85034,
+          "total_notional_usd": 300.0,
+          "entry_basis_bps": 18.14,
+          "current_basis_bps": 8.5,
+          "annualized_funding_apy": 325.04,
+          "accrued_funding_usd": 5.8,
+          "basis_pnl_usd": 1.45,
+          "net_delta_usd": 0.0,
+          "status": "LOCKED_HARVESTING",
+          "created_at": "2026-10-27T20:29:05.715705+00:00"
+        }
+      ],
+      "active_locks_count": 2,
+      "average_annualized_apy": 345.67,
+      "total_pnl_usd": 15.95,
+      "net_directional_risk_usd": 0.0
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "mode": "PAPER",
+  "virtual_cash_cents": 35872,
+  "open_positions": {},
+  "resting_orders": [],
+  "closed_trades": [],
+  "evaluations_logged": 57,
+  "last_evaluation": {
+    "ticker": "KXATPMATCH-26OCT28MENMAN-MEN",
+    "title": "Jakub Mensik",
+    "approved": false,
+    "reason": "VETO: Weak whale buying pressure (Imbalance=0.81x < 1.75x min for KXATPMATCH)",
+    "ts": "2026-10-28T16:36:41.474472+00:00"
+  }
+}

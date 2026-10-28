@@ -29,6 +29,19 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 from src.config import settings
 from src.core.auth import KalshiAuthSigner
 from src.exchange.kalshi_client import KalshiClient
+from src.risk.remediated_engine_guards import (
+    ExitIntent,
+    FillReconciledLedger,
+    ReconciledPosition,
+    build_safe_order_payload,
+    check_entry_capacity_and_quota,
+    compute_effective_imbalance_threshold,
+    load_and_validate_strategy_config,
+    reconcile_ioc_exit,
+    reconcile_startup_state,
+    size_position_by_risk_budget,
+    validate_fair_probability_and_freshness,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,6 +50,7 @@ logging.basicConfig(
 logger = logging.getLogger("live_auto_roller")
 
 MEMORY_PATH = Path("data/self_learning_memory.json")
+PAPER_LEDGER_PATH = Path("data/paper_shadow_ledger.json")
 NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "kalshi-greg-3fc522ce")
 IMESSAGE_TARGET = os.environ.get("IMESSAGE_TARGET", "+19493107304")
 
@@ -459,17 +473,11 @@ class PreTradeEducator:
         c_ts, c_ev = self.espn_scoreboard_cache.get(sport_path, (0.0, []))
         if (now_t - c_ts) <= ttl and c_ev:
             return c_ev
-        try:
-            r = await hc.get(f"https://site.api.espn.com/apis/site/v2/sports/{sport_path}", timeout=3.5)
-            events = r.json().get("events", [])
-            if events:
-                self.espn_scoreboard_cache[sport_path] = (now_t, events)
-                return events
-        except Exception:
-            if (now_t - c_ts) <= 30.0 and c_ev:
-                return c_ev
-            raise
-        return c_ev
+        r = await hc.get(f"https://site.api.espn.com/apis/site/v2/sports/{sport_path}", timeout=3.5)
+        events = r.json().get("events", [])
+        if events:
+            self.espn_scoreboard_cache[sport_path] = (now_t, events)
+        return events
 
     async def _get_espn_summary_cached(self, hc, sport_base: str, ev_id: str, ttl: float = 4.0) -> dict:
         key = f"{sport_base}:{ev_id}"
@@ -477,20 +485,14 @@ class PreTradeEducator:
         c_ts, c_sum = self.espn_summary_cache.get(key, (0.0, {}))
         if (now_t - c_ts) <= ttl and c_sum:
             return c_sum
-        try:
-            r_box = await hc.get(
-                f"https://site.api.espn.com/apis/site/v2/sports/{sport_base}/summary?event={ev_id}",
-                timeout=3.5,
-            )
-            data = r_box.json()
-            if data:
-                self.espn_summary_cache[key] = (now_t, data)
-                return data
-        except Exception:
-            if (now_t - c_ts) <= 30.0 and c_sum:
-                return c_sum
-            raise
-        return c_sum
+        r_box = await hc.get(
+            f"https://site.api.espn.com/apis/site/v2/sports/{sport_base}/summary?event={ev_id}",
+            timeout=3.5,
+        )
+        data = r_box.json()
+        if data:
+            self.espn_summary_cache[key] = (now_t, data)
+        return data
 
     @staticmethod
     def classify_archetype(ticker: str) -> str:
@@ -617,47 +619,28 @@ class PreTradeEducator:
 
     def get_streak_sizing(self, equity_cents: int, bid_cents: int, ticker: str = "") -> tuple[int, str, float]:
         """
-        Combines 4-Gear Daily Streak Scaling with 3-Tier Play Action Sizing:
-        - TIER C (SCOUT SCALP, CONF 68-75 or early P1/P2 / $80-$290 book depth):
-          *$24-$32 stake (~30-38 contracts -> +$2.00 to +$3.00 profit/win, only -$2.40 max risk at -8c stop!).
-        - TIER B (BUILDER SCALP, CONF 76-83):
-          *$54-$90 stake (~68-110 contracts -> +$4.50 to +$8.50 profit/win).
-        - TIER A (A+ SNIPER / HEATER, CONF >= 84):
-          *Full 4-Gear Streak Stake ($65 in Gear 1 -> $90 in Gear 2 -> $130 in Gear 3 -> $155-$195 in Gear 4 -> +$10 to +$19/win!).
+        Fixed-Fractional Risk-Budget Position Sizing (No Martingale / No Winning-Streak Escalation):
+        - Maximum planned risk per trade: 0.5% of equity (~$1.79 at $358.72)
+        - Maximum aggregate planned risk across open positions: 2.0% of equity (~$7.17 at $358.72)
+        - Hard position cost cap from config/strategies.yaml: $25.00 (2500 cents)
         """
-        st_state = self.memory.setdefault(
-            "streak_state",
-            {"win_streak": 0, "loss_streak": 0, "house_money_pool_dlr": 0.0, "mode": "CONSERVATIVE_DEFENSE"},
+        _ = ticker
+        eq_dlr = max(0.0, equity_cents / 100.0)
+        entry_dlr = max(0.01, bid_cents / 100.0)
+        # Stress loss per contract = max(0.18, 25% of entry price)
+        est_stress_loss = max(0.18, round(entry_dlr * 0.25, 4))
+        contracts = size_position_by_risk_budget(
+            equity_dollars=eq_dlr,
+            entry_price_dollars=entry_dlr,
+            estimated_stress_loss_per_contract=est_stress_loss,
+            max_trade_risk_pct=0.005,
+            max_aggregate_risk_pct=0.020,
+            current_open_risk_dollars=0.0,
+            win_streak=0,
         )
-        w_strk = int(st_state.get("win_streak", 0) or 0)
-        l_strk = int(st_state.get("loss_streak", 0) or 0)
-        hm_pool_dlr = float(st_state.get("house_money_pool_dlr", 0.0) or 0.0)
-        hm_pool_cents = int(round(hm_pool_dlr * 100))
-
-        conf_sc = int(self.memory.get("last_conf_scores", {}).get(ticker, 80) or 80) if ticker else 80
-        is_scout = bool(self.memory.get("last_scout_flags", {}).get(ticker, False)) if ticker else False
-
-        if is_scout or conf_sc <= 75:
-            scout_c = min(3200, max(2200, int(equity_cents * 0.065)))
-            return scout_c, f"🎯 TIER-C SCOUT SCALP ($28 Cap, Conf={conf_sc}/100 -> +$2-$3 Target)", 0.0
-
-        if w_strk >= 4 and hm_pool_dlr >= 25.0:
-            base_c = min(19500, int(equity_cents * 0.36), int(equity_cents * 0.24) + int(hm_pool_cents * 0.85))
-            gear_lbl = f"🚀 GEAR-4 HEATER ({w_strk}W, Pool=+${hm_pool_dlr:.2f})"
-        elif w_strk >= 2 and hm_pool_dlr >= 4.0:
-            base_c = min(13500, int(equity_cents * 0.28), int(equity_cents * 0.20) + int(hm_pool_cents * 0.75))
-            gear_lbl = f"🔥 GEAR-3 HOUSE-MONEY ({w_strk}W, Pool=+${hm_pool_dlr:.2f})"
-        elif w_strk >= 1:
-            base_c = min(9200, int(equity_cents * 0.20))
-            gear_lbl = f"⚖️ GEAR-2 BUILDER ({w_strk}W, Pool=+${hm_pool_dlr:.2f})"
-        else:
-            base_c = min(6800, max(4800, int(equity_cents * 0.16)))
-            gear_lbl = f"🛡️ GEAR-1 RECOVERY ({l_strk}L)"
-
-        if conf_sc <= 82:
-            builder_c = max(4800, int(base_c * 0.85))
-            return builder_c, f"⚡ TIER-B BUILDER [{gear_lbl}, Conf={conf_sc}/100]", 0.10
-        return base_c, f"💎 TIER-A SNIPER [{gear_lbl}, Conf={conf_sc}/100]", 0.0
+        contracts = max(5, contracts)
+        stake_cents = min(2500, contracts * max(1, bid_cents))
+        return stake_cents, f"🛡️ RISK-BUDGET SIZING (0.5% Risk Cap, ${stake_cents/100:.2f} Max Stake)", 0.0
 
     def get_daily_quota_status(self) -> dict:
         now_local = datetime.now()
@@ -665,20 +648,16 @@ class PreTradeEducator:
         q_map = self.memory.setdefault("daily_quota_tracker", {})
         q_day = q_map.setdefault(
             day_str,
-            {"target_bets": 40, "completed_bets": 0, "wins": 0, "losses": 0, "net_pnl_dlr": 0.0},
+            {"target_bets": 20, "completed_bets": 0, "wins": 0, "losses": 0, "net_pnl_dlr": 0.0},
         )
-        q_day["target_bets"] = 40
-        # Expected pace across 24h day (~1.67 bets/hour)
-        frac_day = max(0.05, (now_local.hour + now_local.minute / 60.0) / 24.0)
-        expected_by_now = round(40.0 * frac_day, 1)
+        q_day["target_bets"] = 20
         done = int(q_day.get("completed_bets", 0))
-        behind_pace = (expected_by_now - done) >= 1.5 and done < 40
-        quota_met = done >= 40
+        quota_met = done >= 20
         return {
-            "target_bets": 40,
+            "target_bets": 20,
             "completed_bets": done,
-            "expected_by_now": expected_by_now,
-            "behind_pace": behind_pace,
+            "expected_by_now": 0.0,
+            "behind_pace": False,  # Never relax entry gates based on time-of-day pacing
             "quota_met": quota_met,
             "wins": int(q_day.get("wins", 0)),
             "losses": int(q_day.get("losses", 0)),
@@ -1247,11 +1226,11 @@ class PreTradeEducator:
                         (c.get("team", {}).get("abbreviation") or "").upper()
                         for c in competitors
                     ]
-                    if any(ab and ab in event_slug for ab in abbrs):
+                    if len(abbrs) >= 2 and all(ab and ab in event_slug for ab in abbrs):
                         matched_ev = ev
                         break
                 if not matched_ev:
-                    return False, f"VETO [ESPN Matchup Check]: Specific game '{event_slug}' is NOT live in-play right now"
+                    return False, f"VETO [ESPN Matchup Check]: Specific game '{event_slug}' (both teams) is NOT live in-play right now"
 
                 comp = matched_ev.get("competitions", [{}])[0]
                 st_obj = comp.get("status", {})
@@ -2251,7 +2230,7 @@ class PreTradeEducator:
 
                             return True, f"ESPN Live Verified ({state.upper()}: {scores[idx]:.0f}-{scores[opp_idx]:.0f}{vegas_note})"
                 if series == "KXATPCHALLENGERMATCH":
-                    return True, f"ATP Challenger Live Orderbook & Tape Verified ('{title}' active in-play tourney)"
+                    return False, f"VETO [Fail-Closed Scoreboard Gate]: '{title}' (KXATPCHALLENGERMATCH) has no verified live ESPN scoreboard match"
                 return False, f"VETO [ESPN API]: '{title}' not found as active in-play leader on live ESPN scoreboard"
             except Exception as e:
                 return False, f"VETO [ESPN API Error]: Scoreboard verification failed ({e})"
@@ -2277,8 +2256,8 @@ class PreTradeEducator:
         st_state_eval = self.memory.get("streak_state", {})
         in_defense_mode = int(st_state_eval.get("win_streak", 0) or 0) == 0 or float(st_state_eval.get("house_money_pool_dlr", 0.0) or 0.0) <= 0.0
         q_status_eval = self.get_daily_quota_status()
-        quota_pace_relief = -0.15 if q_status_eval.get("behind_pace", False) else 0.0
-        req_imbalance = max(1.25, (1.60 if (series_pnl < -1.00 or arch_pnl < -5.00) else 1.30) + (0.15 if in_defense_mode else 0.0) + quota_pace_relief)
+        base_imb_req = (1.60 if (series_pnl < -1.00 or arch_pnl < -5.00) else 1.30) + (0.15 if in_defense_mode else 0.0)
+        req_imbalance = compute_effective_imbalance_threshold(base_imb_req, behind_pace=q_status_eval.get("behind_pace", False))
 
         is_under_no = title.startswith(("[UNDER-NO]", "[PLUS-SPREAD-NO]"))
         top_yes_bids = sorted(ob.yes_bids, key=lambda x: x.price, reverse=True)[:5]
@@ -2328,7 +2307,7 @@ class PreTradeEducator:
                 now_utc = datetime.now(timezone.utc)
                 last_ts = datetime.fromisoformat(trades[0]["created_time"].replace("Z", "+00:00"))
                 last_trade_mins_ago = max(0.0, (now_utc - last_ts).total_seconds() / 60.0)
-                max_stale_m = 60.0 if (is_quarter_mkt or is_prop_mkt) else (18.0 if q_status_eval.get("behind_pace", False) else 12.0)
+                max_stale_m = 12.0
                 if last_trade_mins_ago > max_stale_m:
                     self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
                     self.save_memory()
@@ -2495,29 +2474,42 @@ class PreTradeEducator:
                     "— waiting >=25s at plateau to confirm support!"
                 ), 0.0
 
-        # 3B. Live Pinnacle / Sharp Book Multiplicative De-Vig Check (The Odds API v4 — GEMINI.md Law 4 Active Veto Gate!)
+        # 3B. Fail-Closed Pinnacle / Sharp Book & Live Model Fair-Probability Edge Gate (GEMINI.md Law 4):
+        # Require p_fair - p_kalshi_effective >= +3.0% (+3c edge) symmetrically for both YES and NO contracts,
+        # unless the play is a verified external oracle (Crypto/Weather/Index) or late-game mathematical lock (ENDGAME-SNIPE).
+        is_oracle_series = series.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB", "KXINX", "KXNASDAQ", "KXWTI", "KXHIGH"))
         pin_note = await self.verify_pinnacle_sharp_odds(client, series, ticker, title)
         if pin_note:
             ext_reason += pin_note
-            if not is_under_no and "ENDGAME-SNIPE" not in ext_reason:
-                import re as _re_pin
-                _m_dv = _re_pin.search(r"_DeVig=(\d+(?:\.\d+)?)%", pin_note)
-                if _m_dv:
-                    dv_val = float(_m_dv.group(1))
-                    if dv_val < 54.0:
-                        self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
-                        self.save_memory()
-                        return False, (
-                            f"VETO [Sharp Vegas Underdog Fluke Gate]: Sharp sportsbook De-Vig is only {dv_val:.1f}% (<54% min) "
-                            f"while Kalshi is {live_side_ask}c — avoiding underdog fluke leads that mean-revert!"
-                        ), 0.0
-                    if (live_side_ask - dv_val) > 18.0 and "LATE-CLOCK" not in ext_reason:
-                        self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
-                        self.save_memory()
-                        return False, (
-                            f"VETO [Sharp Vegas Overpriced Gate]: Kalshi ask ({live_side_ask}c) exceeds Sharp De-Vig ({dv_val:.1f}%) "
-                            f"by +{live_side_ask - dv_val:.1f}% (>18% max gap before late clock)!"
-                        ), 0.0
+        import re as _re_pin
+        _m_dv = _re_pin.search(r"_DeVig=(\d+(?:\.\d+)?)%", pin_note) if pin_note else None
+        _m_bpi = _re_pin.search(r"LiveBPI=(\d+(?:\.\d+)?)%", ext_reason)
+        _m_espn_dv = _re_pin.search(r"DeVig=(\d+(?:\.\d+)?)%", ext_reason)
+        if not is_oracle_series and not is_endgame_snipe:
+            fair_pct = None
+            if _m_dv:
+                fair_pct = float(_m_dv.group(1))
+            elif _m_bpi:
+                fair_pct = float(_m_bpi.group(1))
+            elif _m_espn_dv:
+                fair_pct = float(_m_espn_dv.group(1))
+            if fair_pct is None:
+                self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+                self.save_memory()
+                return False, (
+                    f"VETO [Fail-Closed Fair Probability Gate]: Missing external de-vigged sharp probability or live BPI model for {ticker} "
+                    "— refusing orderbook-only entry!"
+                ), 0.0
+            # Note: live_side_bid_now is our Maker entry price in cents; require p_fair >= maker_entry_price + 3.0c!
+            maker_entry_c = (live_side_bid_now + 1) if ((live_side_ask - live_side_bid_now) >= 2) else live_side_bid_now
+            net_edge_pct = fair_pct - float(maker_entry_c)
+            if net_edge_pct < 3.0:
+                self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+                self.save_memory()
+                return False, (
+                    f"VETO [Insufficient Fair-Probability Edge]: External fair prob ({fair_pct:.1f}%) - Maker entry ({maker_entry_c}c) "
+                    f"= {net_edge_pct:+.1f}% (< +3.0% required edge)!"
+                ), 0.0
         if tape_velocity_tag:
             ext_reason += tape_velocity_tag
 
@@ -2683,29 +2675,55 @@ def load_signer() -> KalshiAuthSigner:
     return KalshiAuthSigner(key_id=key_id, private_key=pem_file)
 
 
-async def run_autonomous_loop(duration_seconds: int = 0):
+async def run_autonomous_loop(duration_seconds: int = 0, mode: str | None = None):
+    strat_cfg = load_and_validate_strategy_config()
+    global_cfg = strat_cfg.get("global", {})
+    active_mode = (mode or global_cfg.get("trading_mode", "PAPER")).upper()
+    is_paper_mode = (active_mode != "LIVE")
+    max_daily_dd_cents = int(round(float(global_cfg.get("max_daily_drawdown_dollars", 15.0)) * 100))
+
     signer = load_signer()
     client = KalshiClient(signer=signer, base_url=settings.PROD_REST_URL)
     educator = PreTradeEducator()
-    logger.info("Autonomous Worldwide Live Roller + PreTradeEducator started.")
-    try:
-        await client.request(
-            "POST",
-            "/portfolio/target_balance_allocation",
-            json_data={
-                "allocations": [
-                    {"exchange_index": 0, "percent": 40},
-                    {"exchange_index": 1, "percent": 0},
-                    {"exchange_index": 2, "percent": 20},
-                    {"exchange_index": 3, "percent": 40},
-                ],
-                "resting_margin_reservation": "sum",
-            },
-            authenticated=True,
-        )
-        logger.info("Kalshi 3-Shard Auto-Allocator verified: 40% Shard 0 / 20% Shard 2 (Crypto) / 40% Shard 3.")
-    except Exception as e:
-        logger.warning(f"Shard allocation sync note: {e}")
+    fill_ledger = FillReconciledLedger()
+    paper_ledger_path = Path("data/paper_shadow_ledger.json")
+    if is_paper_mode:
+        try:
+            paper_state = json.loads(paper_ledger_path.read_text()) if paper_ledger_path.exists() else {}
+        except Exception:
+            paper_state = {}
+        paper_state.setdefault("mode", "PAPER")
+        paper_state.setdefault("virtual_cash_cents", 35872)
+        paper_state.setdefault("open_positions", {})
+        paper_state.setdefault("resting_orders", [])
+        paper_state.setdefault("closed_trades", [])
+        paper_state.setdefault("evaluations_logged", 0)
+        paper_ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        paper_ledger_path.write_text(json.dumps(paper_state, indent=2))
+
+    logger.info(
+        f"Autonomous Worldwide Roller + PreTradeEducator started in [{active_mode}] mode "
+        f"(YAML validated: max_dd=${max_daily_dd_cents/100:.2f}, max_conc={global_cfg.get('max_concurrent_positions', 5)})."
+    )
+    if not is_paper_mode:
+        try:
+            await client.request(
+                "POST",
+                "/portfolio/target_balance_allocation",
+                json_data={
+                    "allocations": [
+                        {"exchange_index": 0, "percent": 40},
+                        {"exchange_index": 1, "percent": 0},
+                        {"exchange_index": 2, "percent": 20},
+                        {"exchange_index": 3, "percent": 40},
+                    ],
+                    "resting_margin_reservation": "sum",
+                },
+                authenticated=True,
+            )
+            logger.info("Kalshi 3-Shard Auto-Allocator verified: 40% Shard 0 / 20% Shard 2 (Crypto) / 40% Shard 3.")
+        except Exception as e:
+            logger.warning(f"Shard allocation sync note: {e}")
     start_ts = time.time()
     peak_bids: dict[str, int] = {}
     tracked_open_positions: dict[str, dict] = educator.memory.setdefault("tracked_open_positions", {})
@@ -2716,6 +2734,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
     series_markets_cache: dict[str, tuple[float, list]] = {}
     veto_cooldown_until: dict[str, float] = {}
     stop_breach_counts: dict[str, int] = {}
+    startup_reconciled: bool = False
 
     def _entity_key(tk: str) -> str:
         pts = tk.split("-")
@@ -2736,20 +2755,19 @@ async def run_autonomous_loop(duration_seconds: int = 0):
             equity_cents = total_cents + port_cents
             educator.record_equity_snapshot(total_cents, port_cents, equity_cents)
 
-            # HARD DAILY / OVERNIGHT CIRCUIT BREAKER (Max -$50.00 Drawdown Stop -> $351.00 Hard Floor):
+            # HARD DAILY / OVERNIGHT CIRCUIT BREAKER (Max -$15.00 Drawdown Stop from strategies.yaml):
             cb_state = educator.memory.setdefault("daily_circuit_breaker", {})
             today_str = now_utc.strftime("%Y-%m-%d")
-            if cb_state.get("protected_floor_cents") is None:
+            if cb_state.get("protected_floor_cents") is None or cb_state.get("day") != today_str:
                 cb_state["day"] = today_str
                 cb_state["start_equity_cents"] = equity_cents
-                cb_state["protected_floor_cents"] = max(10000, equity_cents - 5000)
+                cb_state["protected_floor_cents"] = max(10000, equity_cents - max_daily_dd_cents)
                 cb_state["tripped"] = False
                 educator.save_memory()
-            daily_floor_c = int(cb_state.get("protected_floor_cents", 35100))
+            daily_floor_c = int(cb_state.get("protected_floor_cents", equity_cents - max_daily_dd_cents))
             if equity_cents > int(cb_state.get("start_equity_cents", equity_cents)):
-                # Ratchet daily start equity & floor UP as we win during the night (always keeping a -$50.00 max drawdown cushion)!
                 cb_state["start_equity_cents"] = equity_cents
-                cb_state["protected_floor_cents"] = max(daily_floor_c, equity_cents - 5000)
+                cb_state["protected_floor_cents"] = max(daily_floor_c, equity_cents - max_daily_dd_cents)
                 daily_floor_c = int(cb_state["protected_floor_cents"])
                 educator.save_memory()
             if equity_cents <= daily_floor_c and not cb_state.get("tripped", False):
@@ -2757,11 +2775,11 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 educator.memory["manual_pause_buys"] = True
                 educator.save_memory()
                 logger.error(
-                    f"🚨 DAILY CIRCUIT BREAKER TRIPPED: Equity ${equity_cents/100:.2f} hit protected floor ${daily_floor_c/100:.2f} (-$40 max daily drawdown cap). Pausing all buys!"
+                    f"🚨 DAILY CIRCUIT BREAKER TRIPPED: Equity ${equity_cents/100:.2f} hit protected floor ${daily_floor_c/100:.2f} (-${max_daily_dd_cents/100:.2f} max daily drawdown cap). Pausing all buys!"
                 )
                 await send_phone_alert(
                     client,
-                    "🚨 DAILY CIRCUIT BREAKER TRIPPED (-$40 Cap)",
+                    f"🚨 DAILY CIRCUIT BREAKER TRIPPED (-${max_daily_dd_cents/100:.2f} Cap)",
                     (
                         f"Live Equity (${equity_cents/100:.2f}) reached today's protected floor (${daily_floor_c/100:.2f}).\n"
                         "All new buying is automatically PAUSED for the rest of the day to protect your bankroll."
@@ -2820,6 +2838,25 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         f"Protected Cash Ready to Withdraw to Bank: +${withdrawable_vault_dlr:,.2f}!"
                     ),
                 )
+
+            orders_resp = await client.request("GET", "/portfolio/orders", authenticated=True)
+            open_orders = [
+                o for o in orders_resp.get("orders", []) if o.get("status") == "resting"
+            ]
+            if not startup_reconciled:
+                prev_keys = set(tracked_open_positions.keys())
+                rebuilt_pos, reserved_entries = reconcile_startup_state(
+                    tracked_open_positions, positions, open_orders
+                )
+                purged_ghosts = sorted(prev_keys - set(tracked_open_positions.keys()))
+                fill_ledger.positions.update(rebuilt_pos)
+                if purged_ghosts or rebuilt_pos:
+                    logger.info(
+                        f"Startup State Reconciled: purged_ghosts={purged_ghosts}, "
+                        f"rebuilt_open={list(rebuilt_pos.keys())}, reserved_entries={list(reserved_entries)}"
+                    )
+                    educator.save_memory()
+                startup_reconciled = True
 
             # Detect when any previously held position cashes out (Supports both YES > 0 and NO < 0 positions!)
             open_pos_fp_map: dict[str, float] = {}
@@ -2905,11 +2942,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             exit_reason="POSITION_CLOSED_OR_SETTLED_LOSS",
                         )
 
-            orders_resp = await client.request("GET", "/portfolio/orders", authenticated=True)
-            open_orders = [
-                o for o in orders_resp.get("orders", []) if o.get("status") == "resting"
-            ]
-
             resting_sell_orders: dict[str, list[dict]] = {}
             resting_sell_counts: dict[str, float] = {}
             resting_buy_tickers: set[str] = set()
@@ -2937,26 +2969,20 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             age_sec = (now_utc - c_dt).total_seconds()
                         except Exception:
                             age_sec = 999.0
-                    # FIFO Senior Queue-Priority Preservation + Instant Outbid Re-Pegging:
-                    # 1) If our resting Maker buy was OUTBID (`my_bid_c < cur_best_b`) and is >=8s old, cancel immediately (`max_wait_sec = 8.0`)
-                    #    so we can re-peg to the new front of the line on the next cycle instead of sitting buried for 25s!
-                    # 2) If our resting Maker buy is STILL at the #1 best bid (`my_bid_c >= cur_best_b`) on a tight 1c-2c spread,
-                    #    hold our senior FIFO timestamp up to 75s so we never give up our #1 spot in line!
+                    # Strict 15.0s validation-freshness window on unfilled entry orders (Audit P1):
+                    # Cancel any unfilled resting entry order older than 15s (or 8s if outbid) so stale quotes never get run over.
                     filled_so_far = float(o.get("fill_count_fp", "0") or 0)
-                    max_wait_sec = 75.0 if filled_so_far >= 1.0 else 25.0
+                    max_wait_sec = 15.0
                     if age_sec >= 8.0 and filled_so_far < 1.0:
                         try:
                             ob_q = await client.get_orderbook(t)
                             o_side_str = o.get("book_side") or o.get("side") or "bid"
                             is_no_buy_q = (o_side_str == "ask")
                             cur_best_b = (ob_q.best_no_bid or 0) if is_no_buy_q else (ob_q.best_yes_bid or 0)
-                            cur_best_a = (ob_q.best_no_ask or 99) if is_no_buy_q else (ob_q.best_yes_ask or 99)
                             yes_p_c = int(round(float(o.get("yes_price_dollars") or 0) * 100))
                             my_bid_c = (100 - yes_p_c) if is_no_buy_q else yes_p_c
                             if my_bid_c > 0 and cur_best_b > my_bid_c:
                                 max_wait_sec = 8.0
-                            elif my_bid_c > 0 and my_bid_c >= cur_best_b and 1 <= (cur_best_a - cur_best_b) <= 2 and 76 <= cur_best_a <= 90:
-                                max_wait_sec = 75.0
                         except Exception:
                             pass
                     if age_sec > max_wait_sec:
@@ -2972,8 +2998,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         resting_buy_tickers.add(t)
                         locked_buy_shards.add(int(o.get("exchange_index", 0) or 0))
 
-            if stale_buys_to_cancel:
-                logger.info(f"Auto-canceling {len(stale_buys_to_cancel)} unfilled resting buy order(s) (>25s UTC age) to prevent stale fills and free cash.")
+            if stale_buys_to_cancel and not is_paper_mode:
+                logger.info(f"Auto-canceling {len(stale_buys_to_cancel)} unfilled resting buy order(s) (>15s validation age) to prevent stale fills and free cash.")
                 try:
                     await client.request(
                         "DELETE",
@@ -2989,7 +3015,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 except Exception:
                     pass
 
-            # 1. Manage Open Positions: Tight -10c Stop-Loss Cap + Stage-1/Stage-2 Harvest Queue (Supports YES & NO Under positions!)
+            # 1. Manage Open Positions: Vegas-Confirmed <48c Thesis Guillotine + Reconciled IOC Exits
             for pos in positions:
                 ticker = pos.get("ticker", "")
                 pos_fp = float(pos.get("position_fp", "0") or 0)
@@ -3008,10 +3034,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 peaked = peak_bids.get(ticker, cur_bid)
                 exp_dlr = float(pos.get("market_exposure_dollars", "0") or 0)
                 raw_entry_cents = int(round((exp_dlr / abs(pos_fp)) * 100)) if exp_dlr > 0 else 80
-                # Reciprocal NO Cost-Basis Fix:
-                # For a `NO` position (`is_no_pos`), Kalshi sometimes reports `market_exposure_dollars` as `(1.00 - no_price)` (the YES complement)
-                # or as `no_price` directly. Since our strategy ALWAYS enters in the 70c-93c favorite/cushioned zone,
-                # if `raw_entry_cents < 50`, our true NO entry price was `100 - raw_entry_cents`!
                 avg_entry_cents = (100 - raw_entry_cents) if (is_no_pos and raw_entry_cents < 50) else raw_entry_cents
                 mem_entry = int(educator.memory.get("last_entry_cents", {}).get(ticker, 0) or 0)
                 prev_saved_entry = int(tracked_open_positions.get(ticker, {}).get("avg_entry_cents", 0) or 0) or mem_entry
@@ -3021,23 +3043,21 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     tracked_open_positions[ticker]["avg_entry_cents"] = avg_entry_cents
                 max_orig_cnt = int(tracked_open_positions.get(ticker, {}).get("max_count", whole_pos) or whole_pos)
                 pos_conf_score = int(educator.memory.get("last_conf_scores", {}).get(ticker, 83) or 83)
-                # Stage-1 is ONLY banked when >=40% of contracts have ACTUALLY filled & cashed out (never on an unfilled touch!)
                 stage1_banked = (max_orig_cnt >= 6 and whole_pos <= int(max_orig_cnt * 0.58))
-                # TWO-TIER SCOREBOARD-PROTECTED STOP-LOSS ($7.50 - $10.50 Max Loss Cap Per Trade):
-                # - Tier 1 (Scoreboard Cushion BROKEN on ESPN, `sb_still_valid == False`): Cut fast at `-10c` (~$7.50 max loss on 75x)
-                # - Tier 2 (Scoreboard Cushion INTACT on ESPN, `sb_still_valid == True`): Hold down to `-14c` (`66c` floor, ~$10.50 max loss)
-                #   so a 1-goal blip never shakes us out of a winning ticket, while NEVER risking a big loss!
-                max_stop_dist = 10
+                # VEGAS-CONFIRMED THESIS GUILLOTINE (Fixes the -$671.37 premature stop-out on 11 winning trades + removes ask-gap blindspot):
+                # Never require `cur_ask <= stop_floor_c + 4` (which blinded the stop when spreads widened).
+                # Only exit when `cur_bid <= 48` (Vegas/Pod-1 hard guillotine) OR when `sb_still_valid == False` for 2 consecutive ticks!
+                max_stop_dist = 12
                 if stage1_banked:
                     stop_floor_c = max(68, avg_entry_cents)
                 else:
-                    stop_floor_c = max(68, avg_entry_cents - max_stop_dist)
-                raw_breach = (0 < cur_bid <= stop_floor_c) and (cur_ask <= stop_floor_c + 4)
+                    stop_floor_c = max(48, avg_entry_cents - max_stop_dist)
+                raw_breach = (0 < cur_bid <= stop_floor_c)
                 thesis_broken_guillotine = False
                 if raw_breach:
                     stop_breach_counts[ticker] = stop_breach_counts.get(ticker, 0) + 1
                     sb_still_valid = False
-                    if cur_bid >= 64:
+                    if cur_bid > 48:
                         try:
                             sb_tag = (
                                 f"[PLUS-SPREAD-NO] {ticker}"
@@ -3049,27 +3069,19 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             )
                         except Exception:
                             sb_still_valid = False
-                    if sb_still_valid and cur_bid >= 64:
-                        eff_floor_c = max(65, avg_entry_cents - 14)
-                    else:
-                        eff_floor_c = stop_floor_c
-                    if cur_bid <= 62 or (cur_bid <= eff_floor_c and stop_breach_counts[ticker] >= 2):
+                    if cur_bid <= 48 or (not sb_still_valid and stop_breach_counts[ticker] >= 2):
                         thesis_broken_guillotine = True
                     else:
                         logger.info(
-                            f"🛡️ Anti-Wick / Scoreboard Hold on {ticker}: bid={cur_bid}c dipped to floor={stop_floor_c}c "
-                            f"(tick {stop_breach_counts[ticker]}/2, ScoreboardValid={sb_still_valid}, eff_floor={eff_floor_c}c) — holding through temporary flash wick!"
+                            f"🛡️ Vegas/Scoreboard Thesis Hold on {ticker}: bid={cur_bid}c <= floor={stop_floor_c}c "
+                            f"(tick {stop_breach_counts[ticker]}/2, ScoreboardValid={sb_still_valid}) — holding while thesis is intact (>48c)!"
                         )
                 else:
                     stop_breach_counts[ticker] = 0
-                if thesis_broken_guillotine:
+                if thesis_broken_guillotine and not is_paper_mode:
                     logger.warning(
-                        f"TIGHT -10c STOP-LOSS / STAGE-1 SHIELD TRIGGERED on {ticker} ({'NO-UNDER' if is_no_pos else 'YES'}, cur_bid={cur_bid}c, ask={cur_ask}c, floor={stop_floor_c}c). Exiting cleanly!"
+                        f"VEGAS-CONFIRMED THESIS GUILLOTINE TRIGGERED on {ticker} ({'NO-UNDER' if is_no_pos else 'YES'}, cur_bid={cur_bid}c, ask={cur_ask}c, floor={stop_floor_c}c). Executing reconciled IOC exit!"
                     )
-                    stopped_out_events.add(_entity_key(ticker))
-                    if not ticker.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB", "KXINX", "KXNASDAQ", "KXWTI")):
-                        stopped_out_matchups.add(_matchup_slug(ticker))
-                        educator.memory["stopped_out_matchups"] = list(stopped_out_matchups)
                     to_cancel = [
                         {
                             "order_id": so["order_id"],
@@ -3088,44 +3100,78 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         )
                     exit_order_side = "bid" if is_no_pos else "ask"
                     exit_yes_price_c = min(99, max(1, 100 - cur_bid)) if is_no_pos else max(1, cur_bid)
-                    await client.request(
+                    cid = str(uuid.uuid4())
+                    intent = ExitIntent(
+                        ticker=ticker,
+                        client_order_id=cid,
+                        requested_qty=float(whole_pos),
+                        limit_price_cents=cur_bid,
+                        side="no" if is_no_pos else "yes",
+                    )
+                    exit_payload = build_safe_order_payload(
+                        ticker=ticker,
+                        side=exit_order_side,
+                        action="buy" if is_no_pos else "sell",
+                        count=whole_pos,
+                        price_cents=exit_yes_price_c,
+                        client_order_id=cid,
+                        post_only=False,
+                    )
+                    order_resp = await client.request(
                         "POST",
                         "/portfolio/events/orders",
-                        json_data={
-                            "ticker": ticker,
-                            "side": exit_order_side,
-                            "count": f"{whole_pos}.00",
-                            "price": f"{exit_yes_price_c / 100:.4f}",
-                            "time_in_force": "immediate_or_cancel",
-                            "self_trade_prevention_type": "maker",
-                            "client_order_id": str(uuid.uuid4()),
-                        },
+                        json_data=exit_payload,
                         authenticated=True,
                     )
-                    est_pnl = round(
-                        ((max_orig_cnt - whole_pos) * 0.06) + (whole_pos * ((cur_bid - avg_entry_cents) / 100.0)),
-                        2,
+                    await asyncio.sleep(0.35)
+                    fills_resp = await client.request("GET", "/portfolio/fills", params={"ticker": ticker, "limit": 20}, authenticated=True)
+                    oid_created = (order_resp.get("order") or {}).get("order_id") or order_resp.get("order_id")
+                    fills_for_order = [
+                        f for f in fills_resp.get("fills", [])
+                        if (oid_created and f.get("order_id") == oid_created) or f.get("client_order_id") == cid
+                    ]
+                    recon_exit = reconcile_ioc_exit(
+                        tracked_positions=fill_ledger.positions,
+                        exit_intent=intent,
+                        order_response=order_resp,
+                        confirmed_fills=fills_for_order,
+                        ledger=fill_ledger,
                     )
-                    educator.record_trade_autopsy(
-                        ticker=ticker,
-                        entry_cents=avg_entry_cents,
-                        exit_cents=cur_bid,
-                        peak_cents=peaked,
-                        net_pnl_dlr=est_pnl,
-                        exit_reason="STAGE1_PROFIT_SHIELD_EXIT" if stage1_banked else "TIGHT_10C_STOP_LOSS",
-                    )
-                    tracked_open_positions.pop(ticker, None)
-                    educator.save_memory()
-                    await send_phone_alert(
-                        client,
-                        "🛡️ Stage-1 Profit Shield Locked!" if stage1_banked else "🛑 Tight -10c Stop-Loss Triggered",
-                        (
-                            f"Play: {ticker} ({'UNDER/NO' if is_no_pos else 'YES'})\n"
-                            f"Action: Exited {whole_pos}x @ {cur_bid}c (Entry: {avg_entry_cents}c, Floor: {stop_floor_c}c)\n"
-                            f"Estimated Net Trade P&L: {est_pnl:+.2f}\n"
-                            f"New Account Equity: ${equity_cents/100:.2f}"
-                        ),
-                    )
+                    if recon_exit.status == "FILLED":
+                        stopped_out_events.add(_entity_key(ticker))
+                        if not ticker.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB", "KXINX", "KXNASDAQ", "KXWTI")):
+                            stopped_out_matchups.add(_matchup_slug(ticker))
+                            educator.memory["stopped_out_matchups"] = list(stopped_out_matchups)
+                        real_pnl = round(fill_ledger.realized_pnl_by_ticker.get(ticker, whole_pos * ((cur_bid - avg_entry_cents) / 100.0)), 2)
+                        educator.record_trade_autopsy(
+                            ticker=ticker,
+                            entry_cents=avg_entry_cents,
+                            exit_cents=cur_bid,
+                            peak_cents=peaked,
+                            net_pnl_dlr=real_pnl,
+                            exit_reason="STAGE1_PROFIT_SHIELD_EXIT" if stage1_banked else "THESIS_GUILLOTINE_RECONCILED_EXIT",
+                        )
+                        tracked_open_positions.pop(ticker, None)
+                        educator.save_memory()
+                        await send_phone_alert(
+                            client,
+                            "🛡️ Stage-1 Profit Shield Locked!" if stage1_banked else "🛑 Reconciled Stop-Loss Executed",
+                            (
+                                f"Play: {ticker} ({'UNDER/NO' if is_no_pos else 'YES'})\n"
+                                f"Action: Confirmed Exit {int(recon_exit.filled_qty)}x @ {cur_bid}c (Entry: {avg_entry_cents}c)\n"
+                                f"Reconciled Net Trade P&L: {real_pnl:+.2f}\n"
+                                f"New Account Equity: ${equity_cents/100:.2f}"
+                            ),
+                        )
+                    else:
+                        rem_q = int(recon_exit.remaining_qty)
+                        if ticker in tracked_open_positions:
+                            tracked_open_positions[ticker]["count"] = rem_q
+                        educator.save_memory()
+                        logger.warning(
+                            f"⚠️ IOC Exit on {ticker} status={recon_exit.status}: filled={recon_exit.filled_qty}, "
+                            f"remaining={rem_q}. Retaining position in tracked_open_positions for next-tick retry!"
+                        )
                     continue
 
                 # 12-MINUTE STAGNATION SCRATCH RULE + STAGE-2 RUNNER DYNAMIC TAKE-PROFIT RATCHET:
@@ -3203,26 +3249,25 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         except Exception:
                             pass
 
-                # Ensure 100% Full-Position Clean Exit at +6c/+7c (Restored from Yesterday's 23W-9L / 14-2 Formula!)
-                # Never leave a 40% tail sitting at 97c exposed to late-game reversals!
+                # Ensure 100% Full-Position Clean Exit at +6c/+7c Clamped Strictly to <=94c:
                 whole_covered = int(resting_sell_counts.get(ticker, 0.0))
                 uncovered = whole_pos - whole_covered
-                if uncovered >= 1:
+                if uncovered >= 1 and not is_paper_mode:
                     undercut_ask = max(cur_bid + 1, cur_ask - 1)
                     tp_step = 8 if avg_entry_cents <= 76 else (7 if avg_entry_cents <= 85 else 6)
                     if pos_meta.get("scratch_requeued", False):
-                        fast_tp = max(cur_bid + 1, avg_entry_cents + 1)
+                        fast_tp = min(94, max(cur_bid + 1, avg_entry_cents + 1))
                     elif undercut_ask >= avg_entry_cents + tp_step:
                         fast_tp = min(94, avg_entry_cents + tp_step, undercut_ask)
                     else:
-                        fast_tp = max(cur_bid + 1, min(94, avg_entry_cents + tp_step))
+                        fast_tp = min(94, max(cur_bid + 1, min(94, avg_entry_cents + tp_step)))
 
                     opp_bids_map = {
                         int(lvl.price): float(lvl.quantity) * (lvl.price / 100.0)
                         for lvl in (ob.yes_bids if is_no_pos else ob.no_bids)
                     }
                     if opp_bids_map.get(100 - fast_tp, 0.0) >= 400.0 and (fast_tp - 1) >= max(cur_bid + 1, avg_entry_cents + 5):
-                        fast_tp -= 1
+                        fast_tp = min(94, fast_tp - 1)
 
                     legs = [(uncovered, fast_tp, f"100% Full-Position Harvest (+{fast_tp - avg_entry_cents}c Target)")]
 
@@ -3235,40 +3280,87 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             f"Auto-queuing {leg_label} Sell for {ticker} ({'NO-UNDER' if is_no_pos else 'YES'}): {count_str} @ {leg_cents}c (kalshi_yes_p={tp_price})"
                         )
                         try:
+                            tp_payload = build_safe_order_payload(
+                                ticker=ticker,
+                                side=tp_order_side,
+                                action="buy" if is_no_pos else "sell",
+                                count=leg_cnt,
+                                price_cents=eff_yes_tp_c,
+                                client_order_id=str(uuid.uuid4()),
+                                post_only=True,
+                            )
                             await client.request(
                                 "POST",
                                 "/portfolio/events/orders",
-                                json_data={
-                                    "ticker": ticker,
-                                    "side": tp_order_side,
-                                    "count": count_str,
-                                    "price": tp_price,
-                                    "time_in_force": "good_till_canceled",
-                                    "self_trade_prevention_type": "maker",
-                                    "post_only": True,
-                                    "client_order_id": str(uuid.uuid4()),
-                                },
+                                json_data=tp_payload,
                                 authenticated=True,
                             )
                         except Exception as e:
                             logger.warning(f"Could not place {leg_label} sell for {ticker}: {e}")
 
-            # 2. Dynamic 4-Tier Bankroll Scaling + Daily Smart Bet Quota Pacing
+            # 1B. In PAPER Shadow Mode, manage virtual paper positions & resting orders against live Kalshi v2 order books!
+            if is_paper_mode:
+                try:
+                    paper_state = json.loads(paper_ledger_path.read_text()) if paper_ledger_path.exists() else {}
+                except Exception:
+                    paper_state = {}
+                paper_open_pos: dict = paper_state.setdefault("open_positions", {})
+                paper_closed: list = paper_state.setdefault("closed_trades", [])
+                for p_tk, p_info in list(paper_open_pos.items()):
+                    try:
+                        p_ob = await client.get_orderbook(p_tk)
+                        p_is_no = bool(p_info.get("is_no", False))
+                        p_cur_b = (p_ob.best_no_bid or 0) if p_is_no else (p_ob.best_yes_bid or 0)
+                        p_cur_a = (p_ob.best_no_ask or 99) if p_is_no else (p_ob.best_yes_ask or 99)
+                        p_ent_c = int(p_info.get("entry_cents", 80))
+                        p_tp_c = min(94, int(p_info.get("tp_cents", min(94, p_ent_c + 7))))
+                        p_cnt = int(p_info.get("count", 10))
+                        if p_cur_b >= p_tp_c:
+                            gross_pnl = round(p_cnt * ((p_tp_c - p_ent_c) / 100.0), 2)
+                            paper_closed.append({
+                                "ticker": p_tk,
+                                "side": "NO" if p_is_no else "YES",
+                                "count": p_cnt,
+                                "entry_cents": p_ent_c,
+                                "exit_cents": p_tp_c,
+                                "net_pnl_dollars": gross_pnl,
+                                "exit_reason": "PAPER_MAKER_TP_FILLED",
+                                "closed_at": now_utc.isoformat(),
+                            })
+                            paper_open_pos.pop(p_tk, None)
+                            logger.info(f"📝 [PAPER SHADOW WIN] {p_tk} filled Maker TP @ {p_tp_c}c (entry {p_ent_c}c, +{gross_pnl:.2f})")
+                        elif 0 < p_cur_b <= 48:
+                            loss_pnl = round(p_cnt * ((p_cur_b - p_ent_c) / 100.0), 2)
+                            paper_closed.append({
+                                "ticker": p_tk,
+                                "side": "NO" if p_is_no else "YES",
+                                "count": p_cnt,
+                                "entry_cents": p_ent_c,
+                                "exit_cents": p_cur_b,
+                                "net_pnl_dollars": loss_pnl,
+                                "exit_reason": "PAPER_VEGAS_GUILLOTINE_48C",
+                                "closed_at": now_utc.isoformat(),
+                            })
+                            paper_open_pos.pop(p_tk, None)
+                            logger.info(f"📝 [PAPER SHADOW STOP] {p_tk} exited @ {p_cur_b}c (entry {p_ent_c}c, {loss_pnl:+.2f})")
+                    except Exception:
+                        pass
+                paper_ledger_path.write_text(json.dumps(paper_state, indent=2))
+
+            # 2. Dynamic Risk-Budget Scaling + Hard Daily Quota Stop
             tier = get_scaling_tier(equity_cents)
-            min_stake_c = tier["min_stake_cents"]
+            min_stake_c = 500  # $5.00 min risk-budgeted stake
             quota_st = educator.get_daily_quota_status()
             min_leader_ask = 72
             max_leader_ask = 90
             logger.info(
-                f"Heartbeat [{tier['name']}] | Cash: ${total_cents/100:.2f} | Portfolio: ${port_cents/100:.2f} | Total Equity: ${equity_cents/100:.2f} (Floor=${daily_floor_c/100:.2f}) | Daily Quota: {quota_st['completed_bets']}/{quota_st['target_bets']} ({quota_st['wins']}W-{quota_st['losses']}L, Pace={quota_st['expected_by_now']})"
+                f"Heartbeat [{active_mode} | {tier['name']}] | Live Cash: ${total_cents/100:.2f} (Protected) | Equity: ${equity_cents/100:.2f} (Floor=${daily_floor_c/100:.2f}) | Daily Cap: {quota_st['completed_bets']}/{quota_st['target_bets']} ({quota_st['wins']}W-{quota_st['losses']}L)"
             )
             # Poll 24/7 Two-Way Commands (Telegram Bot & ntfy.sh lock-screen buttons — works even when Mac is OFF!)
             await poll_two_way_commands(client, educator, total_cents, port_cents, equity_cents, positions, open_orders)
 
             # macOS Closed-Lid (`AppleClamshellState`) & DarkWake Shield:
-            # When the MacBook lid is closed, macOS wakes for 10s every 45-90m (DarkWake).
-            # Never broadcast `mac-online` or place new buy orders during a closed-lid DarkWake so GitHub 24/7 Cloud Failover runs uninterrupted!
-            if sys.platform == "darwin" and duration_seconds == 0:
+            if sys.platform == "darwin" and duration_seconds == 0 and not is_paper_mode:
                 now_hb = time.time()
                 prev_tick = getattr(educator, "_last_loop_tick_ts", now_hb)
                 educator._last_loop_tick_ts = now_hb
@@ -3315,20 +3407,21 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     except Exception:
                         pass
 
-            unshielded_open_count = sum(
-                1
-                for tk_o, tr_o in tracked_open_positions.items()
-                if not tr_o.get("stage1_alerted", False) and float(tr_o.get("stake", 0) or 0) >= 15.0
+            max_conc = int(global_cfg.get("max_concurrent_positions", 5))
+            eff_open_map = paper_state.get("open_positions", {}) if is_paper_mode else tracked_open_positions
+            eff_resting_set = set() if is_paper_mode else set(resting_buy_tickers)
+            cap_allowed, cap_reason, _ = check_entry_capacity_and_quota(
+                open_positions=eff_open_map,
+                reserved_entry_tickers=eff_resting_set,
+                max_concurrent=max_conc,
+                completed_trades_today=int(quota_st["completed_bets"]),
+                daily_trade_cap=int(quota_st["target_bets"]),
+                manual_pause=(False if is_paper_mode else bool(educator.memory.get("manual_pause_buys", False)) or bool(cb_state.get("tripped", False))),
             )
-
-            max_conc = 5 if equity_cents >= 38000 else min(4, tier["max_concurrent"] + 1)
             if (
-                not educator.memory.get("manual_pause_buys", False)
-                and not cb_state.get("tripped", False)
+                cap_allowed
                 and equity_cents > daily_floor_c
                 and total_cents >= min_stake_c
-                and len(resting_buy_tickers) < max_conc
-                and unshielded_open_count < max_conc
             ):
                 shard_cents = {0: 0, 1: 0, 2: 0, 3: 0}
                 for b_item in bal.get("balance_breakdown", []):
@@ -3336,49 +3429,45 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     if idx in shard_cents:
                         shard_cents[idx] = int(float(b_item.get("balance", "0") or 0) * 100)
 
-                for dst_shard in ((0, 2, 3) if (total_cents >= 26000 and not resting_buy_tickers) else ()):
-                    if shard_cents.get(dst_shard, 0) < min_stake_c:
-                        donor_shard = max((0, 2, 3), key=lambda s: shard_cents.get(s, 0))
-                        if donor_shard != dst_shard and shard_cents.get(donor_shard, 0) >= (min_stake_c * 2):
-                            xfer_c = min(min_stake_c + 500, shard_cents[donor_shard] - min_stake_c)
-                            if xfer_c >= 500:
-                                try:
-                                    await client.request(
-                                        "POST",
-                                        "/portfolio/intra_exchange_instance_transfer",
-                                        json_data={
-                                            "source": "event_contract",
-                                            "destination": "event_contract",
-                                            "amount": xfer_c * 100,
-                                            "client_transfer_id": str(uuid.uuid4()),
-                                            "source_exchange_shard": donor_shard,
-                                            "destination_exchange_shard": dst_shard,
-                                            "source_subaccount": 0,
-                                            "destination_subaccount": 0,
-                                        },
-                                        authenticated=True,
-                                    )
-                                    shard_cents[donor_shard] -= xfer_c
-                                    shard_cents[dst_shard] += xfer_c
-                                    logger.info(
-                                        f"⚡ Auto-Rebalanced ${xfer_c/100:.2f} from Shard {donor_shard} -> Shard {dst_shard} (Shards: 0=${shard_cents[0]/100:.2f}, 2=${shard_cents[2]/100:.2f}, 3=${shard_cents[3]/100:.2f})"
-                                    )
-                                    await asyncio.sleep(1.0)
-                                except Exception as e:
-                                    logger.warning(f"Pre-warm shard transfer {donor_shard}->{dst_shard} note: {e}")
+                if not is_paper_mode:
+                    for dst_shard in ((0, 2, 3) if (total_cents >= 26000 and not resting_buy_tickers) else ()):
+                        if shard_cents.get(dst_shard, 0) < min_stake_c:
+                            donor_shard = max((0, 2, 3), key=lambda s: shard_cents.get(s, 0))
+                            if donor_shard != dst_shard and shard_cents.get(donor_shard, 0) >= (min_stake_c * 2):
+                                xfer_c = min(min_stake_c + 500, shard_cents[donor_shard] - min_stake_c)
+                                if xfer_c >= 500:
+                                    try:
+                                        await client.request(
+                                            "POST",
+                                            "/portfolio/intra_exchange_instance_transfer",
+                                            json_data={
+                                                "source": "event_contract",
+                                                "destination": "event_contract",
+                                                "amount": xfer_c * 100,
+                                                "client_transfer_id": str(uuid.uuid4()),
+                                                "source_exchange_shard": donor_shard,
+                                                "destination_exchange_shard": dst_shard,
+                                                "source_subaccount": 0,
+                                                "destination_subaccount": 0,
+                                            },
+                                            authenticated=True,
+                                        )
+                                        shard_cents[donor_shard] -= xfer_c
+                                        shard_cents[dst_shard] += xfer_c
+                                        logger.info(
+                                            f"⚡ Auto-Rebalanced ${xfer_c/100:.2f} from Shard {donor_shard} -> Shard {dst_shard}"
+                                        )
+                                        await asyncio.sleep(1.0)
+                                    except Exception as e:
+                                        logger.warning(f"Pre-warm shard transfer {donor_shard}->{dst_shard} note: {e}")
 
                 active_all_tickers = (
                     list(resting_buy_tickers)
                     + list(resting_sell_counts.keys())
                     + list(tracked_open_positions.keys())
+                    + (list(paper_state.get("open_positions", {}).keys()) if is_paper_mode else [])
                 )
                 harvested_set = set(educator.memory.get("harvested_tickers", []))
-                last_win_entry_map = educator.memory.get("last_win_entry_cents", {})
-                # STRICT ANTI-DOUBLE-BOOKING, STOPPED-OUT GAME BAN & STAIR-STEP MULTI-SCALP ON THE WAY UP:
-                # 1) NEVER hold 2 concurrent positions/orders in the same game at the same time (`active_all_tickers`).
-                # 2) If a game EVER stops out/loses (`stopped_out_matchups`), permanently ban that entire game across ALL series forever!
-                # 3) If a trade WINS and cashes out, allow rolling into the next Quarter/Period/Under OR re-scalping the same winner
-                #    ONLY if it has stepped UP >= +4c higher on the staircase (`side_ask >= last_win_entry + 4`, never on a pullback)!
                 active_matchups = (
                     set(stopped_out_matchups)
                     | {_matchup_slug(tk) for tk in active_all_tickers if not tk.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB", "KXINX", "KXNASDAQ", "KXWTI"))}
@@ -3483,7 +3572,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             ):
                                 continue
 
-                            # Allow -7d to +185m on Live Sports so delayed/multi-day Tennis & active live games are caught while filtering out games hours in the future!
                             if is_crypto_s or is_index_s:
                                 if not (5.0 <= mins_to_exp <= 25.0):
                                     continue
@@ -3500,9 +3588,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 continue
 
                             raw_title = m.get("yes_sub_title") or m.get("title", t)
-                            # Rule 5: Scan BOTH YES ("Giving Points / Over") AND NO ("Buying +Points / Under"):
-                            # - For TOTAL & TEAMTOTAL markets: `NO` side in 72c-90c is a cushioned Under (`[UNDER-NO]`).
-                            # - For SPREAD markets: `NO` side in 72c-90c is BUYING +POINTS (`+2.5`, `+3.5`, `+8.5`, `+10.5` — `[PLUS-SPREAD-NO]`)!
                             no_ask_c = 100 - bid_c
                             is_under_candidate = False
                             is_prop_series = series in (
@@ -3521,8 +3606,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             else:
                                 continue
 
-                            # One-Win-Per-Ticker ("Bank the Win & Walk Away" Rule):
-                            # Once we win and cash out `t`, NEVER re-buy that exact same ticker `t` again so we never give back a banked win!
                             if t in harvested_set:
                                 continue
 
@@ -3544,14 +3627,9 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             import re as _re
                             _m_strike = _re.search(r"(\d+(?:\.\d+)?)$", t.split("-")[-1])
                             strike_num = float(_m_strike.group(1)) if _m_strike else 0.0
-                            # BUYING POINTS / ALT-LINE SAFETY TIEBREAKER:
-                            # - For Late-Clock Unders (`is_under_candidate`): prefer HIGHER strike numbers (e.g. Under 4.5 before Under 3.5 -> buying UP points!).
-                            # - For Spreads / Team Totals / Player Props: prefer LOWER strike numbers (e.g. -2.5 before -6.5, or 20+ pts before 25+ pts -> buying DOWN points!).
                             alt_line_safety_tiebreaker = (-strike_num * 0.45) if is_under_candidate else (strike_num * 0.45)
-                            # Sweet-Spot Price Bonus: 79c-84c is the optimal risk/reward + fill-velocity zone (-8.0 priority boost!)
                             eff_ask_c = no_ask_c if is_under_candidate else ask_c
                             sweet_spot_bonus = -8.0 if (79 <= eff_ask_c <= 84) else 0.0
-                            # Treat 1c and 2c spreads as equal Tier-1 priority (since a 2c spread lets us step +1c to #1 in the queue!):
                             spread_pen = 20.0 if spread_c <= 2 else 55.0
                             vel_score = spread_pen + eff_mins + quarter_king_bonus + ratchet_bonus + alt_line_safety_tiebreaker + sweet_spot_bonus
                             candidates.append((vel_score, mins_to_exp, t, clean_title, shard_key))
@@ -3574,12 +3652,21 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     matchup_slug = _matchup_slug(t)
                     is_crypto_t = t.startswith(("KXBTC", "KXETH", "KXSOL", "KXXRP", "KXDOGE", "KXBNB"))
                     is_index_t = t.startswith(("KXINX", "KXNASDAQ", "KXWTI"))
+                    cur_open_map = paper_state.get("open_positions", {}) if is_paper_mode else tracked_open_positions
+                    cur_rest_set = set() if is_paper_mode else set(resting_buy_tickers)
+                    inner_allowed, _, _ = check_entry_capacity_and_quota(
+                        open_positions=cur_open_map,
+                        reserved_entry_tickers=cur_rest_set,
+                        max_concurrent=max_conc,
+                        completed_trades_today=int(quota_st["completed_bets"]),
+                        daily_trade_cap=int(quota_st["target_bets"]),
+                        manual_pause=(False if is_paper_mode else bool(educator.memory.get("manual_pause_buys", False)) or bool(cb_state.get("tripped", False))),
+                    )
                     if (
-                        event_prefix in active_events
+                        not inner_allowed
+                        or event_prefix in active_events
                         or (not is_crypto_t and not is_index_t and matchup_slug in active_matchups)
                         or total_cents < min_stake_c
-                        or unshielded_open_count >= max_conc
-                        or len(resting_buy_tickers) >= max(1, max_conc - unshielded_open_count)
                         or (is_crypto_t and active_crypto_count >= 1)
                         or (is_index_t and active_index_count >= 1)
                     ):
@@ -3592,15 +3679,24 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     if side_bid and side_ask:
                         spread = side_ask - side_bid
                         is_leader_zone = (min_leader_ask <= side_ask <= max_leader_ask and 1 <= spread <= 3)
-                        is_tail_lock_zone = False
 
                         if is_leader_zone:
                             approved, reason, conf_mult = await educator.evaluate_opportunity(
                                 client, t, ob, title=title, min_book_depth_dlr=tier["min_depth_dlr"]
                             )
                             logger.info(
-                                f"PreTradeEducator [{'72-90c PLUS-SPREAD / UNDER' if is_under_cand else '72-90c MEAT-OF-MOVE LEADER'} | {t} ({mins_left:.0f}m left)]: {reason}"
+                                f"PreTradeEducator [{active_mode} | {'72-90c PLUS-SPREAD / UNDER' if is_under_cand else '72-90c MEAT-OF-MOVE LEADER'} | {t} ({mins_left:.0f}m left)]: {reason}"
                             )
+                            if is_paper_mode:
+                                paper_state["evaluations_logged"] = int(paper_state.get("evaluations_logged", 0)) + 1
+                                paper_state["last_evaluation"] = {
+                                    "ticker": t,
+                                    "title": title,
+                                    "approved": approved,
+                                    "reason": reason,
+                                    "ts": now_utc.isoformat(),
+                                }
+                                paper_ledger_path.write_text(json.dumps(paper_state, indent=2))
                             if not approved:
                                 if any(k in reason for k in ("Period Window", "Under Too Early", "Under Clock Window", "not live in-play", "No live in-play", "Matchup Check", "Unbanked Over")):
                                     veto_cooldown_until[t] = time.time() + 120.0
@@ -3612,11 +3708,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                     veto_cooldown_until[t] = time.time() + 7.0
                                 continue
 
-                            # Front-of-Queue Whale Bid Placement v2:
-                            # On a 1c spread, join `side_bid`. On a 2c spread (`80c/82c`), step +1c (`81c` -> #1 in queue!) whenever:
-                            # a) `best_lvl_dlr >= $100` (a real queue is already ahead of us at `side_bid`), OR
-                            # b) `opp_best_ask_dlr <= $160` (the opposing ask level is thin and about to be swept upward!), OR
-                            # c) `imbalance >= 2.5x` (strong Whale buying pressure pushing the book up).
                             side_top_bids = sorted(ob.no_bids if is_under_cand else ob.yes_bids, key=lambda x: x.price, reverse=True)
                             opp_top_bids = sorted(ob.yes_bids if is_under_cand else ob.no_bids, key=lambda x: x.price, reverse=True)
                             best_lvl_dlr = (float(side_top_bids[0].quantity) * (side_top_bids[0].price / 100.0)) if side_top_bids else 0.0
@@ -3629,85 +3720,108 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             entry_order_side = "ask" if is_under_cand else "bid"
                             eff_yes_entry_c = max(1, min(99, 100 - bid_cents)) if is_under_cand else bid_cents
                             price_str = f"{eff_yes_entry_c / 100:.4f}"
-                            # 3-TIER PLAY SIZING + 4-GEAR DAILY STREAK COMPOUNDING:
+
+                            # FIXED-FRACTIONAL RISK-BUDGET SIZING (0.5% Risk Cap, $25 Max Stake, Zero Win-Streak Escalation):
                             working_equity_cents = min(equity_cents, tier.get("working_cap_cents", equity_cents))
-                            streak_stake_c, streak_mode_label, _ = educator.get_streak_sizing(working_equity_cents, bid_cents, ticker=t)
+                            streak_stake_c, streak_mode_label, count_sized = educator.get_streak_sizing(working_equity_cents, bid_cents, ticker=t)
                             target_stake_cents = min(streak_stake_c, total_cents)
-                            eff_min_contracts = max(10, int(round((target_stake_cents * 0.72) // max(1, bid_cents))))
+                            slice_count = max(0, int(count_sized))
 
-                            # Just-In-Time (JIT) Cross-Shard Liquidity Sweeper: pull cash from other shards if needed!
-                            if shard_cents.get(shard_key, 0) < target_stake_cents:
-                                deficit_cents = target_stake_cents - shard_cents.get(shard_key, 0) + 25
-                                for donor in sorted((0, 2, 3), key=lambda s: shard_cents.get(s, 0), reverse=True):
-                                    if donor == shard_key or donor in locked_buy_shards or deficit_cents <= 0:
-                                        continue
-                                    avail = shard_cents.get(donor, 0)
-                                    pull_c = min(avail, deficit_cents)
-                                    if pull_c >= 100:
-                                        try:
-                                            await client.request(
-                                                "POST",
-                                                "/portfolio/intra_exchange_instance_transfer",
-                                                json_data={
-                                                    "source": "event_contract",
-                                                    "destination": "event_contract",
-                                                    "amount": pull_c * 100,
-                                                    "client_transfer_id": str(uuid.uuid4()),
-                                                    "source_exchange_shard": donor,
-                                                    "destination_exchange_shard": shard_key,
-                                                    "source_subaccount": 0,
-                                                    "destination_subaccount": 0,
-                                                },
-                                                authenticated=True,
-                                            )
-                                            shard_cents[donor] -= pull_c
-                                            shard_cents[shard_key] = shard_cents.get(shard_key, 0) + pull_c
-                                            deficit_cents -= pull_c
-                                            logger.info(
-                                                f"⚡ JIT Shard Sweep: Pulled ${pull_c/100:.2f} from Shard {donor} -> Shard {shard_key} for {t}"
-                                            )
-                                            await asyncio.sleep(1.2)
-                                        except Exception as e:
-                                            logger.warning(f"JIT Shard Sweep {donor}->{shard_key} failed: {e}")
-
-                            alloc_cents = min(shard_cents.get(shard_key, 0), target_stake_cents)
-                            count_int = int(alloc_cents // bid_cents)
-                            if count_int >= eff_min_contracts:
-                                max_slice = tier.get("iceberg_slice", 70)
-                                slice_count = min(count_int, max_slice)
+                            if is_paper_mode and slice_count >= 1:
+                                tp_step = 8 if bid_cents <= 76 else (7 if bid_cents <= 85 else 6)
+                                paper_tp_c = min(94, bid_cents + tp_step)
+                                paper_state.setdefault("open_positions", {})[t] = {
+                                    "ticker": t,
+                                    "title": title,
+                                    "is_no": is_under_cand,
+                                    "count": slice_count,
+                                    "entry_cents": bid_cents,
+                                    "tp_cents": paper_tp_c,
+                                    "stake_dollars": round((slice_count * bid_cents) / 100.0, 2),
+                                    "reason": reason,
+                                    "opened_at": now_utc.isoformat(),
+                                }
+                                paper_ledger_path.write_text(json.dumps(paper_state, indent=2))
+                                active_events.add(event_prefix)
+                                active_matchups.add(matchup_slug)
                                 logger.info(
-                                    f"Auto-deploying [{streak_mode_label}] Maker {'UNDER(NO)' if is_under_cand else 'YES'} Bid on {t}: {slice_count} contracts @ {bid_cents}c (${(slice_count*bid_cents)/100:.2f})"
+                                    f"📝 [PAPER SHADOW ENTRY] {t} ({'NO' if is_under_cand else 'YES'}): "
+                                    f"{slice_count}x @ {bid_cents}c (${(slice_count*bid_cents)/100:.2f} virtual stake, TP={paper_tp_c}c) — Live Cash $358.72 Untouched!"
                                 )
-                                try:
-                                    await client.request(
-                                        "POST",
-                                        "/portfolio/events/orders",
-                                        json_data={
-                                            "ticker": t,
-                                            "side": entry_order_side,
-                                            "count": f"{slice_count}.00",
-                                            "price": price_str,
-                                            "time_in_force": "good_till_canceled",
-                                            "self_trade_prevention_type": "maker",
-                                            "post_only": True,
-                                            "client_order_id": str(uuid.uuid4()),
-                                        },
-                                        authenticated=True,
+                                continue
+
+                            # LIVE MODE ONLY BELOW THIS LINE
+                            if not is_paper_mode and slice_count >= 1:
+                                if shard_cents.get(shard_key, 0) < target_stake_cents:
+                                    deficit_cents = target_stake_cents - shard_cents.get(shard_key, 0) + 25
+                                    for donor in sorted((0, 2, 3), key=lambda s: shard_cents.get(s, 0), reverse=True):
+                                        if donor == shard_key or donor in locked_buy_shards or deficit_cents <= 0:
+                                            continue
+                                        avail = shard_cents.get(donor, 0)
+                                        pull_c = min(avail, deficit_cents)
+                                        if pull_c >= 100:
+                                            try:
+                                                await client.request(
+                                                    "POST",
+                                                    "/portfolio/intra_exchange_instance_transfer",
+                                                    json_data={
+                                                        "source": "event_contract",
+                                                        "destination": "event_contract",
+                                                        "amount": pull_c * 100,
+                                                        "client_transfer_id": str(uuid.uuid4()),
+                                                        "source_exchange_shard": donor,
+                                                        "destination_exchange_shard": shard_key,
+                                                        "source_subaccount": 0,
+                                                        "destination_subaccount": 0,
+                                                    },
+                                                    authenticated=True,
+                                                )
+                                                shard_cents[donor] -= pull_c
+                                                shard_cents[shard_key] = shard_cents.get(shard_key, 0) + pull_c
+                                                deficit_cents -= pull_c
+                                                logger.info(
+                                                    f"⚡ JIT Shard Sweep: Pulled ${pull_c/100:.2f} from Shard {donor} -> Shard {shard_key} for {t}"
+                                                )
+                                                await asyncio.sleep(1.2)
+                                            except Exception as e:
+                                                logger.warning(f"JIT Shard Sweep {donor}->{shard_key} failed: {e}")
+
+                                alloc_cents = min(shard_cents.get(shard_key, 0), target_stake_cents)
+                                count_int = min(slice_count, int(alloc_cents // bid_cents))
+                                if count_int >= 1:
+                                    logger.info(
+                                        f"Auto-deploying [{streak_mode_label}] Maker {'UNDER(NO)' if is_under_cand else 'YES'} Bid on {t}: {count_int} contracts @ {bid_cents}c (${(count_int*bid_cents)/100:.2f})"
                                     )
-                                    resting_buy_tickers.add(t)
-                                    peak_bids[t] = bid_cents
-                                    educator.memory.setdefault("last_entry_cents", {})[t] = bid_cents
-                                    active_events.add(event_prefix)
-                                    active_matchups.add(matchup_slug)
-                                    locked_buy_shards.add(shard_key)
-                                    if is_crypto_t:
-                                        active_crypto_count += 1
-                                    if is_index_t:
-                                        active_index_count += 1
-                                    shard_cents[shard_key] -= slice_count * bid_cents
-                                    total_cents -= slice_count * bid_cents
-                                except Exception:
-                                    pass
+                                    try:
+                                        entry_payload = build_safe_order_payload(
+                                            ticker=t,
+                                            side=entry_order_side,
+                                            action="buy",
+                                            count=count_int,
+                                            price_cents=eff_yes_entry_c,
+                                            client_order_id=str(uuid.uuid4()),
+                                            post_only=True,
+                                        )
+                                        await client.request(
+                                            "POST",
+                                            "/portfolio/events/orders",
+                                            json_data=entry_payload,
+                                            authenticated=True,
+                                        )
+                                        resting_buy_tickers.add(t)
+                                        peak_bids[t] = bid_cents
+                                        educator.memory.setdefault("last_entry_cents", {})[t] = bid_cents
+                                        active_events.add(event_prefix)
+                                        active_matchups.add(matchup_slug)
+                                        locked_buy_shards.add(shard_key)
+                                        if is_crypto_t:
+                                            active_crypto_count += 1
+                                        if is_index_t:
+                                            active_index_count += 1
+                                        shard_cents[shard_key] -= count_int * bid_cents
+                                        total_cents -= count_int * bid_cents
+                                    except Exception:
+                                        pass
 
         except Exception as e:
             logger.error(f"Loop error: {e}")
@@ -3724,6 +3838,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
 async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--duration", type=int, default=0)
+    parser.add_argument("--mode", type=str, default="PAPER", choices=["PAPER", "LIVE"])
     args = parser.parse_args()
     pid_file = Path("/tmp/kalshi_auto_roller.pid")
     if pid_file.exists():
@@ -3739,7 +3854,7 @@ async def main():
         pid_file.write_text(str(os.getpid()))
     except Exception:
         pass
-    await run_autonomous_loop(duration_seconds=args.duration)
+    await run_autonomous_loop(duration_seconds=args.duration, mode=args.mode)
 
 
 if __name__ == "__main__":

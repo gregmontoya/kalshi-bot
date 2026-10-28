@@ -459,10 +459,17 @@ class PreTradeEducator:
         c_ts, c_ev = self.espn_scoreboard_cache.get(sport_path, (0.0, []))
         if (now_t - c_ts) <= ttl and c_ev:
             return c_ev
-        r = await hc.get(f"https://site.api.espn.com/apis/site/v2/sports/{sport_path}", timeout=3.5)
-        events = r.json().get("events", [])
-        self.espn_scoreboard_cache[sport_path] = (now_t, events)
-        return events
+        try:
+            r = await hc.get(f"https://site.api.espn.com/apis/site/v2/sports/{sport_path}", timeout=3.5)
+            events = r.json().get("events", [])
+            if events:
+                self.espn_scoreboard_cache[sport_path] = (now_t, events)
+                return events
+        except Exception:
+            if (now_t - c_ts) <= 30.0 and c_ev:
+                return c_ev
+            raise
+        return c_ev
 
     async def _get_espn_summary_cached(self, hc, sport_base: str, ev_id: str, ttl: float = 4.0) -> dict:
         key = f"{sport_base}:{ev_id}"
@@ -470,13 +477,20 @@ class PreTradeEducator:
         c_ts, c_sum = self.espn_summary_cache.get(key, (0.0, {}))
         if (now_t - c_ts) <= ttl and c_sum:
             return c_sum
-        r_box = await hc.get(
-            f"https://site.api.espn.com/apis/site/v2/sports/{sport_base}/summary?event={ev_id}",
-            timeout=3.5,
-        )
-        data = r_box.json()
-        self.espn_summary_cache[key] = (now_t, data)
-        return data
+        try:
+            r_box = await hc.get(
+                f"https://site.api.espn.com/apis/site/v2/sports/{sport_base}/summary?event={ev_id}",
+                timeout=3.5,
+            )
+            data = r_box.json()
+            if data:
+                self.espn_summary_cache[key] = (now_t, data)
+                return data
+        except Exception:
+            if (now_t - c_ts) <= 30.0 and c_sum:
+                return c_sum
+            raise
+        return c_sum
 
     @staticmethod
     def classify_archetype(ticker: str) -> str:
@@ -1296,6 +1310,27 @@ class PreTradeEducator:
                 import re
                 m_suf = re.match(r"^([A-Z]{2,4})?(\d+(?:\.\d+)?)$", suffix)
 
+                def _abbr_matches(espn_ab: str, kalshi_ab: str) -> bool:
+                    e_u = (espn_ab or "").upper().strip()
+                    k_u = (kalshi_ab or "").upper().strip()
+                    if not e_u or not k_u:
+                        return False
+                    if e_u == k_u or e_u.startswith(k_u) or k_u.startswith(e_u):
+                        return True
+                    alias_map = {
+                        "WSH": "WAS", "WAS": "WSH",
+                        "UTAH": "UTA", "UTA": "UTAH",
+                        "GS": "GSW", "GSW": "GS",
+                        "SA": "SAS", "SAS": "SA",
+                        "NY": "NYK", "NYK": "NY",
+                        "NO": "NOP", "NOP": "NO",
+                        "LA": "LAK", "LAK": "LA",
+                        "NJ": "NJD", "NJD": "NJ",
+                        "TB": "TBL", "TBL": "TB",
+                        "SJ": "SJS", "SJS": "SJ",
+                    }
+                    return alias_map.get(e_u) == k_u
+
                 # Helper to check Vegas Opening -> Closing Line Steam & Multiplicative De-Vig (GEMINI.md Law 4)
                 odds_obj = (comp.get("odds") or [{}])[0] if comp.get("odds") else {}
                 vegas_steam_tag = ""
@@ -1317,7 +1352,7 @@ class PreTradeEducator:
                     target_val = max(0.5, float(num_str) - 0.5)
                     if "TEAMTOTAL" in series and tm_prefix:
                         target_comp = next(
-                            (c for c in competitors if (c.get("team", {}).get("abbreviation") or "").upper() == tm_prefix),
+                            (c for c in competitors if _abbr_matches(c.get("team", {}).get("abbreviation", ""), tm_prefix)),
                             competitors[0],
                         )
                         cur_pts = _comp_window_pts(target_comp)
@@ -1448,7 +1483,7 @@ class PreTradeEducator:
                     tm_prefix, num_str = m_suf.group(1), m_suf.group(2)
                     strike_val = max(0.5, float(num_str) - 0.5)
                     c_idx = next(
-                        (i for i, c in enumerate(competitors) if (c.get("team", {}).get("abbreviation") or "").upper() == tm_prefix),
+                        (i for i, c in enumerate(competitors) if _abbr_matches(c.get("team", {}).get("abbreviation", ""), tm_prefix)),
                         None,
                     )
                     if c_idx is not None:
@@ -1507,7 +1542,7 @@ class PreTradeEducator:
 
                 if req_periods is not None and "TOTAL" not in series and "SPREAD" not in series and len(competitors) >= 2:
                     c_idx = next(
-                        (i for i, c in enumerate(competitors) if (c.get("team", {}).get("abbreviation") or "").upper() == suffix),
+                        (i for i, c in enumerate(competitors) if _abbr_matches(c.get("team", {}).get("abbreviation", ""), suffix)),
                         None,
                     )
                     if c_idx is not None:
@@ -2702,13 +2737,14 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             age_sec = (now_utc - c_dt).total_seconds()
                         except Exception:
                             age_sec = 999.0
-                    # FIFO Senior Queue-Priority Preservation:
-                    # If our resting Maker buy order is still sitting at the #1 best bid on a tight 1c-2c spread,
-                    # do NOT cancel it at 25s (which would destroy our senior FIFO timestamp and send us to the back of the line!).
-                    # Hold our #1 queue spot up to 75s, and only cancel at 25s if outbid or if the spread widened!
+                    # FIFO Senior Queue-Priority Preservation + Instant Outbid Re-Pegging:
+                    # 1) If our resting Maker buy was OUTBID (`my_bid_c < cur_best_b`) and is >=8s old, cancel immediately (`max_wait_sec = 8.0`)
+                    #    so we can re-peg to the new front of the line on the next cycle instead of sitting buried for 25s!
+                    # 2) If our resting Maker buy is STILL at the #1 best bid (`my_bid_c >= cur_best_b`) on a tight 1c-2c spread,
+                    #    hold our senior FIFO timestamp up to 75s so we never give up our #1 spot in line!
                     filled_so_far = float(o.get("fill_count_fp", "0") or 0)
                     max_wait_sec = 75.0 if filled_so_far >= 1.0 else 25.0
-                    if 25.0 < age_sec <= 75.0 and filled_so_far < 1.0:
+                    if age_sec >= 8.0 and filled_so_far < 1.0:
                         try:
                             ob_q = await client.get_orderbook(t)
                             o_side_str = o.get("book_side") or o.get("side") or "bid"
@@ -2717,7 +2753,9 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             cur_best_a = (ob_q.best_no_ask or 99) if is_no_buy_q else (ob_q.best_yes_ask or 99)
                             yes_p_c = int(round(float(o.get("yes_price_dollars") or 0) * 100))
                             my_bid_c = (100 - yes_p_c) if is_no_buy_q else yes_p_c
-                            if my_bid_c > 0 and my_bid_c >= cur_best_b and 1 <= (cur_best_a - cur_best_b) <= 2 and 76 <= cur_best_a <= 90:
+                            if my_bid_c > 0 and cur_best_b > my_bid_c:
+                                max_wait_sec = 8.0
+                            elif my_bid_c > 0 and my_bid_c >= cur_best_b and 1 <= (cur_best_a - cur_best_b) <= 2 and 76 <= cur_best_a <= 90:
                                 max_wait_sec = 75.0
                         except Exception:
                             pass
@@ -3155,7 +3193,9 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             strike_num = float(_m_strike.group(1)) if _m_strike else 0.0
                             # For Late-Clock Unders, prefer HIGHER strike numbers (e.g. Under 4.5 before Under 3.5) for maximum goal cushion!
                             alt_line_safety_tiebreaker = (-strike_num * 0.04) if is_under_candidate else (strike_num * 0.04)
-                            vel_score = (spread_c * 25.0) + eff_mins + quarter_king_bonus + ratchet_bonus + alt_line_safety_tiebreaker
+                            # Treat 1c and 2c spreads as equal Tier-1 priority (since a 2c spread lets us step +1c to #1 in the queue!):
+                            spread_pen = 20.0 if spread_c <= 2 else 55.0
+                            vel_score = spread_pen + eff_mins + quarter_king_bonus + ratchet_bonus + alt_line_safety_tiebreaker
                             candidates.append((vel_score, mins_to_exp, t, clean_title, shard_key))
                         if not has_near_active and not is_crypto_s and not is_index_s:
                             cold_series_until[series] = time.time() + 240.0
@@ -3206,12 +3246,20 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             if not approved:
                                 continue
 
-                            # Join the Whale Bid Wall (`side_bid`) on a 1c spread, or on a 2c spread when queue depth is light (<$180);
-                            # when `spread == 2` and a Whale Bid Wall (`>= $180` depth, ~220+ contracts) is already queued at `side_bid`,
-                            # step +1c (`side_bid + 1`) so we sit #1 at the front of the queue with the Whale Wall directly behind us!
+                            # Front-of-Queue Whale Bid Placement v2:
+                            # On a 1c spread, join `side_bid`. On a 2c spread (`80c/82c`), step +1c (`81c` -> #1 in queue!) whenever:
+                            # a) `best_lvl_dlr >= $100` (a real queue is already ahead of us at `side_bid`), OR
+                            # b) `opp_best_ask_dlr <= $160` (the opposing ask level is thin and about to be swept upward!), OR
+                            # c) `imbalance >= 2.5x` (strong Whale buying pressure pushing the book up).
                             side_top_bids = sorted(ob.no_bids if is_under_cand else ob.yes_bids, key=lambda x: x.price, reverse=True)
+                            opp_top_bids = sorted(ob.yes_bids if is_under_cand else ob.no_bids, key=lambda x: x.price, reverse=True)
                             best_lvl_dlr = (float(side_top_bids[0].quantity) * (side_top_bids[0].price / 100.0)) if side_top_bids else 0.0
-                            bid_cents = (side_bid + 1) if (spread >= 3 or (spread == 2 and best_lvl_dlr >= 180.0)) else side_bid
+                            opp_best_ask_dlr = (float(opp_top_bids[0].quantity) * ((100 - opp_top_bids[0].price) / 100.0)) if opp_top_bids else 999.0
+                            top5_side_dlr = sum(float(l.quantity) * (l.price / 100.0) for l in side_top_bids[:5])
+                            top5_opp_dlr = sum(float(l.quantity) * (l.price / 100.0) for l in opp_top_bids[:5])
+                            ob_imb = (top5_side_dlr + 1.0) / (top5_opp_dlr + 1.0)
+                            step_on_2c = (best_lvl_dlr >= 100.0 or opp_best_ask_dlr <= 160.0 or ob_imb >= 2.5)
+                            bid_cents = (side_bid + 1) if (spread >= 3 or (spread == 2 and step_on_2c)) else side_bid
                             entry_order_side = "ask" if is_under_cand else "bid"
                             eff_yes_entry_c = max(1, min(99, 100 - bid_cents)) if is_under_cand else bid_cents
                             price_str = f"{eff_yes_entry_c / 100:.4f}"

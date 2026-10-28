@@ -13,4 +13,4 @@ ENV PYTHONUNBUFFERED=1
 
 VOLUME ["/app/data"]
 
-CMD ["python", "scripts/run_recorder.py", "--db", "/app/data/recorder.sqlite", "--interval-min", "10"]
+CMD ["python", "scripts/run_recorder.py", "--db", "/app/data/recorder.sqlite", "--interval-min", "5"]

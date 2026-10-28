@@ -1,4 +1,4 @@
-app = "kalshi-quant-recorder"
+app = "kalshi-quant-greg"
 primary_region = "ord"
 
 [build]
@@ -7,6 +7,8 @@ primary_region = "ord"
 [env]
   PYTHONUNBUFFERED = "1"
   PYTHONPATH = "/app"
+  LIVE_MAKER_ENABLED = "true"
+  LIVE_CASH_FLOOR_DOLLARS = "308.72"
 
 [[mounts]]
   source = "recorder_data"

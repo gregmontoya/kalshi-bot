@@ -814,7 +814,7 @@ class PreTradeEducator:
 
         now_ts = time.time()
         cached_ts, games = self.odds_api_cache.get(sport_key, (0.0, []))
-        if (now_ts - cached_ts) > 720.0 or not games:
+        if (now_ts - cached_ts) > 120.0 or not games:
             try:
                 hc = await client.get_client()
                 r = await hc.get(
@@ -1165,13 +1165,13 @@ class PreTradeEducator:
                 # Blend with Sport-Aware Franchise Power Tier Priors (so early-season records still recognize Elite Contenders vs. Tanking Teams!)
                 tm_ab = (c_obj.get("team", {}).get("abbreviation") or "").upper()
                 if series.startswith("KXNBA"):
-                    elite_franchises = {"BOS", "OKC", "DEN", "CLE", "NYK", "MIN", "DAL", "PHX", "GSW", "HOU", "LAL", "ORL", "IND", "MIL"}
-                    bad_tanking_franchises = {"WAS", "UTA", "BKN", "CHA", "POR", "DET", "TOR"}
+                    elite_franchises = {"BOS", "OKC", "DEN", "CLE", "NYK", "NY", "MIN", "DAL", "PHX", "GSW", "GS", "HOU", "LAL", "ORL", "IND", "MIL"}
+                    bad_tanking_franchises = {"WAS", "WSH", "UTA", "UTAH", "BKN", "CHA", "POR", "DET", "TOR"}
                 elif series.startswith("KXNHL"):
-                    elite_franchises = {"FLA", "DAL", "EDM", "CAR", "VGK", "WPG", "COL", "NYR", "TOR", "NJD", "TBL", "VAN", "BOS"}
-                    bad_tanking_franchises = {"SJS", "CHI", "ANA", "CBJ", "MTL", "CGY", "PHI"}
+                    elite_franchises = {"FLA", "DAL", "EDM", "CAR", "VGK", "WPG", "COL", "NYR", "TOR", "NJD", "NJ", "TBL", "TB", "VAN", "BOS"}
+                    bad_tanking_franchises = {"SJS", "SJ", "CHI", "ANA", "CBJ", "MTL", "CGY", "PHI"}
                 elif series.startswith("KXNFL"):
-                    elite_franchises = {"KC", "DET", "BAL", "BUF", "SF", "PHI", "GB", "HOU", "MIN", "WAS", "ATL", "PIT"}
+                    elite_franchises = {"KC", "DET", "BAL", "BUF", "SF", "PHI", "GB", "HOU", "MIN", "WAS", "WSH", "ATL", "PIT"}
                     bad_tanking_franchises = {"CAR", "NE", "NYG", "TEN", "LV", "CLE", "JAX", "NO", "MIA"}
                 else:
                     elite_franchises = {"RMA", "MCI", "FCB", "ARS", "LIV", "BAY", "INT", "PSG", "B04", "ATM", "JUV", "NAP", "DOR"}
@@ -1493,24 +1493,19 @@ class PreTradeEducator:
                         # Overtime Spread Distortion Gate: In a 5-min OT (P5+), teams start tied and rarely cover >=5.5 spreads!
                         if req_periods is None and live_period >= 5 and strike_val >= 5.5 and margin < (strike_val + 4.5):
                             return False, f"VETO [Overtime Spread Trap]: -{strike_val:.1f} spread in OT (P{live_period}) is nearly impossible to cover!"
-                        # Time-in-Play Velocity Gate:
-                        # - In NBA/NFL/College 1st Half (P1/P2), avoid Full-Game Spreads (traps cash through 20-min Halftime) unless up +16 above spread
-                        # - In NHL (3 periods), avoid Full-Game Puck Lines in P1/P2 unless up +2.5 goals above spread (use 1P/2P instead!)
+                        # Time-in-Play Velocity & Multi-Score Cushion Gate on Full-Game Spreads:
+                        # - NEVER buy Full-Game Spreads in P1/P2 when 1 goal or a 6-pt run breaks the spread!
+                        # - In NHL (3 periods), require Period 3 (or +4 goals above spread in P2) so 1 goal against you CANNOT put a -1.5 puck line in danger!
+                        # - In NBA/NFL/College, require 2nd Half (`live_period >= 3`) unless up +18.0 points above the spread!
                         scout_spread_tag = ""
                         if req_periods is None and not is_soccer:
                             if "NHL" in series and live_period <= 2 and margin < (strike_val + 2.5):
-                                if margin >= (strike_val + 1.5):
-                                    scout_spread_tag = " | SCOUT-TIER(Early P1/P2 +2G Spread)"
-                                else:
-                                    return False, f"VETO [NHL Intermission Gate]: Full-game puck line in P{live_period} traps cash through intermission (use 1P/2P/3P!)"
-                            elif "NHL" not in series and live_period <= 2 and margin < (strike_val + 16.0):
-                                if margin >= (strike_val + 9.5):
-                                    scout_spread_tag = " | SCOUT-TIER(Early 1H Spread)"
-                                else:
-                                    return False, (
-                                        f"VETO [1H Time-in-Play Gate]: Full-game spread in P{live_period} {clock_disp} traps cash through Halftime "
-                                        f"(use 1Q/2Q/1H spread instead!)"
-                                    )
+                                return False, f"VETO [NHL Early Puck-Line Ban]: Full-game -{strike_val:.1f} puck line in P{live_period} with +{margin:.0f}G lead is vulnerable to 1 goal (requires P3 or +4G lead!)"
+                            elif "NHL" not in series and live_period <= 2 and margin < (strike_val + 18.0):
+                                return False, (
+                                    f"VETO [1H Full-Game Spread Ban]: Full-game -{strike_val:.1f} spread in P{live_period} {clock_disp} is vulnerable to 2nd-half runs "
+                                    f"(use 1Q/2Q/1H or wait for Q3/Q4!)"
+                                )
                         # Require team to ALREADY be covering the spread by a Multi-Score Safety Cushion:
                         # - NHL/Soccer: +1.5 goals above spread (2-goal cushion so 1 goal against you CANNOT break the spread!)
                         # - Fast Quarters/Halves (req_periods is not None): +5.5 points above spread (2 full possessions!)
@@ -2349,10 +2344,29 @@ class PreTradeEducator:
                     "— waiting >=25s at plateau to confirm support!"
                 ), 0.0
 
-        # 3B. Live Pinnacle / Sharp Book Multiplicative De-Vig Check (The Odds API v4) + Stair-Step Tape Velocity Tag
+        # 3B. Live Pinnacle / Sharp Book Multiplicative De-Vig Check (The Odds API v4 — GEMINI.md Law 4 Active Veto Gate!)
         pin_note = await self.verify_pinnacle_sharp_odds(client, series, ticker, title)
         if pin_note:
             ext_reason += pin_note
+            if not is_under_no and "ENDGAME-SNIPE" not in ext_reason:
+                import re as _re_pin
+                _m_dv = _re_pin.search(r"_DeVig=(\d+(?:\.\d+)?)%", pin_note)
+                if _m_dv:
+                    dv_val = float(_m_dv.group(1))
+                    if dv_val < 54.0:
+                        self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+                        self.save_memory()
+                        return False, (
+                            f"VETO [Sharp Vegas Underdog Fluke Gate]: Sharp sportsbook De-Vig is only {dv_val:.1f}% (<54% min) "
+                            f"while Kalshi is {live_side_ask}c — avoiding underdog fluke leads that mean-revert!"
+                        ), 0.0
+                    if (live_side_ask - dv_val) > 18.0 and "LATE-CLOCK" not in ext_reason:
+                        self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
+                        self.save_memory()
+                        return False, (
+                            f"VETO [Sharp Vegas Overpriced Gate]: Kalshi ask ({live_side_ask}c) exceeds Sharp De-Vig ({dv_val:.1f}%) "
+                            f"by +{live_side_ask - dv_val:.1f}% (>18% max gap before late clock)!"
+                        ), 0.0
         if tape_velocity_tag:
             ext_reason += tape_velocity_tag
 
@@ -3233,14 +3247,10 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             else:
                                 continue
 
-                            # Stair-Step Multi-Scalp on the Way Up:
-                            # If we already scalped `t` once for a win, only re-scalp it if its price stepped UP >= +3c higher
-                            # AND is still <= 85c (never risk a banked win by re-buying the same ticker at 86c-90c!):
+                            # One-Win-Per-Ticker ("Bank the Win & Walk Away" Rule):
+                            # Once we win and cash out `t`, NEVER re-buy that exact same ticker `t` again so we never give back a banked win!
                             if t in harvested_set:
-                                eff_cand_ask = no_ask_c if is_under_candidate else ask_c
-                                prev_win_ent = int(last_win_entry_map.get(t, 99) or 99)
-                                if eff_cand_ask < (prev_win_ent + 3) or eff_cand_ask > 85:
-                                    continue
+                                continue
 
                             if now_scan_ts < veto_cooldown_until.get(t, 0.0):
                                 continue

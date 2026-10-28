@@ -2193,7 +2193,9 @@ class PreTradeEducator:
                     window_10 = t_prices[:10]
                     oldest_10_c = window_10[-1]
                     momentum_delta = newest_c - oldest_10_c
-                    if momentum_delta < 0:
+                    # Allow -1c 10-trade bid-ask print bounce if Whale Imbalance >= 1.80x and last print did not tick down:
+                    min_allowed_drift = -1 if (imbalance_ratio >= 1.80 and newest_c >= t_prices[1]) else 0
+                    if momentum_delta < min_allowed_drift:
                         self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
                         self.save_memory()
                         return False, f"VETO: Negative tape drift ({momentum_delta}c over last {len(window_10)} trades — only buying rising/flat leaders)", 0.0
@@ -2520,6 +2522,8 @@ async def run_autonomous_loop(duration_seconds: int = 0):
     stopped_out_matchups: set[str] = set(educator.memory.setdefault("stopped_out_matchups", ["26OCT27ROMCAG", "26OCT25TIJSLA"]))
     series_shard_cache: dict[str, int] = {}
     cold_series_until: dict[str, float] = {}
+    series_markets_cache: dict[str, tuple[float, list]] = {}
+    veto_cooldown_until: dict[str, float] = {}
 
     def _entity_key(tk: str) -> str:
         pts = tk.split("-")
@@ -2994,13 +2998,14 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 if not tr_o.get("stage1_alerted", False) and float(tr_o.get("stake", 0) or 0) >= 15.0
             )
 
+            max_conc = 4 if equity_cents >= 40000 else min(3, tier["max_concurrent"])
             if (
                 not educator.memory.get("manual_pause_buys", False)
                 and not cb_state.get("tripped", False)
                 and equity_cents > daily_floor_c
                 and total_cents >= min_stake_c
-                and len(resting_buy_tickers) < min(3, tier["max_concurrent"])
-                and unshielded_open_count < 3
+                and len(resting_buy_tickers) < max_conc
+                and unshielded_open_count < max_conc
             ):
                 shard_cents = {0: 0, 1: 0, 2: 0, 3: 0}
                 for b_item in bal.get("balance_breakdown", []):
@@ -3084,6 +3089,9 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     series_to_poll.append(series)
 
                 async def _fetch_series_markets(s_name: str):
+                    c_ts, c_mkts = series_markets_cache.get(s_name, (0.0, []))
+                    if (now_scan_ts - c_ts) <= 22.0 and c_mkts:
+                        return s_name, c_mkts, True, True
                     try:
                         res = await client.request(
                             "GET",
@@ -3091,16 +3099,29 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             params={"series_ticker": s_name, "status": "open", "limit": 1000},
                             authenticated=False,
                         )
-                        return s_name, res.get("markets", []), True
+                        mkts = res.get("markets", [])
+                        series_markets_cache[s_name] = (now_scan_ts, mkts)
+                        return s_name, mkts, True, False
                     except Exception:
-                        return s_name, [], False
+                        if c_mkts:
+                            return s_name, c_mkts, True, True
+                        return s_name, [], False, True
 
                 batched_series_results = []
-                for b_idx in range(0, len(series_to_poll), 2):
-                    batch_slice = series_to_poll[b_idx : b_idx + 2]
+                uncached_to_poll = []
+                for s_item in series_to_poll:
+                    c_ts, c_mkts = series_markets_cache.get(s_item, (0.0, []))
+                    if (now_scan_ts - c_ts) <= 22.0 and c_mkts:
+                        batched_series_results.append((s_item, c_mkts, True))
+                    else:
+                        uncached_to_poll.append(s_item)
+
+                for b_idx in range(0, len(uncached_to_poll), 2):
+                    batch_slice = uncached_to_poll[b_idx : b_idx + 2]
                     b_res = await asyncio.gather(*(_fetch_series_markets(s) for s in batch_slice))
-                    batched_series_results.extend(b_res)
-                    if b_idx + 2 < len(series_to_poll):
+                    for s_n, m_l, f_ok, _ in b_res:
+                        batched_series_results.append((s_n, m_l, f_ok))
+                    if b_idx + 2 < len(uncached_to_poll):
                         await asyncio.sleep(0.11)
 
                 for series, markets_list, fetch_ok in batched_series_results:
@@ -3169,12 +3190,15 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 continue
 
                             # Stair-Step Multi-Scalp on the Way Up:
-                            # If we already scalped `t` once for a win, only re-scalp it if its price has stepped UP >= +4c higher on the ladder!
+                            # If we already scalped `t` once for a win, only re-scalp it if its price has stepped UP >= +3c higher on the ladder!
                             if t in harvested_set:
                                 eff_cand_ask = no_ask_c if is_under_candidate else ask_c
                                 prev_win_ent = int(last_win_entry_map.get(t, 99) or 99)
-                                if eff_cand_ask < (prev_win_ent + 4):
+                                if eff_cand_ask < (prev_win_ent + 3):
                                     continue
+
+                            if now_scan_ts < veto_cooldown_until.get(t, 0.0):
+                                continue
 
                             eff_mins = max(0.0, mins_to_exp)
                             is_q_series = any(q in series for q in ("1Q", "2Q", "3Q", "4Q", "1P", "2P", "3P"))
@@ -3220,13 +3244,13 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         event_prefix in active_events
                         or (not is_crypto_t and not is_index_t and matchup_slug in active_matchups)
                         or total_cents < min_stake_c
-                        or unshielded_open_count >= 3
-                        or len(resting_buy_tickers) >= max(1, 3 - unshielded_open_count)
+                        or unshielded_open_count >= max_conc
+                        or len(resting_buy_tickers) >= max(1, max_conc - unshielded_open_count)
                         or (is_crypto_t and active_crypto_count >= 1)
                         or (is_index_t and active_index_count >= 1)
                     ):
                         continue
-                    await asyncio.sleep(0.06)
+                    await asyncio.sleep(0.05)
                     ob = await client.get_orderbook(t)
                     is_under_cand = title.startswith("[UNDER-NO]")
                     side_bid = ob.best_no_bid if is_under_cand else ob.best_yes_bid
@@ -3244,6 +3268,14 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 f"PreTradeEducator [{'76-87c LATE-CLOCK UNDER' if is_under_cand else '76-87c MEAT-OF-MOVE LEADER'} | {t} ({mins_left:.0f}m left)]: {reason}"
                             )
                             if not approved:
+                                if any(k in reason for k in ("Period Window", "Under Too Early", "Under Clock Window", "not live in-play", "No live in-play", "Matchup Check", "Unbanked Over")):
+                                    veto_cooldown_until[t] = time.time() + 120.0
+                                elif any(k in reason for k in ("Stale market", "Zero recent trades", "Thin bid liquidity")):
+                                    veto_cooldown_until[t] = time.time() + 45.0
+                                elif any(k in reason for k in ("Negative tape drift", "Pop-and-Drop", "Whip-Saw")):
+                                    veto_cooldown_until[t] = time.time() + 18.0
+                                else:
+                                    veto_cooldown_until[t] = time.time() + 7.0
                                 continue
 
                             # Front-of-Queue Whale Bid Placement v2:

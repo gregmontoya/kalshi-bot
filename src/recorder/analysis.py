@@ -19,6 +19,8 @@ MIN_SIGNALS = 200
 T_STAT_REQUIRED = 2.0
 THRESHOLDS = (0.00, 0.02, 0.03, 0.05)
 ODDS_MAX_AGE = timedelta(minutes=45)
+SNAP_WINDOW = timedelta(minutes=15)
+PRIMARY_ENTRY = "snap"  # same-moment comparison; chosen before any results were seen
 
 
 def taker_fee_per_contract(price: float, contracts: int = 20) -> float:
@@ -59,7 +61,7 @@ def _fair_prob(conn, odds_event_id: str, outcome: str, at: datetime) -> float | 
     rows = conn.execute(
         "SELECT ts, outcome, price FROM odds_snapshots WHERE odds_event_id=? AND book='pinnacle' AND ts<=? "
         "ORDER BY ts DESC LIMIT 12",
-        (odds_event_id, at.isoformat()),
+        (odds_event_id, _iso(at)),
     ).fetchall()
     if not rows:
         return None
@@ -88,17 +90,40 @@ def load_observations(conn) -> list[Observation]:
         for entry, (lo, hi) in windows.items():
             snap = conn.execute(
                 "SELECT ts, yes_bid, yes_ask FROM kalshi_snapshots WHERE ticker=? AND ts>=? AND ts<=? "
-                "ORDER BY ts DESC LIMIT 1",
-                (m["ticker"], (commence - lo).isoformat(), (commence - hi).isoformat()),
+                "AND yes_ask>0 AND yes_ask<1 ORDER BY ts DESC LIMIT 1",
+                (m["ticker"], _iso(commence - lo), _iso(commence - hi)),
             ).fetchone()
-            if not snap or not snap["yes_ask"] or not (0.0 < snap["yes_ask"] < 1.0):
+            if not snap:
                 continue
             fair = _fair_prob(conn, m["odds_event_id"], m["odds_outcome"], _dt(snap["ts"]))
             if fair is None:
                 continue
             out.append(Observation(m["ticker"], m["odds_event_id"], entry, snap["yes_ask"], snap["yes_bid"],
                                    fair, m["result"] == "yes"))
+        # "snap": Kalshi price in the 15 minutes right after the latest pre-game Pinnacle snapshot
+        row = conn.execute(
+            "SELECT MAX(ts) FROM odds_snapshots WHERE odds_event_id=? AND book='pinnacle' AND ts<?",
+            (m["odds_event_id"], _iso(commence)),
+        ).fetchone()
+        if row and row[0]:
+            o_ts = _dt(row[0])
+            end = min(o_ts + SNAP_WINDOW, commence)
+            snap = conn.execute(
+                "SELECT ts, yes_bid, yes_ask FROM kalshi_snapshots WHERE ticker=? AND ts>=? AND ts<? "
+                "AND yes_ask>0 AND yes_ask<1 ORDER BY ts ASC LIMIT 1",
+                (m["ticker"], _iso(o_ts), _iso(end)),
+            ).fetchone()
+            if snap:
+                fair = _fair_prob(conn, m["odds_event_id"], m["odds_outcome"], _dt(snap["ts"]))
+                if fair is not None:
+                    out.append(Observation(m["ticker"], m["odds_event_id"], "snap", snap["yes_ask"],
+                                           snap["yes_bid"], fair, m["result"] == "yes"))
     return out
+
+
+def _iso(d: datetime) -> str:
+    """Match the stored timestamp format (UTC, 'Z' suffix) so string comparisons are correct."""
+    return d.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def best_per_game(obs: list[Observation]) -> list[Observation]:
@@ -135,7 +160,7 @@ def brier(pairs: list[tuple[float, bool]]) -> float | None:
 
 def build_report(obs: list[Observation]) -> dict:
     report: dict = {"entries": {}}
-    for entry in ("close", "early"):
+    for entry in ("snap", "close", "early"):
         e_obs = [o for o in obs if o.entry == entry]
         games = best_per_game(e_obs)
         mids = [(((o.bid or o.ask) + o.ask) / 2.0, o.won) for o in e_obs]
@@ -146,8 +171,8 @@ def build_report(obs: list[Observation]) -> dict:
             "brier_pinnacle": brier([(o.fair, o.won) for o in e_obs]),
             "thresholds": {thr: summarize([o for o in games if o.edge >= thr]) for thr in THRESHOLDS},
         }
-    close = report["entries"]["close"]["thresholds"]
-    passing = [thr for thr, s in close.items()
+    primary = report["entries"][PRIMARY_ENTRY]["thresholds"]
+    passing = [thr for thr, s in primary.items()
                if s.get("n", 0) >= MIN_SIGNALS and s["mean_pnl"] > 0 and s["t_stat"] > T_STAT_REQUIRED]
     report["verdict"] = "PASS" if passing else "NOT PROVEN"
     report["passing_thresholds"] = passing
@@ -156,7 +181,7 @@ def build_report(obs: list[Observation]) -> dict:
 
 def format_report(rep: dict) -> str:
     lines = ["=" * 78, "EDGE REPORT: Pinnacle (de-vigged) vs Kalshi ask, held to settlement, after taker fees",
-             f"Pass rule: >= {MIN_SIGNALS} games, mean P&L > 0, t > {T_STAT_REQUIRED} (close entry)", "=" * 78]
+             f"Pass rule: >= {MIN_SIGNALS} games, mean P&L > 0, t > {T_STAT_REQUIRED} ({PRIMARY_ENTRY} entry)", "=" * 78]
     for entry, e in rep["entries"].items():
         lines.append(f"\n[{entry.upper()} entry] markets={e['markets']} games={e['games']}  "
                      f"Brier Kalshi={_fmt(e['brier_kalshi_mid'])}  Brier Pinnacle={_fmt(e['brier_pinnacle'])}")

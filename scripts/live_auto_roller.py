@@ -2702,9 +2702,25 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             age_sec = (now_utc - c_dt).total_seconds()
                         except Exception:
                             age_sec = 999.0
-                    # Auto-cancel resting buy orders unfilled after 25s (or 55s if already partially filling!) so we never get toxic-filled on stale bids!
+                    # FIFO Senior Queue-Priority Preservation:
+                    # If our resting Maker buy order is still sitting at the #1 best bid on a tight 1c-2c spread,
+                    # do NOT cancel it at 25s (which would destroy our senior FIFO timestamp and send us to the back of the line!).
+                    # Hold our #1 queue spot up to 75s, and only cancel at 25s if outbid or if the spread widened!
                     filled_so_far = float(o.get("fill_count_fp", "0") or 0)
-                    max_wait_sec = 55.0 if filled_so_far >= 1.0 else 25.0
+                    max_wait_sec = 75.0 if filled_so_far >= 1.0 else 25.0
+                    if 25.0 < age_sec <= 75.0 and filled_so_far < 1.0:
+                        try:
+                            ob_q = await client.get_orderbook(t)
+                            o_side_str = o.get("book_side") or o.get("side") or "bid"
+                            is_no_buy_q = (o_side_str == "ask")
+                            cur_best_b = (ob_q.best_no_bid or 0) if is_no_buy_q else (ob_q.best_yes_bid or 0)
+                            cur_best_a = (ob_q.best_no_ask or 99) if is_no_buy_q else (ob_q.best_yes_ask or 99)
+                            yes_p_c = int(round(float(o.get("yes_price_dollars") or 0) * 100))
+                            my_bid_c = (100 - yes_p_c) if is_no_buy_q else yes_p_c
+                            if my_bid_c > 0 and my_bid_c >= cur_best_b and 1 <= (cur_best_a - cur_best_b) <= 2 and 76 <= cur_best_a <= 90:
+                                max_wait_sec = 75.0
+                        except Exception:
+                            pass
                     if age_sec > max_wait_sec:
                         stale_buys_to_cancel.append(
                             {
@@ -2846,6 +2862,19 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     else:
                         fast_tp = max(cur_bid + 1, min(95, avg_entry_cents + 6))
                     wave_tp = max(fast_tp + 2, min(98, avg_entry_cents + 10))
+
+                    # Whale Ask-Wall Front-Runner (Reciprocal Orderbook Inspection):
+                    # An Ask Wall on our side at price `P` is a Bid Wall on the opposing side at `100 - P`.
+                    # If >= $400 of opposing Whale Wall sits right at `fast_tp` or `wave_tp`, undercut it by -1c
+                    # so our take-profit sits #1 at the front of the sell queue instead of behind the wall!
+                    opp_bids_map = {
+                        int(lvl.price): float(lvl.quantity) * (lvl.price / 100.0)
+                        for lvl in (ob.yes_bids if is_no_pos else ob.no_bids)
+                    }
+                    if opp_bids_map.get(100 - fast_tp, 0.0) >= 400.0 and (fast_tp - 1) >= max(cur_bid + 1, avg_entry_cents + 5):
+                        fast_tp -= 1
+                    if opp_bids_map.get(100 - wave_tp, 0.0) >= 400.0 and (wave_tp - 1) >= (fast_tp + 2):
+                        wave_tp -= 1
 
                     if uncovered >= 4:
                         s1_ratio = 0.60 if pos_conf_score >= 82 else 0.70
@@ -3177,12 +3206,12 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             if not approved:
                                 continue
 
-                            # Join the Whale Bid Wall (`side_bid`) on a 1c spread, or on a 2c spread when queue depth is light;
-                            # when `spread == 2` and a massive Whale Bid Wall (`>= $400` depth) is already queued at `side_bid`,
+                            # Join the Whale Bid Wall (`side_bid`) on a 1c spread, or on a 2c spread when queue depth is light (<$180);
+                            # when `spread == 2` and a Whale Bid Wall (`>= $180` depth, ~220+ contracts) is already queued at `side_bid`,
                             # step +1c (`side_bid + 1`) so we sit #1 at the front of the queue with the Whale Wall directly behind us!
                             side_top_bids = sorted(ob.no_bids if is_under_cand else ob.yes_bids, key=lambda x: x.price, reverse=True)
                             best_lvl_dlr = (float(side_top_bids[0].quantity) * (side_top_bids[0].price / 100.0)) if side_top_bids else 0.0
-                            bid_cents = (side_bid + 1) if (spread >= 3 or (spread == 2 and best_lvl_dlr >= 400.0)) else side_bid
+                            bid_cents = (side_bid + 1) if (spread >= 3 or (spread == 2 and best_lvl_dlr >= 180.0)) else side_bid
                             entry_order_side = "ask" if is_under_cand else "bid"
                             eff_yes_entry_c = max(1, min(99, 100 - bid_cents)) if is_under_cand else bid_cents
                             price_str = f"{eff_yes_entry_c / 100:.4f}"

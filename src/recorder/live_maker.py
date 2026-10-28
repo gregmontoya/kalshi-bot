@@ -155,19 +155,20 @@ class LiveMaker:
         if exp_ts <= int(time.time()) + 60:
             return None
 
+        # Kalshi Create Order V2 (POST /portfolio/events/orders): side "bid" == buy YES.
         payload = {
             "ticker": ticker,
-            "action": "buy",
-            "side": "yes",
-            "type": "limit",
-            "count": contracts,
-            "yes_price_dollars": f"{maker_price:.4f}",
+            "side": "bid",
+            "count": f"{contracts}.00",
+            "price": f"{maker_price:.4f}",
+            "time_in_force": "good_till_canceled",
+            "expiration_time": exp_ts,
             "post_only": True,
-            "cancel_on_pause": True,
-            "expiration_ts": exp_ts,
+            "cancel_order_on_pause": True,
+            "self_trade_prevention_type": "maker",
             "client_order_id": f"mk50-{uuid.uuid4().hex[:16]}",
         }
-        path = "/trade-api/v2/portfolio/orders"
+        path = "/trade-api/v2/portfolio/events/orders"
         r = await client.post(
             f"https://api.elections.kalshi.com{path}",
             json=payload,
@@ -176,9 +177,11 @@ class LiveMaker:
         if r.status_code not in (200, 201):
             log.error("LiveMaker order rejected %s (%s): %s", ticker, r.status_code, r.text[:200])
             return None
-        order = r.json().get("order", {})
+        order = r.json()
+        order = order.get("order", order)
         oid = order.get("order_id", "")
-        status = order.get("status", "RESTING").upper()
+        filled = float(order.get("fill_count", 0) or 0)
+        status = "FILLED" if filled >= contracts else "RESTING"
         conn.execute(
             """INSERT INTO live_orders
                (placed_ts, order_id, ticker, event_ticker, series, commence_time,

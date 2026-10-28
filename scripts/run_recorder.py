@@ -202,7 +202,10 @@ class Recorder:
                 self.conn.execute("UPDATE paper_orders SET closing_mid=? WHERE id=?", (mid, po["id"]))
 
         # 2. Scan pre-game matched markets (within 6h of tip-off) for new resting Maker orders
-        existing_events = {r[0] for r in self.conn.execute("SELECT event_ticker FROM paper_orders").fetchall()}
+        paper_events = {r[0] for r in self.conn.execute("SELECT event_ticker FROM paper_orders").fetchall()}
+        live_events = {r[0] for r in self.conn.execute("SELECT event_ticker FROM live_orders").fetchall()}
+        # An event is "done" once paper has it AND (live is off OR live has it); rejected live attempts get retried.
+        existing_events = paper_events & live_events if self.live_maker is not None else paper_events
         horizon = (now + timedelta(hours=WINDOW_BEFORE_H)).strftime("%Y-%m-%dT%H:%M:%SZ")
         min_ct = (now + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
         candidates = self.conn.execute(
@@ -235,17 +238,18 @@ class Recorder:
                     best_by_event[m["event_ticker"]] = (edge, dict(m), m_prc, ask, fair)
 
         for ev_ticker, (edge, m, m_prc, ask, fair) in best_by_event.items():
-            self.conn.execute(
-                """INSERT OR IGNORE INTO paper_orders
-                   (placed_ts, ticker, event_ticker, series, odds_event_id, commence_time,
-                    maker_price, ask_at_place, fair_at_place, edge_at_place, status)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,'RESTING')""",
-                (ts, m["ticker"], ev_ticker, m["series"], m["odds_event_id"], m["commence_time"],
-                 m_prc, ask, fair, edge),
-            )
-            log.info("Paper PLACE  %-28s RESTING bid=%.2f (ask=%.2f fair=%.3f edge=+%.3f)",
-                     m["ticker"], m_prc, ask, fair, edge)
-            if self.live_maker is not None:
+            if ev_ticker not in paper_events:
+                self.conn.execute(
+                    """INSERT OR IGNORE INTO paper_orders
+                       (placed_ts, ticker, event_ticker, series, odds_event_id, commence_time,
+                        maker_price, ask_at_place, fair_at_place, edge_at_place, status)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,'RESTING')""",
+                    (ts, m["ticker"], ev_ticker, m["series"], m["odds_event_id"], m["commence_time"],
+                     m_prc, ask, fair, edge),
+                )
+                log.info("Paper PLACE  %-28s RESTING bid=%.2f (ask=%.2f fair=%.3f edge=+%.3f)",
+                         m["ticker"], m_prc, ask, fair, edge)
+            if self.live_maker is not None and ev_ticker not in live_events:
                 ct_dt = _parse(m["commence_time"])
                 if ct_dt is not None:
                     try:

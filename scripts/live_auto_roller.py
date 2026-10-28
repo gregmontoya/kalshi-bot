@@ -2003,11 +2003,19 @@ class PreTradeEducator:
                                     f"VETO [Soccer 1-Goal Lead Ban]: '{title}' only leading {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
                                     f"at {clock_disp} — STRICT 2+ GOAL CUSHION REQUIRED on all Soccer Moneylines{ml_st_tag}!"
                                 )
-                            elif series == "KXNHLGAME" and margin < 2:
-                                return False, (
-                                    f"VETO [NHL 1-Goal Lead Ban]: '{title}' only up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
-                                    f"in P{period_num} — STRICT 2+ GOAL CUSHION REQUIRED on all NHL Moneylines{ml_st_tag}!"
-                                )
+                            elif series == "KXNHLGAME":
+                                try:
+                                    nhl_clk_m = float(str(clock_disp).split(":")[0]) if ":" in str(clock_disp) else 10.0
+                                except Exception:
+                                    nhl_clk_m = 10.0
+                                min_nhl_margin = 3 if (period_num == 1 or (period_num == 2 and nhl_clk_m > 8.0)) else 2
+                                if ml_st_edge <= -0.10 and not (period_num >= 3 and nhl_clk_m <= 10.0):
+                                    min_nhl_margin = max(min_nhl_margin, 3)
+                                if margin < min_nhl_margin:
+                                    return False, (
+                                        f"VETO [NHL Period/Standings Cushion]: '{title}' up {scores[idx]:.0f}-{scores[opp_idx]:.0f} "
+                                        f"in P{period_num} {clock_disp} (requires >={min_nhl_margin}-goal cushion{ml_st_tag}!)"
+                                    )
                             elif series == "KXMLBGAME" and (period_num < 6 or margin < 2):
                                 return False, (
                                     f"VETO [MLB Inning/Run Cushion]: '{title}' up {scores[idx]:.0f}-{scores[opp_idx]:.0f} in Inning {period_num} "
@@ -2058,7 +2066,7 @@ class PreTradeEducator:
                             # Check Vegas Opening vs Closing Line Movement, Game Clock Period & Live Win Probability
                             vegas_note = ml_st_tag + endgame_snipe_tag
                             try:
-                                is_4q_sport = series in ("KXNBAGAME", "KXNFLGAME", "KXNCAAFGAME", "KXNCAAWBGAME")
+                                is_4q_sport = series in ("KXNBAGAME", "KXNFLGAME", "KXNCAAFGAME", "KXNCAAWBGAME", "KXNHLGAME")
                                 is_late_clock = (period_num >= 3) if is_4q_sport else (period_num >= 2)
                                 if is_late_clock:
                                     vegas_note += f" | LATE-CLOCK(P{period_num} {clock_disp})"
@@ -2301,16 +2309,14 @@ class PreTradeEducator:
 
         is_endgame_snipe = (
             "ENDGAME-SNIPE" in ext_reason
-            or "PROP-LOCK" in ext_reason
-            or is_under_no
-            or is_quarter_mkt
+            or (is_under_no and "LATE-CLOCK" in ext_reason)
         )
         live_side_ask = (ob.best_no_ask or 99) if is_under_no else (ob.best_yes_ask or 99)
-        if live_side_ask > 87 and not is_endgame_snipe:
+        if live_side_ask > 86 and not is_endgame_snipe:
             self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
             self.save_memory()
             return False, (
-                f"VETO [88-90c Reserved for Endgame Snipes]: Ask={live_side_ask}c > 87c and not in final-minutes ENDGAME-SNIPE window"
+                f"VETO [87-90c Reserved for Endgame Snipes]: Ask={live_side_ask}c > 86c and not in final-minutes ENDGAME-SNIPE / LATE-CLOCK UNDER window"
             ), 0.0
 
         # Gate 2D: Sustained Plateau & Trend Hold Filter (Applied to Mid-Game Plays; Bypassed on Verified Endgame Snipes!)
@@ -3190,11 +3196,12 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 continue
 
                             # Stair-Step Multi-Scalp on the Way Up:
-                            # If we already scalped `t` once for a win, only re-scalp it if its price has stepped UP >= +3c higher on the ladder!
+                            # If we already scalped `t` once for a win, only re-scalp it if its price stepped UP >= +3c higher
+                            # AND is still <= 85c (never risk a banked win by re-buying the same ticker at 86c-90c!):
                             if t in harvested_set:
                                 eff_cand_ask = no_ask_c if is_under_candidate else ask_c
                                 prev_win_ent = int(last_win_entry_map.get(t, 99) or 99)
-                                if eff_cand_ask < (prev_win_ent + 3):
+                                if eff_cand_ask < (prev_win_ent + 3) or eff_cand_ask > 85:
                                     continue
 
                             if now_scan_ts < veto_cooldown_until.get(t, 0.0):

@@ -2212,30 +2212,42 @@ class PreTradeEducator:
                     window_10 = t_prices[:10]
                     oldest_10_c = window_10[-1]
                     momentum_delta = newest_c - oldest_10_c
-                    # Allow -1c 10-trade bid-ask print bounce if Whale Imbalance >= 1.80x and last print did not tick down:
-                    min_allowed_drift = -1 if (imbalance_ratio >= 1.80 and newest_c >= t_prices[1]) else 0
+                    # Allow -1c 10-trade bid-ask print bounce (a Taker sell at Bid vs a Taker buy at Ask is a 1c spread bounce, not a crash!):
+                    min_allowed_drift = -1 if (imbalance_ratio >= 1.35 and newest_c >= (t_prices[1] - 1)) else 0
                     if momentum_delta < min_allowed_drift:
                         self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
                         self.save_memory()
                         return False, f"VETO: Negative tape drift ({momentum_delta}c over last {len(window_10)} trades — only buying rising/flat leaders)", 0.0
 
                     # Gate 2A-0: Multi-Timeframe Anti-Falling-Knife & Live Orderbook Divergence Shield:
-                    # 1) Zero Down-Tick Law: Last print (`newest_c`) must NOT be lower than the print immediately before it (`t_prices[1]`) or >1c below the 3-print average!
+                    # 1) Bid-Ask Bounce Tolerant Down-Tick Law:
+                    #    A 1c print difference (e.g. 81c Ask -> 80c Bid) is normal Maker/Taker spread bounce when `live_side_bid == newest_c`.
+                    #    Only veto if last print dropped >=2c (`newest_c <= t_prices[1] - 2`), OR if it dropped 1c below the live bid (`newest_c < live_side_bid`),
+                    #    OR if it dropped >1.5c below the 3-print average!
+                    live_side_bid = (ob.best_no_bid or 0) if is_under_no else (ob.best_yes_bid or 0)
+                    live_side_ask_chk = (ob.best_no_ask or 99) if is_under_no else (ob.best_yes_ask or 99)
                     prev_3_avg = sum(t_prices[1:4]) / max(1, len(t_prices[1:4]))
-                    if newest_c < t_prices[1] or (newest_c < t_prices[1] and newest_c < (prev_3_avg - 1.0)) or newest_c < (prev_3_avg - 1.2):
+                    is_1c_bid_print_bounce = (
+                        (t_prices[1] - newest_c) == 1
+                        and live_side_bid >= newest_c
+                        and (live_side_ask_chk - live_side_bid) <= 2
+                        and imbalance_ratio >= 1.30
+                    )
+                    if (not is_1c_bid_print_bounce and newest_c < t_prices[1]) or newest_c < (prev_3_avg - 1.5):
                         self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
                         self.save_memory()
                         return False, (
                             f"VETO [Micro Falling Knife]: Last trade ticked DOWN ({t_prices[1]}c -> {newest_c}c, 3-trade avg={prev_3_avg:.1f}c) "
                             "— waiting for confirmed uptick!"
                         ), 0.0
-                    # 2) Live Orderbook Falling Knife Shield: Live best bid must not have dropped >=2c below the last executed trade!
-                    live_side_bid = (ob.best_no_bid or 0) if is_under_no else (ob.best_yes_bid or 0)
-                    if live_side_bid < (newest_c - 1):
+                    # 2) Live Orderbook Falling Knife Shield:
+                    #    If the last trade printed at the Ask (e.g. 82c Ask on an 80c Bid / 82c Ask 2c-spread book), `live_side_bid` (80c) is naturally 2c below `newest_c` (82c)!
+                    #    Only veto if `live_side_ask_chk < newest_c` (the Ask itself dropped below the last print!) OR `live_side_bid < (newest_c - 2)`!
+                    if live_side_ask_chk < newest_c or live_side_bid < (newest_c - 2):
                         self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
                         self.save_memory()
                         return False, (
-                            f"VETO [Orderbook Falling Knife]: Live bid ({live_side_bid}c) dropped below last trade ({newest_c}c) "
+                            f"VETO [Orderbook Falling Knife]: Live bid ({live_side_bid}c / ask {live_side_ask_chk}c) dropped below last trade ({newest_c}c) "
                             "— market makers pulling bids!"
                         ), 0.0
                     # 3) Anti-Single-Print Spoof Jump Filter: A single isolated jump (>3.5c above the 3-trade average) must print at least 2-3 fills at the new level,

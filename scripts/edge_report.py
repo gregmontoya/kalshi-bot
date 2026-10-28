@@ -59,6 +59,30 @@ def main() -> None:
     obs = load_observations(conn)
     print(format_report(build_report(obs)))
 
+    paper_rows = conn.execute(
+        """SELECT p.*, r.result FROM paper_orders p
+           LEFT JOIN results r ON r.ticker = p.ticker ORDER BY p.id"""
+    ).fetchall()
+    if paper_rows:
+        print("\n" + "=" * 78)
+        print("PAPER MAKER SHADOW BOOK (Live Resting Bid+1c Orders, $0 Fee)")
+        print("=" * 78)
+        by_st = {}
+        for r in paper_rows:
+            by_st[r["status"]] = by_st.get(r["status"], 0) + 1
+        filled = [r for r in paper_rows if r["status"] == "FILLED"]
+        settled_f = [r for r in filled if r["result"] in ("yes", "no")]
+        clvs = [r["closing_mid"] - r["maker_price"] for r in filled if r["closing_mid"] is not None]
+        adv = [r["fair_at_fill"] - r["fair_at_place"] for r in filled if r["fair_at_fill"] is not None]
+        pnls = [(1.0 if r["result"] == "yes" else 0.0) - r["maker_price"] for r in settled_f]
+        print(f"  Orders: total={len(paper_rows)}  statuses={by_st}")
+        if filled:
+            print(f"  Filled={len(filled)}  mean_adverse_selection={sum(adv)/len(adv) if adv else 0.0:+.4f}  "
+                  f"mean_CLV={sum(clvs)/len(clvs) if clvs else 0.0:+.4f}")
+        if settled_f:
+            print(f"  Settled Fills={len(settled_f)}  win%={100*sum(r['result']=='yes' for r in settled_f)/len(settled_f):.1f}%  "
+                  f"mean_P&L/ct={sum(pnls)/len(pnls):+.4f}")
+
     snap_obs = [o for o in obs if o.entry == "snap"]
     if not snap_obs:
         return

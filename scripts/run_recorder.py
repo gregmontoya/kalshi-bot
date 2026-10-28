@@ -1,6 +1,6 @@
-"""Recorder daemon: snapshots Kalshi game markets + Pinnacle odds + settlements into data/recorder.sqlite.
+"""Recorder daemon: snapshots Kalshi game markets + Pinnacle odds + settlements + Paper Maker Shadow Book.
 
-Places NO orders and uses NO Kalshi credentials (public market data only).
+Places NO live orders and uses NO Kalshi credentials (public market data only).
 
 Usage:
     PYTHONPATH=. .venv/bin/python scripts/run_recorder.py            # run forever
@@ -21,6 +21,7 @@ import httpx
 from dotenv import load_dotenv
 
 from src.recorder import sources, store
+from src.recorder.analysis import _fair_prob
 from src.recorder.matching import match_event, outcome_name_for
 
 # Kalshi series -> The Odds API sport key. Only leagues where team-name matching is unambiguous.
@@ -29,6 +30,7 @@ LEAGUES = {
     "KXNHLGAME": "icehockey_nhl",
     "KXNFLGAME": "americanfootball_nfl",
     "KXEPLGAME": "soccer_epl",
+    "KXMLBGAME": "baseball_mlb",
 }
 KALSHI_EVERY_S = 300          # Kalshi prices: every 5 min (free)
 ODDS_EVERY_S = 1800           # Pinnacle odds per active sport: every 30 min (1 credit each)
@@ -38,19 +40,21 @@ ODDS_CREDIT_FLOOR = 20        # Stop spending odds credits below this
 WINDOW_BEFORE_H = 6.0         # Sport is "active" if a game starts within 6h...
 WINDOW_AFTER_H = 3.5          # ...or started less than 3.5h ago
 KALSHI_HORIZON_H = 48         # Only snapshot markets expiring within 48h (keeps DB small)
+PAPER_MIN_EDGE = 0.02         # Rest paper Maker order when (Pinnacle fair - maker_price) >= 2.0c
 
 log = logging.getLogger("recorder")
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _parse(ts: str | None) -> datetime | None:
     if not ts:
         return None
     try:
-        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        d = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
     except ValueError:
         return None
 
@@ -64,9 +68,10 @@ def sport_active(events: list[dict], now: datetime) -> bool:
 
 
 class Recorder:
-    def __init__(self, conn, api_key: str | None):
+    def __init__(self, conn, api_key: str | None, kalshi_every_s: int = KALSHI_EVERY_S):
         self.conn = conn
         self.api_key = api_key
+        self.kalshi_every_s = kalshi_every_s
         self.last_run: dict[str, float] = defaultdict(float)
         self.events: dict[str, list[dict]] = {}
         self.open_markets: dict[str, list[dict]] = {}
@@ -147,8 +152,104 @@ class Recorder:
             log.info("Odds   %-22s %3d events, %4d outcome rows, credits left %s", sport, len(evs), n,
                      usage["remaining"])
 
+    def paper_cycle(self) -> None:
+        """Paper Maker Shadow Book: places virtual resting Maker bids and grades realistic fills & CLV."""
+        now = datetime.now(timezone.utc)
+        ts = now_iso()
+
+        # 1. Update existing RESTING orders (fill check + pre-game expiry) and record closing_mid
+        resting = self.conn.execute("SELECT * FROM paper_orders WHERE status='RESTING'").fetchall()
+        for po in resting:
+            ct = _parse(po["commence_time"])
+            if not ct:
+                continue
+            fill = self.conn.execute(
+                """SELECT ts, yes_bid, yes_ask, last_price FROM kalshi_snapshots
+                   WHERE ticker=? AND ts>? AND ts<?
+                   AND ((yes_ask IS NOT NULL AND yes_ask>0 AND yes_ask<=?)
+                        OR (last_price IS NOT NULL AND last_price>0 AND last_price<=?))
+                   ORDER BY ts ASC LIMIT 1""",
+                (po["ticker"], po["placed_ts"], po["commence_time"], po["maker_price"], po["maker_price"]),
+            ).fetchone()
+            if fill:
+                f_fill = _fair_prob(self.conn, po["odds_event_id"], self._outcome_for(po["ticker"]), _parse(fill["ts"]))
+                self.conn.execute(
+                    "UPDATE paper_orders SET status='FILLED', filled_ts=?, fair_at_fill=? WHERE id=?",
+                    (fill["ts"], f_fill, po["id"]),
+                )
+                log.info("Paper FILL   %-28s @ %.2f (fair_place=%.3f fair_fill=%s)",
+                         po["ticker"], po["maker_price"], po["fair_at_place"],
+                         f"{f_fill:.3f}" if f_fill else "n/a")
+            elif now >= ct:
+                self.conn.execute("UPDATE paper_orders SET status='UNFILLED' WHERE id=?", (po["id"],))
+
+        needs_clv = self.conn.execute(
+            "SELECT id, ticker, commence_time FROM paper_orders WHERE closing_mid IS NULL AND commence_time<=?",
+            (ts,),
+        ).fetchall()
+        for po in needs_clv:
+            snap = self.conn.execute(
+                """SELECT yes_bid, yes_ask FROM kalshi_snapshots
+                   WHERE ticker=? AND ts<=? AND yes_ask>0 AND yes_ask<1
+                   ORDER BY ts DESC LIMIT 1""",
+                (po["ticker"], po["commence_time"]),
+            ).fetchone()
+            if snap:
+                mid = ((snap["yes_bid"] or snap["yes_ask"]) + snap["yes_ask"]) / 2.0
+                self.conn.execute("UPDATE paper_orders SET closing_mid=? WHERE id=?", (mid, po["id"]))
+
+        # 2. Scan pre-game matched markets (within 6h of tip-off) for new resting Maker orders
+        existing_events = {r[0] for r in self.conn.execute("SELECT event_ticker FROM paper_orders").fetchall()}
+        horizon = (now + timedelta(hours=WINDOW_BEFORE_H)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        min_ct = (now + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        candidates = self.conn.execute(
+            "SELECT * FROM market_map WHERE commence_time>? AND commence_time<=?",
+            (min_ct, horizon),
+        ).fetchall()
+
+        best_by_event: dict[str, tuple[float, dict, float, float, float]] = {}
+        for m in candidates:
+            if m["event_ticker"] in existing_events:
+                continue
+            snap = self.conn.execute(
+                "SELECT ts, yes_bid, yes_ask FROM kalshi_snapshots WHERE ticker=? ORDER BY ts DESC LIMIT 1",
+                (m["ticker"],),
+            ).fetchone()
+            if not snap or not snap["yes_ask"] or snap["yes_ask"] <= 0 or snap["yes_ask"] >= 1:
+                continue
+            bid = snap["yes_bid"] or max(0.01, snap["yes_ask"] - 0.02)
+            ask = snap["yes_ask"]
+            m_prc = round(bid + 0.01, 4) if ask - bid >= 0.02 else round(max(0.01, ask - 0.01), 4)
+            if not (0.20 <= m_prc <= 0.90):
+                continue
+            fair = _fair_prob(self.conn, m["odds_event_id"], m["odds_outcome"], _parse(snap["ts"]))
+            if fair is None:
+                continue
+            edge = fair - m_prc
+            if edge >= PAPER_MIN_EDGE:
+                prev = best_by_event.get(m["event_ticker"])
+                if not prev or edge > prev[0]:
+                    best_by_event[m["event_ticker"]] = (edge, dict(m), m_prc, ask, fair)
+
+        for ev_ticker, (edge, m, m_prc, ask, fair) in best_by_event.items():
+            self.conn.execute(
+                """INSERT OR IGNORE INTO paper_orders
+                   (placed_ts, ticker, event_ticker, series, odds_event_id, commence_time,
+                    maker_price, ask_at_place, fair_at_place, edge_at_place, status)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,'RESTING')""",
+                (ts, m["ticker"], ev_ticker, m["series"], m["odds_event_id"], m["commence_time"],
+                 m_prc, ask, fair, edge),
+            )
+            log.info("Paper PLACE  %-28s RESTING bid=%.2f (ask=%.2f fair=%.3f edge=+%.3f)",
+                     m["ticker"], m_prc, ask, fair, edge)
+        self.conn.commit()
+
+    def _outcome_for(self, ticker: str) -> str:
+        r = self.conn.execute("SELECT odds_outcome FROM market_map WHERE ticker=?", (ticker,)).fetchone()
+        return r[0] if r else ""
+
     async def settle_cycle(self, client) -> None:
-        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
         rows = self.conn.execute(
             """SELECT DISTINCT k.ticker FROM kalshi_snapshots k
                LEFT JOIN results r ON r.ticker = k.ticker
@@ -171,31 +272,40 @@ class Recorder:
             log.info("Settle checked %d markets, %d resolved", len(rows), done)
 
     async def tick(self, client, force: bool = False) -> None:
-        if force or self.due("kalshi", KALSHI_EVERY_S):
-            await self.kalshi_cycle(client)
         if force or self.due("events", EVENTS_EVERY_S):
             await self.events_cycle(client)
+        if force or self.due("kalshi", self.kalshi_every_s):
+            await self.kalshi_cycle(client)
+            self.match_all()
         if force or self.due("odds", ODDS_EVERY_S):
             await self.odds_cycle(client)
+        self.paper_cycle()
         if force or self.due("settle", SETTLE_EVERY_S):
             await self.settle_cycle(client)
+
+    def match_all(self) -> None:
+        for series, sport in LEAGUES.items():
+            if self.events.get(sport) and self.open_markets.get(series):
+                self.match_series(series, sport)
 
 
 async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--once", action="store_true")
     ap.add_argument("--db", default="data/recorder.sqlite")
+    ap.add_argument("--interval-min", type=int, default=5, help="Kalshi polling interval in minutes")
     args = ap.parse_args()
-    load_dotenv()
+    load_dotenv(override=True)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     api_key = os.environ.get("THE_ODDS_API_KEY") or os.environ.get("ODDS_API_KEY")
-    rec = Recorder(store.connect(args.db), api_key)
+    rec = Recorder(store.connect(args.db), api_key, kalshi_every_s=max(60, args.interval_min * 60))
     async with httpx.AsyncClient(timeout=20.0) as client:
         if args.once:
             await rec.tick(client, force=True)
             return
-        log.info("Recorder started (no trading). Leagues: %s", ", ".join(LEAGUES))
+        log.info("Recorder started (no live trading; Paper Maker Shadow Book active). Leagues: %s",
+                 ", ".join(LEAGUES))
         while True:
             try:
                 await rec.tick(client)

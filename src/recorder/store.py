@@ -31,6 +31,24 @@ CREATE TABLE IF NOT EXISTS results (
 CREATE TABLE IF NOT EXISTS api_usage (
     ts TEXT, source TEXT, credits_remaining INTEGER, credits_used INTEGER, credits_last INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS paper_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    placed_ts TEXT NOT NULL,
+    ticker TEXT NOT NULL,
+    event_ticker TEXT NOT NULL UNIQUE,
+    series TEXT,
+    odds_event_id TEXT,
+    commence_time TEXT,
+    maker_price REAL NOT NULL,
+    ask_at_place REAL,
+    fair_at_place REAL NOT NULL,
+    edge_at_place REAL NOT NULL,
+    status TEXT NOT NULL,
+    filled_ts TEXT,
+    fair_at_fill REAL,
+    closing_mid REAL
+);
 """
 
 

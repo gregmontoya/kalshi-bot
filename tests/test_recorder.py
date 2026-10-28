@@ -8,6 +8,7 @@ from pathlib import Path
 from src.recorder import store
 from src.recorder.analysis import (MIN_SIGNALS, build_report, load_observations, taker_fee_per_contract)
 from src.recorder.devig import devig_multiplicative, devig_power
+from src.recorder.live_maker import CASH_FLOOR_DOLLARS, LiveMaker
 from src.recorder.matching import match_event, outcome_name_for, team_matches, ticker_date
 
 
@@ -34,10 +35,13 @@ def test_team_name_matching_real_names():
            ("St. Louis", "St Louis Blues"), ("Oklahoma City", "Oklahoma City Thunder"),
            ("Golden State", "Golden State Warriors"), ("Brighton", "Brighton and Hove Albion"),
            ("Tottenham", "Tottenham Hotspur"), ("New York G", "New York Giants"),
-           ("Los Angeles", "Los Angeles Kings"), ("Manchester United", "Manchester United")]
+           ("Los Angeles", "Los Angeles Kings"), ("Manchester United", "Manchester United"),
+           ("Chicago WS", "Chicago White Sox"), ("Chicago C", "Chicago Cubs"), ("A's", "Athletics"),
+           ("A's", "Oakland Athletics"), ("New York Y", "New York Yankees"), ("Los Angeles D", "Los Angeles Dodgers")]
     neg = [("Los Angeles C", "Los Angeles Lakers"), ("New York I", "New York Rangers"),
            ("Manchester City", "Manchester United"), ("Miami", "Milwaukee Bucks"),
-           ("New York J", "New York Giants")]
+           ("New York J", "New York Giants"), ("Chicago WS", "Chicago Cubs"), ("Chicago C", "Chicago White Sox"),
+           ("New York M", "New York Yankees")]
     for k, f in pos:
         assert team_matches(k, f), (k, f)
     for k, f in neg:
@@ -77,17 +81,18 @@ def _synthetic_db(path: Path, n_games: int, kalshi_bias: float, seed: int):
         o_home, o_away = 1.0 / (p_true * vig), 1.0 / ((1 - p_true) * vig)
         ev_id, tk_h, tk_a = f"ev{g}", f"KXT-G{g}-H", f"KXT-G{g}-A"
         won_home = rnd.random() < p_true
-        snap_ts = (commence - timedelta(minutes=10)).isoformat()
-        odds_ts = (commence - timedelta(minutes=20)).isoformat()
+        z = lambda d: d.strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: E731  (stored format)
+        snap_ts = z(commence - timedelta(minutes=10))
+        odds_ts = z(commence - timedelta(minutes=20))
         for tk, outcome, p, won in ((tk_h, "Home", p_true, won_home), (tk_a, "Away", 1 - p_true, not won_home)):
             ask = min(0.97, max(0.03, round(p - kalshi_bias + rnd.gauss(0, 0.01), 2)))
             conn.execute("INSERT INTO kalshi_snapshots VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                          (snap_ts, tk, f"KXT-G{g}", "KXT", outcome, ask - 0.02, ask, ask, 100, 0,
-                          commence.isoformat(), "active"))
-            store.upsert_map(conn, tk, f"KXT-G{g}", "KXT", "x", ev_id, outcome, commence.isoformat(), snap_ts)
+                          z(commence), "active"))
+            store.upsert_map(conn, tk, f"KXT-G{g}", "KXT", "x", ev_id, outcome, z(commence), snap_ts)
             store.upsert_result(conn, tk, "yes" if won else "no", "finalized", snap_ts)
         store.insert_odds(conn, odds_ts, "x", [{
-            "id": ev_id, "commence_time": commence.isoformat(), "home_team": "Home", "away_team": "Away",
+            "id": ev_id, "commence_time": z(commence), "home_team": "Home", "away_team": "Away",
             "bookmakers": [{"key": "pinnacle", "last_update": odds_ts, "markets": [{"key": "h2h", "outcomes": [
                 {"name": "Home", "price": o_home}, {"name": "Away", "price": o_away}]}]}]}])
     conn.commit()
@@ -98,7 +103,8 @@ def test_report_detects_real_edge_and_rejects_none():
     with tempfile.TemporaryDirectory() as d:
         edge_conn = _synthetic_db(Path(d) / "edge.sqlite", n_games=1500, kalshi_bias=0.08, seed=1)
         rep = build_report(load_observations(edge_conn))
-        s = rep["entries"]["close"]["thresholds"][0.03]
+        s = rep["entries"]["snap"]["thresholds"][0.03]
+        assert rep["entries"]["close"]["thresholds"][0.03]["n"] == s["n"]
         assert s["n"] >= MIN_SIGNALS and s["mean_pnl"] > 0, s
         assert rep["verdict"] == "PASS", rep
 
@@ -114,11 +120,26 @@ def test_stale_odds_are_ignored():
     with tempfile.TemporaryDirectory() as d:
         conn = _synthetic_db(Path(d) / "s.sqlite", n_games=5, kalshi_bias=0.05, seed=4)
         for r in conn.execute("SELECT DISTINCT ts FROM odds_snapshots").fetchall():
-            old = datetime.fromisoformat(r["ts"])
+            old = datetime.fromisoformat(r["ts"].replace("Z", "+00:00"))
             conn.execute("UPDATE odds_snapshots SET ts=? WHERE ts=?",
-                         ((old - timedelta(hours=2)).isoformat(), r["ts"]))
+                         ((old - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ"), r["ts"]))
         conn.commit()
         assert load_observations(conn) == []
+
+
+def test_live_maker_guardrails():
+    # Valid $10 max per game at $0.60 maker bid -> 16 contracts ($9.60)
+    cts, reason = LiveMaker.size_order(0.60, 0.61, 0.625, 358.72, CASH_FLOOR_DOLLARS, 0.0)
+    assert cts == 16 and reason == "ok"
+    # Crossing the spread (maker_price >= ask) is rejected
+    assert LiveMaker.size_order(0.61, 0.61, 0.640, 358.72)[0] == 0
+    # Edge below 2.0c is rejected
+    assert LiveMaker.size_order(0.60, 0.61, 0.615, 358.72)[0] == 0
+    # Cash at or below $308.72 floor is rejected
+    assert LiveMaker.size_order(0.60, 0.61, 0.630, 308.72)[0] == 0
+    # $45 already committed out of $50 cap -> only $5 left -> 8 contracts at $0.60 ($4.80)
+    cts, _ = LiveMaker.size_order(0.60, 0.61, 0.630, 358.72, CASH_FLOOR_DOLLARS, 45.0)
+    assert cts == 8
 
 
 if __name__ == "__main__":

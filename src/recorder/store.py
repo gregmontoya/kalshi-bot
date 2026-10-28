@@ -49,6 +49,22 @@ CREATE TABLE IF NOT EXISTS paper_orders (
     fair_at_fill REAL,
     closing_mid REAL
 );
+
+CREATE TABLE IF NOT EXISTS live_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    placed_ts TEXT NOT NULL,
+    order_id TEXT,
+    ticker TEXT NOT NULL,
+    event_ticker TEXT NOT NULL UNIQUE,
+    series TEXT,
+    commence_time TEXT,
+    contracts INTEGER NOT NULL,
+    maker_price REAL NOT NULL,
+    fair_at_place REAL NOT NULL,
+    edge_at_place REAL NOT NULL,
+    expiration_ts INTEGER NOT NULL,
+    status TEXT NOT NULL
+);
 """
 
 

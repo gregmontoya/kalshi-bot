@@ -22,6 +22,7 @@ from dotenv import load_dotenv
 
 from src.recorder import sources, store
 from src.recorder.analysis import _fair_prob
+from src.recorder.live_maker import LiveMaker
 from src.recorder.matching import match_event, outcome_name_for
 
 # Kalshi series -> The Odds API sport key. Only leagues where team-name matching is unambiguous.
@@ -68,10 +69,12 @@ def sport_active(events: list[dict], now: datetime) -> bool:
 
 
 class Recorder:
-    def __init__(self, conn, api_key: str | None, kalshi_every_s: int = KALSHI_EVERY_S):
+    def __init__(self, conn, api_key: str | None, kalshi_every_s: int = KALSHI_EVERY_S,
+                 live_maker: LiveMaker | None = None):
         self.conn = conn
         self.api_key = api_key
         self.kalshi_every_s = kalshi_every_s
+        self.live_maker = live_maker
         self.last_run: dict[str, float] = defaultdict(float)
         self.events: dict[str, list[dict]] = {}
         self.open_markets: dict[str, list[dict]] = {}
@@ -152,8 +155,8 @@ class Recorder:
             log.info("Odds   %-22s %3d events, %4d outcome rows, credits left %s", sport, len(evs), n,
                      usage["remaining"])
 
-    def paper_cycle(self) -> None:
-        """Paper Maker Shadow Book: places virtual resting Maker bids and grades realistic fills & CLV."""
+    async def paper_cycle(self, client: httpx.AsyncClient) -> None:
+        """Paper Maker Shadow Book (+ optional $50 Hard-Fenced Micro-Live Maker): places resting Maker bids."""
         now = datetime.now(timezone.utc)
         ts = now_iso()
 
@@ -242,6 +245,16 @@ class Recorder:
             )
             log.info("Paper PLACE  %-28s RESTING bid=%.2f (ask=%.2f fair=%.3f edge=+%.3f)",
                      m["ticker"], m_prc, ask, fair, edge)
+            if self.live_maker is not None:
+                ct_dt = _parse(m["commence_time"])
+                if ct_dt is not None:
+                    try:
+                        await self.live_maker.place_resting_buy(
+                            client, self.conn, m["ticker"], ev_ticker, m["series"],
+                            m["commence_time"], int(ct_dt.timestamp()), m_prc, ask, fair, ts
+                        )
+                    except Exception:
+                        log.exception("LiveMaker failed on %s", m["ticker"])
         self.conn.commit()
 
     def _outcome_for(self, ticker: str) -> str:
@@ -279,7 +292,7 @@ class Recorder:
             self.match_all()
         if force or self.due("odds", ODDS_EVERY_S):
             await self.odds_cycle(client)
-        self.paper_cycle()
+        await self.paper_cycle(client)
         if force or self.due("settle", SETTLE_EVERY_S):
             await self.settle_cycle(client)
 
@@ -294,18 +307,23 @@ async def main() -> None:
     ap.add_argument("--once", action="store_true")
     ap.add_argument("--db", default="data/recorder.sqlite")
     ap.add_argument("--interval-min", type=int, default=5, help="Kalshi polling interval in minutes")
+    ap.add_argument("--live-maker", action="store_true", help="Enable $50 hard-fenced Micro-Live Maker orders")
     args = ap.parse_args()
     load_dotenv(override=True)
+    if args.live_maker:
+        os.environ["LIVE_MAKER_ENABLED"] = "true"
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     api_key = os.environ.get("THE_ODDS_API_KEY") or os.environ.get("ODDS_API_KEY")
-    rec = Recorder(store.connect(args.db), api_key, kalshi_every_s=max(60, args.interval_min * 60))
+    live_maker = LiveMaker.from_env()
+    rec = Recorder(store.connect(args.db), api_key, kalshi_every_s=max(60, args.interval_min * 60),
+                   live_maker=live_maker)
     async with httpx.AsyncClient(timeout=20.0) as client:
         if args.once:
             await rec.tick(client, force=True)
             return
-        log.info("Recorder started (no live trading; Paper Maker Shadow Book active). Leagues: %s",
-                 ", ".join(LEAGUES))
+        mode = f"LIVE MAKER ($50 cap, floor=${live_maker.cash_floor:.2f})" if live_maker else "PAPER ONLY"
+        log.info("Recorder started (%s). Leagues: %s", mode, ", ".join(LEAGUES))
         while True:
             try:
                 await rec.tick(client)

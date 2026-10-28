@@ -1,0 +1,18 @@
+services:
+  - type: worker
+    name: kalshi-quant-recorder
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    disk:
+      name: recorder-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: THE_ODDS_API_KEY
+        sync: false
+      - key: LIVE_MAKER_ENABLED
+        value: "true"
+      - key: KALSHI_API_KEY_ID
+        value: "7f840539-22ee-4829-b6a9-73025435aa12"
+      - key: KALSHI_PRIVATE_KEY_PEM
+        sync: false

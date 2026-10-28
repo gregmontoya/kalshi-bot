@@ -2238,9 +2238,11 @@ class PreTradeEducator:
                             f"VETO [Orderbook Falling Knife]: Live bid ({live_side_bid}c) dropped below last trade ({newest_c}c) "
                             "— market makers pulling bids!"
                         ), 0.0
-                    # 3) Anti-Single-Print Spoof Jump Filter: A single isolated jump (>3.5c above the 3-trade average) must print at least 2-3 fills at the new level!
+                    # 3) Anti-Single-Print Spoof Jump Filter: A single isolated jump (>3.5c above the 3-trade average) must print at least 2-3 fills at the new level,
+                    #    UNLESS the live orderbook bid (`live_side_bid >= newest_c - 1`) and Whale Imbalance (`imbalance_ratio >= 1.50`) confirm it's a real score/clock re-price!
                     cur_3_avg = sum(t_prices[:3]) / 3.0
-                    if (newest_c - cur_3_avg) > 3.5:
+                    is_ob_backed_reprice = (live_side_bid >= (newest_c - 1) and imbalance_ratio >= 1.50)
+                    if (newest_c - cur_3_avg) > 3.5 and not is_ob_backed_reprice:
                         self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
                         self.save_memory()
                         return False, (
@@ -2330,8 +2332,10 @@ class PreTradeEducator:
                 f"VETO [87-90c Reserved for Endgame Snipes]: Ask={live_side_ask}c > 86c and not in final-minutes ENDGAME-SNIPE / LATE-CLOCK UNDER window"
             ), 0.0
 
-        # Gate 2D: Sustained Plateau & Trend Hold Filter (Applied to Mid-Game Plays; Bypassed on Verified Endgame Snipes!)
-        if not is_endgame_snipe and len(trades) >= 3:
+        # Gate 2D: Sustained Plateau & Trend Hold Filter (Applied to Mid-Game Plays; Bypassed on Verified Endgame Snipes & Whale-Backed Re-Prices!)
+        live_side_bid_now = (ob.best_no_bid or 0) if is_under_no else (ob.best_yes_bid or 0)
+        is_whale_backed_step = (live_side_bid_now >= (newest_c - 1) and imbalance_ratio >= 1.65)
+        if not is_endgame_snipe and not is_whale_backed_step and len(trades) >= 3:
             if min(last_4_p) < (newest_c - 3):
                 self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
                 self.save_memory()

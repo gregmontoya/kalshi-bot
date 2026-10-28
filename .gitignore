@@ -53,3 +53,6 @@ yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# Recorder database (local data, not source)
+data/recorder.sqlite*

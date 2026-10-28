@@ -1791,9 +1791,33 @@ class PreTradeEducator:
                             max_p_prop = 3 if series in nhl_prop_Set else 4
                             el_prop_m = ((min(max_p_prop, live_period) - 1) * p_len_prop) + max(0.0, p_len_prop - clk_m)
                             el_prop_pct = min(95.0, (el_prop_m / reg_tot_prop) * 100.0)
-                            # Anti-Stall Prop Rule: Never buy 1st-Half props unless >=90% banked (avoids Halftime cash lock & injury risk);
-                            # require >=86% banked in Q3 and >=92% banked in Q4 (1 basket away)!
-                            req_prop_pct = max({1: 92.0, 2: 90.0, 3: 86.0}.get(live_period, 92.0), el_prop_pct + 12.0)
+                            # PLAYER PROP UNDER (`[UNDER-NO]` — Buying UP Points/Yards/Threes/Rebounds Cushion on High Alt Milestones):
+                            if title.startswith("[UNDER-NO]"):
+                                min_u_prop_p = 2 if series in nhl_prop_Set else 3
+                                prop_rem = target_val - found_stat
+                                if series in ("KXNBAPTS", "KXNBAPRA", "KXNBAPR", "KXNBAPA"):
+                                    req_u_buf = 8.0 if live_period >= 4 else 11.0
+                                elif series == "KXNFLPASSYDS":
+                                    req_u_buf = 55.0 if live_period >= 4 else 75.0
+                                elif series in ("KXNFLRUSHYDS", "KXNFLRECYDS"):
+                                    req_u_buf = 22.0 if live_period >= 4 else 32.0
+                                elif series in ("KXNBAREB", "KXNBAAST", "KXNFLREC", "KXNHLSOG"):
+                                    req_u_buf = 3.0 if live_period >= 4 else 4.0
+                                else:
+                                    req_u_buf = 2.0
+                                max_u_prog = min(66.0, max(35.0, el_prop_pct - 8.0))
+                                if live_period < min_u_prop_p or prop_rem < req_u_buf or prog_pct > max_u_prog:
+                                    return False, (
+                                        f"VETO [Player Prop Under Cushion]: {title} at {found_stat:.0f}/{target_val:.0f} "
+                                        f"(rem={prop_rem:.0f} < {req_u_buf:.0f} min or prog={prog_pct:.0f}% > {max_u_prog:.0f}% in P{live_period} {clock_disp})"
+                                    )
+                                return True, (
+                                    f"ESPN Boxscore Prop UNDER Verified ({found_stat:.0f}/{target_val:.0f} = +{prop_rem:.0f} Cushion "
+                                    f"in P{live_period} {clock_disp} | LATE-CLOCK)"
+                                )
+                            # Buying DOWN Points/Yards on Lower Alt-Line Milestones (`YES` side in 72c-90c):
+                            # Require >=74-75% banked in Q2/Q3 (or el_prop_pct + 8%) so bought-down alt milestones in 76c-89c are captured!
+                            req_prop_pct = max({1: 72.0, 2: 74.0, 3: 75.0}.get(live_period, 80.0), el_prop_pct + 8.0)
                             script_prop_tag = player_st_tag
 
                             # 0A. Live Sleeper Fantasy Football & Basketball Player Intelligence (`injury_status`, `depth_chart_order`, `search_rank`, 24h waiver trends):
@@ -3379,7 +3403,12 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             # - For SPREAD markets: `NO` side in 72c-90c is BUYING +POINTS (`+2.5`, `+3.5`, `+8.5`, `+10.5` — `[PLUS-SPREAD-NO]`)!
                             no_ask_c = 100 - bid_c
                             is_under_candidate = False
-                            if "TOTAL" in series and (min_leader_ask <= no_ask_c <= max_leader_ask):
+                            is_prop_series = series in (
+                                "KXNBAPTS", "KXNBAREB", "KXNBAAST", "KXNBA3PT", "KXNBAPRA", "KXNBAPR", "KXNBAPA",
+                                "KXNFLPASSYDS", "KXNFLRUSHYDS", "KXNFLRECYDS", "KXNFLREC",
+                                "KXNHLPTS", "KXNHLGOAL", "KXNHLAST", "KXNHLSOG",
+                            )
+                            if ("TOTAL" in series or is_prop_series) and (min_leader_ask <= no_ask_c <= max_leader_ask):
                                 is_under_candidate = True
                                 clean_title = f"[UNDER-NO] {raw_title}"
                             elif "SPREAD" in series and (min_leader_ask <= no_ask_c <= max_leader_ask):

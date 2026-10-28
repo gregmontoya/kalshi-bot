@@ -1403,20 +1403,21 @@ class PreTradeEducator:
                             )
                         elif "NHL" in series:
                             target_nhl_p = max(req_periods) if req_periods else 3
-                            max_nhl_clk = 10.0 if req_periods else 12.0
-                            if live_period != target_nhl_p or cur_clk_m > max_nhl_clk:
+                            # Allow 3rd Period from 20:00 (or P2 when cushion >= 4.0 goals, e.g. Under 8.5 with only 1-4 goals scored!)
+                            max_nhl_clk = 10.0 if req_periods else (20.0 if pts_to_break_under >= 3.0 else 14.0)
+                            if (live_period < target_nhl_p and not (live_period == 2 and pts_to_break_under >= 4.5)) or (live_period == target_nhl_p and cur_clk_m > max_nhl_clk):
                                 return False, (
-                                    f"VETO [NHL {period_tag} Under Too Early]: P{live_period} {clock_disp} (requires P{target_nhl_p} <={max_nhl_clk:.0f}:00 left)"
+                                    f"VETO [NHL {period_tag} Under Too Early]: P{live_period} {clock_disp} (requires P{target_nhl_p} <={max_nhl_clk:.0f}:00 left or >=4.5G cushion in P2)"
                                 )
-                            if req_periods is None and gm_margin_tot == 0.0:
+                            if req_periods is None and gm_margin_tot == 0.0 and pts_to_break_under < 3.0:
                                 return False, (
-                                    f"VETO [NHL Tied Overtime Under Trap]: Game is TIED at P3 {clock_disp} "
-                                    "(Overtime/Shootout guarantees an extra goal and kills Under!)"
+                                    f"VETO [NHL Tied Overtime Under Trap]: Game is TIED at P3 {clock_disp} with <3G cushion "
+                                    "(Overtime/Shootout adds 1 goal — requires >=3G cushion when tied!)"
                                 )
-                            min_nhl_under_buf = 3.0 if (req_periods is None and gm_margin_tot <= 1.0) else 2.0
+                            min_nhl_under_buf = 2.5 if (req_periods is None and gm_margin_tot <= 1.0) else 2.0
                             if pts_to_break_under < min_nhl_under_buf:
                                 return False, (
-                                    f"VETO [NHL {period_tag} Under Cushion <{min_nhl_under_buf:.0f} Goals]: {cur_pts:.0f} goals vs Under {target_val:.1f} "
+                                    f"VETO [NHL {period_tag} Under Cushion <{min_nhl_under_buf:.1f} Goals]: {cur_pts:.0f} goals vs Under {target_val:.1f} "
                                     f"at P{live_period} {clock_disp} (margin={gm_margin_tot:.0f} — empty-netter/OT shield!)"
                                 )
                             return True, (
@@ -1491,6 +1492,38 @@ class PreTradeEducator:
                         my_pts = _comp_window_pts(competitors[c_idx])
                         opp_pts = _comp_window_pts(competitors[1 - c_idx])
                         margin = my_pts - opp_pts
+                        is_plus_spread_no = title.startswith("[PLUS-SPREAD-NO]")
+                        if is_plus_spread_no:
+                            # BUYING +POINTS (`NO` on `tm_prefix` wins by over `strike_val`):
+                            # We WIN unless `tm_prefix` wins by MORE than `strike_val`!
+                            # Cushion = `(strike_val + 0.5) - margin` (how many MORE goals/points `tm_prefix` must outscore opponent by to break our +Spread!)
+                            pts_to_break_plus = (strike_val + 0.5) - margin
+                            if pts_to_break_plus <= 0.0:
+                                return False, f"VETO [Plus-Spread Already Broken]: {tm_prefix} already up +{margin:.0f} vs +{strike_val:.1f} cushion!"
+                            if "NHL" in series or is_soccer:
+                                min_plus_p = max(req_periods) if req_periods else 2
+                                req_plus_buf = 2.0 if live_period >= 3 else 3.0
+                                if live_period < min_plus_p or pts_to_break_plus < req_plus_buf:
+                                    return False, (
+                                        f"VETO [NHL/Soccer Plus-Spread Cushion]: Buying +{strike_val:.1f} against {tm_prefix} ({my_pts:.0f}-{opp_pts:.0f}, "
+                                        f"buffer={pts_to_break_plus:.0f}G < {req_plus_buf:.0f}G min in P{live_period} {clock_disp})"
+                                    )
+                                return True, (
+                                    f"ESPN {period_tag} Buying +Points Verified (NO on {tm_prefix} -{strike_val:.1f} = +{pts_to_break_plus:.0f} Goal Cushion "
+                                    f"at {my_pts:.0f}-{opp_pts:.0f} in P{live_period} {clock_disp} | LATE-CLOCK)"
+                                )
+                            else:
+                                min_plus_p = max(req_periods) if req_periods else 3
+                                req_plus_buf = 7.0 if req_periods is not None else (9.0 if live_period >= 4 else 12.0)
+                                if live_period < min_plus_p or pts_to_break_plus < req_plus_buf:
+                                    return False, (
+                                        f"VETO [Basketball/FB Plus-Spread Cushion]: Buying +{strike_val:.1f} against {tm_prefix} ({my_pts:.0f}-{opp_pts:.0f}, "
+                                        f"buffer={pts_to_break_plus:.0f} pts < {req_plus_buf:.0f} pt min in P{live_period} {clock_disp})"
+                                    )
+                                return True, (
+                                    f"ESPN {period_tag} Buying +Points Verified (NO on {tm_prefix} -{strike_val:.1f} = +{pts_to_break_plus:.0f} pt Cushion "
+                                    f"at {my_pts:.0f}-{opp_pts:.0f} in P{live_period} {clock_disp} | LATE-CLOCK)"
+                                )
                         # Overtime Spread Distortion Gate: In a 5-min OT (P5+), teams start tied and rarely cover >=5.5 spreads!
                         if req_periods is None and live_period >= 5 and strike_val >= 5.5 and margin < (strike_val + 4.5):
                             return False, f"VETO [Overtime Spread Trap]: -{strike_val:.1f} spread in OT (P{live_period}) is nearly impossible to cover!"
@@ -2148,7 +2181,7 @@ class PreTradeEducator:
         quota_pace_relief = -0.15 if q_status_eval.get("behind_pace", False) else 0.0
         req_imbalance = max(1.25, (1.60 if (series_pnl < -1.00 or arch_pnl < -5.00) else 1.30) + (0.15 if in_defense_mode else 0.0) + quota_pace_relief)
 
-        is_under_no = title.startswith("[UNDER-NO]")
+        is_under_no = title.startswith(("[UNDER-NO]", "[PLUS-SPREAD-NO]"))
         top_yes_bids = sorted(ob.yes_bids, key=lambda x: x.price, reverse=True)[:5]
         top_no_bids = sorted(ob.no_bids, key=lambda x: x.price, reverse=True)[:5]
         raw_yes_depth = sum(float(level.quantity) * (level.price / 100.0) for level in top_yes_bids)
@@ -3347,13 +3380,17 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 continue
 
                             raw_title = m.get("yes_sub_title") or m.get("title", t)
-                            # Rule 5: For TOTAL markets, scan Late-Clock UNDERS (`NO` side in 76c-87c zone, i.e., `100 - bid_c` in 76c-87c)
-                            # or 100%-already-banked Overs (`YES` side in 76c-87c zone)
+                            # Rule 5: Scan BOTH YES ("Giving Points / Over") AND NO ("Buying +Points / Under"):
+                            # - For TOTAL & TEAMTOTAL markets: `NO` side in 72c-90c is a cushioned Under (`[UNDER-NO]`).
+                            # - For SPREAD markets: `NO` side in 72c-90c is BUYING +POINTS (`+2.5`, `+3.5`, `+8.5`, `+10.5` — `[PLUS-SPREAD-NO]`)!
                             no_ask_c = 100 - bid_c
                             is_under_candidate = False
-                            if "TOTAL" in series and "TEAMTOTAL" not in series and (min_leader_ask <= no_ask_c <= max_leader_ask):
+                            if "TOTAL" in series and (min_leader_ask <= no_ask_c <= max_leader_ask):
                                 is_under_candidate = True
                                 clean_title = f"[UNDER-NO] {raw_title}"
+                            elif "SPREAD" in series and (min_leader_ask <= no_ask_c <= max_leader_ask):
+                                is_under_candidate = True
+                                clean_title = f"[PLUS-SPREAD-NO] {raw_title}"
                             elif min_leader_ask <= ask_c <= max_leader_ask:
                                 clean_title = raw_title
                             else:
@@ -3424,7 +3461,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         continue
                     await asyncio.sleep(0.05)
                     ob = await client.get_orderbook(t)
-                    is_under_cand = title.startswith("[UNDER-NO]")
+                    is_under_cand = title.startswith(("[UNDER-NO]", "[PLUS-SPREAD-NO]"))
                     side_bid = ob.best_no_bid if is_under_cand else ob.best_yes_bid
                     side_ask = ob.best_no_ask if is_under_cand else ob.best_yes_ask
                     if side_bid and side_ask:
@@ -3437,7 +3474,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                                 client, t, ob, title=title, min_book_depth_dlr=tier["min_depth_dlr"]
                             )
                             logger.info(
-                                f"PreTradeEducator [{'76-87c LATE-CLOCK UNDER' if is_under_cand else '76-87c MEAT-OF-MOVE LEADER'} | {t} ({mins_left:.0f}m left)]: {reason}"
+                                f"PreTradeEducator [{'72-90c PLUS-SPREAD / UNDER' if is_under_cand else '72-90c MEAT-OF-MOVE LEADER'} | {t} ({mins_left:.0f}m left)]: {reason}"
                             )
                             if not approved:
                                 if any(k in reason for k in ("Period Window", "Under Too Early", "Under Clock Window", "not live in-play", "No live in-play", "Matchup Check", "Unbanked Over")):

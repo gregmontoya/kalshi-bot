@@ -9,6 +9,7 @@ within +/- 1 day of the date encoded in the Kalshi event ticker. Ambiguous cases
 from __future__ import annotations
 
 import re
+import unicodedata
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -19,24 +20,44 @@ DRAW_NAMES = {"tie", "draw"}
 
 
 def norm(s: str) -> str:
+    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
     s = s.lower().replace("&", " and ")
     s = re.sub(r"[.'’]", "", s)
     s = re.sub(r"[^a-z0-9 ]", " ", s)
     return re.sub(r"\s+", " ", s).strip()
 
 
+_ALIASES = {
+    "as": "athletics",  # Kalshi "A's" (norm strips the apostrophe)
+    "man utd": "manchester united",
+}
+
+
 def team_matches(kalshi_name: str, full_name: str) -> bool:
     k, f = norm(kalshi_name), norm(full_name)
     if not k or not f:
         return False
+    if k in _ALIASES:
+        target = _ALIASES[k]
+        return f == target or target in f.split()
     if f == k or f.startswith(k + " "):
         return True
     parts = k.split()
-    # "Los Angeles C" -> base "los angeles", nickname initial "c"
-    if len(parts) >= 2 and len(parts[-1]) == 1:
-        base = " ".join(parts[:-1])
+    # Archived NHL style: "OTT Senators", "CBJ Blue Jackets", "UTA Mammoth" -> code prefix + nickname suffix
+    if len(parts) >= 2 and len(parts[0]) in (2, 3):
+        rest = " ".join(parts[1:])
+        if f.endswith(" " + rest):
+            return True
+        if parts[0] == "uta" and f.startswith("utah "):
+            return True
+    # "Los Angeles C" -> base "los angeles", nickname initial "c"; "Chicago WS" -> initials "ws"
+    if len(parts) >= 2 and len(parts[-1]) <= 3:
+        base, code = " ".join(parts[:-1]), parts[-1]
         if f.startswith(base + " "):
-            return f[len(base) + 1:].startswith(parts[-1])
+            nick = f[len(base) + 1:].split()
+            if len(code) == 1:
+                return nick[0].startswith(code)
+            return "".join(w[0] for w in nick) == code
     return False
 
 

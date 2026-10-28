@@ -1766,12 +1766,16 @@ class PreTradeEducator:
                                         f"by P{live_period} {clock_disp} (injury/locker-room/bench restriction risk!)"
                                     )
 
-                            # Compute Signed Team Score Differential & Standings Tier Edge for this specific player's team:
+                            # Compute Signed Team Score Differential, Home/Road Split, Opponent Defense Tier, & Live Defensive Efficiency:
                             player_team_margin = None
                             player_st_edge = 0.0
                             player_st_tag = ""
                             gm_margin = 0.0
                             total_gm_pts = 0.0
+                            is_player_home = True
+                            opp_team_abbr = ""
+                            my_team_pts = 0.0
+                            opp_team_pts = 0.0
                             if len(competitors) >= 2:
                                 sc0 = float(competitors[0].get("score", 0) or 0)
                                 sc1 = float(competitors[1].get("score", 0) or 0)
@@ -1781,10 +1785,42 @@ class PreTradeEducator:
                                 tm1_abbr = (competitors[1].get("team", {}).get("abbreviation") or "").upper()
                                 if player_team_abbr == tm0_abbr:
                                     player_team_margin = sc0 - sc1
+                                    my_team_pts, opp_team_pts = sc0, sc1
+                                    opp_team_abbr = tm1_abbr
+                                    is_player_home = (competitors[0].get("homeAway") or "").lower() == "home"
                                     player_st_edge, player_st_tag = _team_standings_edge(competitors[0], competitors[1])
                                 elif player_team_abbr == tm1_abbr:
                                     player_team_margin = sc1 - sc0
+                                    my_team_pts, opp_team_pts = sc1, sc0
+                                    opp_team_abbr = tm0_abbr
+                                    is_player_home = (competitors[1].get("homeAway") or "").lower() == "home"
                                     player_st_edge, player_st_tag = _team_standings_edge(competitors[1], competitors[0])
+
+                            # Matchup & Opponent Defense Rating Engine (NBA / NFL / NHL Lockdown vs. Sieve Defenses + Live In-Game Scoring Pace):
+                            if series in nba_prop_Set:
+                                elite_defs = {"OKC", "BOS", "MIN", "ORL", "HOU", "CLE", "NYK", "NY", "MIA", "GSW", "GS"}
+                                weak_defs = {"WAS", "WSH", "UTA", "UTAH", "POR", "CHA", "DET", "ATL", "BKN", "TOR", "CHI"}
+                            elif series in nfl_prop_Set:
+                                elite_defs = {"BAL", "PIT", "KC", "MIN", "DEN", "HOU", "SF", "NYJ", "LAC", "CLE", "PHI"}
+                                weak_defs = {"CAR", "JAX", "WAS", "WSH", "CIN", "DAL", "TB", "NO", "ARI", "IND", "LV"}
+                            else:
+                                elite_defs = {"FLA", "DAL", "WPG", "NYR", "CAR", "VGK", "VAN", "BOS", "NJD", "NJ"}
+                                weak_defs = {"SJS", "SJ", "ANA", "CHI", "CBJ", "MTL", "PHI", "PIT", "OTT"}
+
+                            vs_elite_def = opp_team_abbr in elite_defs
+                            vs_weak_def = opp_team_abbr in weak_defs
+                            # Live In-Game Defensive Performance (Is the opponent's defense locking down or getting torched tonight?):
+                            torching_def_tonight = (
+                                (series in nba_prop_Set and ((live_period == 2 and my_team_pts >= 62.0) or (live_period >= 3 and my_team_pts >= 90.0)))
+                                or (series in nfl_prop_Set and live_period >= 2 and my_team_pts >= 21.0)
+                                or (series in nhl_prop_Set and live_period >= 2 and my_team_pts >= 3.0)
+                            )
+                            lockdown_def_tonight = (
+                                (series in nba_prop_Set and ((live_period == 2 and clk_m < 3.0 and my_team_pts <= 44.0) or (live_period >= 3 and clk_m < 4.0 and my_team_pts <= 68.0)))
+                                or (series in nfl_prop_Set and live_period >= 3 and my_team_pts <= 7.0)
+                                or (series in nhl_prop_Set and live_period >= 2 and my_team_pts <= 1.0)
+                            )
+                            venue_lbl = "HOME" if is_player_home else "ROAD"
 
                             # Period-Aware + Minute-by-Minute Clock-Ahead Hot-Hand Player Prop Pace Curve:
                             p_len_prop = 15.0 if series in nfl_prop_Set else (20.0 if series in nhl_prop_Set else 12.0)
@@ -1796,33 +1832,43 @@ class PreTradeEducator:
                             if title.startswith("[UNDER-NO]"):
                                 min_u_prop_p = 2 if series in nhl_prop_Set else 3
                                 prop_rem = target_val - found_stat
-                                u_script_tag = ""
+                                u_script_tag = f" | {venue_lbl}-vs-{opp_team_abbr or 'OPP'}"
                                 if series in ("KXNBAPTS", "KXNBAPRA", "KXNBAPR", "KXNBAPA"):
                                     req_u_buf = 7.0 if (live_period >= 4 or gm_margin >= 15.0 or fouls_val >= 4) else 10.0
                                     if gm_margin >= 15.0 or fouls_val >= 4:
-                                        u_script_tag = f" | +BLOWOUT/FOUL-FADE(margin={gm_margin:.0f},PF={fouls_val})"
+                                        u_script_tag += f" | +BLOWOUT/FOUL-FADE(margin={gm_margin:.0f},PF={fouls_val})"
                                 elif series == "KXNFLPASSYDS":
                                     req_u_buf = 40.0 if (live_period >= 4 or (player_team_margin is not None and player_team_margin >= 10.0)) else 70.0
                                     if player_team_margin is not None and player_team_margin >= 10.0:
-                                        u_script_tag = f" | +CLOCK-MILK-PASS-FADE(up +{player_team_margin:.0f})"
+                                        u_script_tag += f" | +CLOCK-MILK-PASS-FADE(up +{player_team_margin:.0f})"
                                 elif series == "KXNFLRUSHYDS":
                                     req_u_buf = 15.0 if (live_period >= 4 or (player_team_margin is not None and player_team_margin <= -10.0)) else 28.0
                                     if player_team_margin is not None and player_team_margin <= -10.0:
-                                        u_script_tag = f" | +ABANDON-RUN-FADE(down {player_team_margin:+.0f})"
+                                        u_script_tag += f" | +ABANDON-RUN-FADE(down {player_team_margin:+.0f})"
                                 elif series == "KXNFLRECYDS":
                                     req_u_buf = 20.0 if (live_period >= 4 or (player_team_margin is not None and player_team_margin >= 10.0)) else 30.0
                                 elif series in ("KXNBAREB", "KXNBAAST", "KXNFLREC", "KXNHLSOG"):
                                     req_u_buf = 2.5 if live_period >= 4 else 3.5
                                 elif series in ("KXNHLGOAL", "KXNHLPTS", "KXNHLAST") and live_period >= 3 and clk_m <= 14.0:
                                     req_u_buf = 1.0
-                                    u_script_tag = " | +NHL-P3-PROP-UNDER-LOCK"
+                                    u_script_tag += " | +NHL-P3-PROP-UNDER-LOCK"
                                 else:
                                     req_u_buf = 2.0
-                                max_u_prog = min(72.0, max(38.0, el_prop_pct - 6.0))
+                                # Apply Matchup / Opponent Defense / Road Split Adjustments to Player Prop UNDERs:
+                                if vs_elite_def or lockdown_def_tonight:
+                                    req_u_buf = max(1.0, req_u_buf * 0.82)
+                                    u_script_tag += f" | +LOCKDOWN-DEF-FADE({opp_team_abbr})"
+                                if not is_player_home:
+                                    req_u_buf = max(1.0, req_u_buf * 0.90)
+                                    u_script_tag += " | +ROAD-FADE-EDGE"
+                                elif vs_weak_def and torching_def_tonight:
+                                    req_u_buf = req_u_buf * 1.20
+                                    u_script_tag += f" | VS-WEAK-DEF-CAUTION({opp_team_abbr})"
+                                max_u_prog = min(74.0 if (vs_elite_def or lockdown_def_tonight) else 72.0, max(38.0, el_prop_pct - 6.0))
                                 if live_period < min_u_prop_p or prop_rem < req_u_buf or prog_pct > max_u_prog:
                                     return False, (
                                         f"VETO [Player Prop Under Cushion]: {title} at {found_stat:.0f}/{target_val:.0f} "
-                                        f"(rem={prop_rem:.0f} < {req_u_buf:.0f} min or prog={prog_pct:.0f}% > {max_u_prog:.0f}% in P{live_period} {clock_disp})"
+                                        f"(rem={prop_rem:.0f} < {req_u_buf:.1f} min or prog={prog_pct:.0f}% > {max_u_prog:.0f}% in P{live_period} {clock_disp}{u_script_tag})"
                                     )
                                 return True, (
                                     f"ESPN Boxscore Prop UNDER Verified ({found_stat:.0f}/{target_val:.0f} = +{prop_rem:.0f} Cushion "
@@ -1835,7 +1881,17 @@ class PreTradeEducator:
                                 req_prop_pct = 66.0
                             else:
                                 req_prop_pct = max({1: 72.0, 2: 74.0, 3: 75.0}.get(live_period, 80.0), el_prop_pct + 8.0)
-                            script_prop_tag = player_st_tag
+                            script_prop_tag = player_st_tag + f" | {venue_lbl}-vs-{opp_team_abbr or 'OPP'}"
+                            # Apply Matchup / Opponent Defense / Home-Road Split Adjustments to Bought-Down `YES` Props:
+                            if vs_weak_def or torching_def_tonight:
+                                req_prop_pct = max(62.0, req_prop_pct - 3.5)
+                                script_prop_tag += f" | +VS-WEAK-DEF({opp_team_abbr})"
+                            elif vs_elite_def and not is_player_home and prog_pct < 90.0:
+                                req_prop_pct += 4.5
+                                script_prop_tag += f" | ROAD-VS-ELITE-DEF({opp_team_abbr}:+4.5%)"
+                            elif is_player_home:
+                                req_prop_pct = max(64.0, req_prop_pct - 1.5)
+                                script_prop_tag += " | +HOME-SPLIT"
 
                             # 0A. Live Sleeper Fantasy Football & Basketball Player Intelligence (`injury_status`, `depth_chart_order`, `search_rank`, 24h waiver trends):
                             if series in nfl_prop_Set or series in nba_prop_Set:
@@ -2489,6 +2545,12 @@ class PreTradeEducator:
             conf_score += 4
         if "CLOCK-FROZEN" in ext_reason or "LATE-CLOCK" in ext_reason or is_under_no:
             conf_score += 4
+        if "+VS-WEAK-DEF" in ext_reason or "+LOCKDOWN-DEF-FADE" in ext_reason:
+            conf_score += 5
+        if "+ROAD-FADE-EDGE" in ext_reason or "+HOME-SPLIT" in ext_reason:
+            conf_score += 3
+        if "ROAD-VS-ELITE-DEF" in ext_reason or "VS-WEAK-DEF-CAUTION" in ext_reason:
+            conf_score -= 4
         conf_score = max(10, min(99, conf_score))
         min_conf_req = 74 if ("ENDGAME-SNIPE" in ext_reason or is_under_no) else 76
         if conf_score < min_conf_req:

@@ -2918,30 +2918,21 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 pos_conf_score = int(educator.memory.get("last_conf_scores", {}).get(ticker, 83) or 83)
                 # Stage-1 is ONLY banked when >=40% of contracts have ACTUALLY filled & cashed out (never on an unfilled touch!)
                 stage1_banked = (max_orig_cnt >= 6 and whole_pos <= int(max_orig_cnt * 0.58))
-                # CONFIDENCE-TUNED STOP-LOSS & STAGE-1 SHIELD:
-                # - Elite Powerhouse Teams (`pos_conf_score >= 85/100`): full `-10c` stop-loss buffer so a 1-play blip never shakes us out!
-                # - Medium-Confidence Teams (`pos_conf_score < 82/100`): tighter `-8c` leash + 70% Stage-1 early profit lock!
-                max_stop_dist = 10 if pos_conf_score >= 82 else 8
+                # TRUE BROKEN-THESIS STOP-LOSS (Restored from Yesterday's 23W-9L / 14-2 Formula):
+                # - Never use a hair-trigger -8c/-2c stop that panic-sells a 1-goal hockey blip (NJ, NYI2, VANANA-8) right before our team wins!
+                # - Only trigger stop-loss if price drops -14c (<= 66c-69c) AND stays down for >=2 consecutive ticks,
+                #   or if ESPN confirms our scoreboard cushion is still intact (`sb_still_valid`), hold down to 58c!
+                max_stop_dist = 14
                 if stage1_banked:
-                    # STRICT ZERO-GIVEBACK BREAKEVEN RATCHET:
-                    # Once Stage-1 (60%) has filled at +5c/+6c, NEVER allow the 40% runner to fall below avg_entry_cents!
                     stop_floor_c = max(68, avg_entry_cents)
-                elif peaked >= avg_entry_cents + 5:
-                    # Wall Street Anti-Round-Trip Ratchet: if trade touched +5c profit, tighten stop floor to -2c!
-                    stop_floor_c = max(66, avg_entry_cents - 2)
-                elif peaked >= avg_entry_cents + 3:
-                    stop_floor_c = max(64, avg_entry_cents - min(5, max_stop_dist - 3))
                 else:
-                    stop_floor_c = max(62, avg_entry_cents - max_stop_dist)
+                    stop_floor_c = max(64, avg_entry_cents - max_stop_dist)
                 raw_breach = (0 < cur_bid <= stop_floor_c) and (cur_ask <= stop_floor_c + 4)
                 thesis_broken_guillotine = False
                 if raw_breach:
-                    # Vegas / Live Scoreboard-Confirmed Guillotine + 2-Tick Anti-Flash-Wick Shield (GEMINI.md Law / Pod 1):
-                    # Never panic-sell the bottom of a 5-second market-maker bid pull (like NJ 81c -> 68c -> 84c!)
-                    # if our team STILL holds its scoreboard cushion on ESPN!
                     stop_breach_counts[ticker] = stop_breach_counts.get(ticker, 0) + 1
                     sb_still_valid = False
-                    if cur_bid >= 60:
+                    if cur_bid >= 58:
                         try:
                             sb_tag = (
                                 f"[PLUS-SPREAD-NO] {ticker}"
@@ -2954,7 +2945,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         except Exception:
                             sb_still_valid = False
                     if sb_still_valid and cur_bid >= 58:
-                        eff_floor_c = max(56, stop_floor_c - 6)
+                        eff_floor_c = 58
                     else:
                         eff_floor_c = stop_floor_c
                     if cur_bid <= 54 or (cur_bid <= eff_floor_c and stop_breach_counts[ticker] >= 2):
@@ -3107,47 +3098,28 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         except Exception:
                             pass
 
-                # Ensure Strategy A (60/40 Fast-Flip + Wave-Rider Split) & Strategy B (Front-of-Queue Ask Undercut)
+                # Ensure 100% Full-Position Clean Exit at +6c/+7c (Restored from Yesterday's 23W-9L / 14-2 Formula!)
+                # Never leave a 40% tail sitting at 97c exposed to late-game reversals!
                 whole_covered = int(resting_sell_counts.get(ticker, 0.0))
                 uncovered = whole_pos - whole_covered
                 if uncovered >= 1:
                     undercut_ask = max(cur_bid + 1, cur_ask - 1)
-                    is_low_entry_wave = (avg_entry_cents <= 76)
-                    s1_step = 7 if is_low_entry_wave else 5
-                    s2_step = 13 if is_low_entry_wave else 9
-                    if pos_meta.get("scratch_requeued", False) and not stage1_banked:
+                    tp_step = 8 if avg_entry_cents <= 76 else (7 if avg_entry_cents <= 85 else 6)
+                    if pos_meta.get("scratch_requeued", False):
                         fast_tp = max(cur_bid + 1, avg_entry_cents + 1)
-                        wave_tp = max(fast_tp + 1, avg_entry_cents + 3)
-                    elif pos_meta.get("stage2_ratcheted", False) and stage1_banked:
-                        fast_tp = max(cur_bid + 1, min(95, avg_entry_cents + 6))
-                        wave_tp = fast_tp
-                    elif undercut_ask >= avg_entry_cents + s1_step:
-                        fast_tp = min(95, avg_entry_cents + s1_step + 1, undercut_ask)
-                        wave_tp = max(fast_tp + 3, min(97, avg_entry_cents + s2_step))
+                    elif undercut_ask >= avg_entry_cents + tp_step:
+                        fast_tp = min(94, avg_entry_cents + tp_step, undercut_ask)
                     else:
-                        fast_tp = max(cur_bid + 1, min(94, avg_entry_cents + s1_step))
-                        wave_tp = max(fast_tp + 3, min(97, avg_entry_cents + s2_step))
+                        fast_tp = max(cur_bid + 1, min(94, avg_entry_cents + tp_step))
 
-                    # Whale Ask-Wall Front-Runner (Reciprocal Orderbook Inspection):
-                    # An Ask Wall on our side at price `P` is a Bid Wall on the opposing side at `100 - P`.
-                    # If >= $400 of opposing Whale Wall sits right at `fast_tp` or `wave_tp`, undercut it by -1c
-                    # so our take-profit sits #1 at the front of the sell queue instead of behind the wall!
                     opp_bids_map = {
                         int(lvl.price): float(lvl.quantity) * (lvl.price / 100.0)
                         for lvl in (ob.yes_bids if is_no_pos else ob.no_bids)
                     }
                     if opp_bids_map.get(100 - fast_tp, 0.0) >= 400.0 and (fast_tp - 1) >= max(cur_bid + 1, avg_entry_cents + 5):
                         fast_tp -= 1
-                    if opp_bids_map.get(100 - wave_tp, 0.0) >= 400.0 and (wave_tp - 1) >= (fast_tp + 2):
-                        wave_tp -= 1
 
-                    if uncovered >= 4:
-                        s1_ratio = 0.60 if pos_conf_score >= 82 else 0.70
-                        fast_cnt = max(2, int(round(uncovered * s1_ratio)))
-                        wave_cnt = uncovered - fast_cnt
-                        legs = [(fast_cnt, fast_tp, f"Stage-1 Fast-Flip (+6c, {int(s1_ratio*100)}%)"), (wave_cnt, wave_tp, "Stage-2 Wave-Rider (+11c Target)")]
-                    else:
-                        legs = [(uncovered, fast_tp, "Fast-Flip Harvest (+6c Target)")]
+                    legs = [(uncovered, fast_tp, f"100% Full-Position Harvest (+{fast_tp - avg_entry_cents}c Target)")]
 
                     tp_order_side = "bid" if is_no_pos else "ask"
                     for leg_cnt, leg_cents, leg_label in legs:

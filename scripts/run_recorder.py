@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 from dotenv import load_dotenv
 
-from src.recorder import sources, store, ws_paper
+from src.recorder import sources, store
 from src.recorder.analysis import _fair_prob
 from src.recorder.live_maker import LiveMaker
 from src.recorder.matching import match_event, outcome_name_for
@@ -329,8 +329,12 @@ async def main() -> None:
         mode = f"LIVE MAKER ($50 cap, floor=${live_maker.cash_floor:.2f})" if live_maker else "PAPER ONLY"
         log.info("Recorder started (%s). Leagues: %s", mode, ", ".join(LEAGUES))
         if live_maker is not None and os.environ.get("WS_PAPER_ENABLED", "true").lower() in ("1", "true", "yes"):
-            rec.ws_task = asyncio.create_task(ws_paper.run_forever(rec.conn, live_maker._headers))
-            log.info("WebSocket paper book started (paper only, no orders)")
+            try:  # optional add-on: a missing dependency must never take down the live bot
+                from src.recorder import ws_paper
+                rec.ws_task = asyncio.create_task(ws_paper.run_forever(rec.conn, live_maker._headers))
+                log.info("WebSocket paper book started (paper only, no orders)")
+            except Exception:
+                log.exception("WebSocket paper book unavailable; continuing without it")
         while True:
             try:
                 await rec.tick(client)

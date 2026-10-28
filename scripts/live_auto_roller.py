@@ -1630,7 +1630,8 @@ class PreTradeEducator:
                     def _strip_accents(s: str) -> str:
                         return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii").replace(".", "").strip().lower()
 
-                    player_target_name = _strip_accents(title.split(":")[0])
+                    raw_p_title = title.replace("[UNDER-NO]", "").replace("[PLUS-SPREAD-NO]", "").strip()
+                    player_target_name = _strip_accents(raw_p_title.split(":")[0])
                     name_tokens = player_target_name.split()
                     player_first = name_tokens[0] if name_tokens else ""
                     player_last = name_tokens[-1] if name_tokens else ""
@@ -1795,17 +1796,29 @@ class PreTradeEducator:
                             if title.startswith("[UNDER-NO]"):
                                 min_u_prop_p = 2 if series in nhl_prop_Set else 3
                                 prop_rem = target_val - found_stat
+                                u_script_tag = ""
                                 if series in ("KXNBAPTS", "KXNBAPRA", "KXNBAPR", "KXNBAPA"):
-                                    req_u_buf = 8.0 if live_period >= 4 else 11.0
+                                    req_u_buf = 7.0 if (live_period >= 4 or gm_margin >= 15.0 or fouls_val >= 4) else 10.0
+                                    if gm_margin >= 15.0 or fouls_val >= 4:
+                                        u_script_tag = f" | +BLOWOUT/FOUL-FADE(margin={gm_margin:.0f},PF={fouls_val})"
                                 elif series == "KXNFLPASSYDS":
-                                    req_u_buf = 55.0 if live_period >= 4 else 75.0
-                                elif series in ("KXNFLRUSHYDS", "KXNFLRECYDS"):
-                                    req_u_buf = 22.0 if live_period >= 4 else 32.0
+                                    req_u_buf = 40.0 if (live_period >= 4 or (player_team_margin is not None and player_team_margin >= 10.0)) else 70.0
+                                    if player_team_margin is not None and player_team_margin >= 10.0:
+                                        u_script_tag = f" | +CLOCK-MILK-PASS-FADE(up +{player_team_margin:.0f})"
+                                elif series == "KXNFLRUSHYDS":
+                                    req_u_buf = 15.0 if (live_period >= 4 or (player_team_margin is not None and player_team_margin <= -10.0)) else 28.0
+                                    if player_team_margin is not None and player_team_margin <= -10.0:
+                                        u_script_tag = f" | +ABANDON-RUN-FADE(down {player_team_margin:+.0f})"
+                                elif series == "KXNFLRECYDS":
+                                    req_u_buf = 20.0 if (live_period >= 4 or (player_team_margin is not None and player_team_margin >= 10.0)) else 30.0
                                 elif series in ("KXNBAREB", "KXNBAAST", "KXNFLREC", "KXNHLSOG"):
-                                    req_u_buf = 3.0 if live_period >= 4 else 4.0
+                                    req_u_buf = 2.5 if live_period >= 4 else 3.5
+                                elif series in ("KXNHLGOAL", "KXNHLPTS", "KXNHLAST") and live_period >= 3 and clk_m <= 14.0:
+                                    req_u_buf = 1.0
+                                    u_script_tag = " | +NHL-P3-PROP-UNDER-LOCK"
                                 else:
                                     req_u_buf = 2.0
-                                max_u_prog = min(66.0, max(35.0, el_prop_pct - 8.0))
+                                max_u_prog = min(72.0, max(38.0, el_prop_pct - 6.0))
                                 if live_period < min_u_prop_p or prop_rem < req_u_buf or prog_pct > max_u_prog:
                                     return False, (
                                         f"VETO [Player Prop Under Cushion]: {title} at {found_stat:.0f}/{target_val:.0f} "
@@ -1813,11 +1826,15 @@ class PreTradeEducator:
                                     )
                                 return True, (
                                     f"ESPN Boxscore Prop UNDER Verified ({found_stat:.0f}/{target_val:.0f} = +{prop_rem:.0f} Cushion "
-                                    f"in P{live_period} {clock_disp} | LATE-CLOCK)"
+                                    f"in P{live_period} {clock_disp}{u_script_tag} | LATE-CLOCK)"
                                 )
                             # Buying DOWN Points/Yards on Lower Alt-Line Milestones (`YES` side in 72c-90c):
-                            # Require >=74-75% banked in Q2/Q3 (or el_prop_pct + 8%) so bought-down alt milestones in 76c-89c are captured!
-                            req_prop_pct = max({1: 72.0, 2: 74.0, 3: 75.0}.get(live_period, 80.0), el_prop_pct + 8.0)
+                            # - Standard continuous stats (`PTS`, `YDS`, `PRA`, `REB`, `AST`): >=74-75% banked in Q2/Q3 (or el_prop_pct + 8%).
+                            # - Discrete small-integer alt lines (`target_val <= 3.0` on `3PT`, `NHLGOAL`, `NHLPTS`) where player is 1 unit away (`target_val - found_stat <= 1.0`): allow 66%!
+                            if target_val <= 3.0 and (target_val - found_stat) <= 1.0 and live_period in (2, 3):
+                                req_prop_pct = 66.0
+                            else:
+                                req_prop_pct = max({1: 72.0, 2: 74.0, 3: 75.0}.get(live_period, 80.0), el_prop_pct + 8.0)
                             script_prop_tag = player_st_tag
 
                             # 0A. Live Sleeper Fantasy Football & Basketball Player Intelligence (`injury_status`, `depth_chart_order`, `search_rank`, 24h waiver trends):

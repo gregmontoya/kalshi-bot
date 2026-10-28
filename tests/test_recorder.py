@@ -155,3 +155,18 @@ if __name__ == "__main__":
             print("FAIL", t.__name__, repr(e))
     print(f"{len(tests) - failed}/{len(tests)} passed")
     sys.exit(1 if failed else 0)
+
+
+def test_ws_book_reciprocal_math():
+    from src.recorder.ws_paper import Book, maker_price
+    b = Book()
+    b.load_snapshot({"yes_dollars_fp": [["0.6800", "100.00"], ["0.6700", "50.00"]],
+                     "no_dollars_fp": [["0.3000", "40.00"], ["0.2900", "10.00"]]})
+    assert b.best_yes_bid() == (0.68, 100.0)
+    assert b.best_yes_ask() == (0.70, 40.0)          # LAW 1: 1 - 0.30
+    b.apply_delta({"side": "no", "price_dollars": "0.3000", "delta_fp": "-40.00"})
+    assert b.best_yes_ask() == (0.71, 10.0)          # best NO bid fell to 0.29
+    b.apply_delta({"side": "yes", "price_dollars": "0.6900", "delta_fp": "5.00"})
+    assert b.best_yes_bid() == (0.69, 5.0)
+    assert maker_price(0.68, 0.71) == 0.69           # improve bid by 1c
+    assert maker_price(0.69, 0.70) == 0.69           # 1c spread: join at ask - 1c

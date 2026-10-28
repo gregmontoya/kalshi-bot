@@ -65,6 +65,27 @@ CREATE TABLE IF NOT EXISTS live_orders (
     expiration_ts INTEGER NOT NULL,
     status TEXT NOT NULL
 );
+
+-- WebSocket paper book: same rule as paper_orders, but evaluated on every live order-book update.
+CREATE TABLE IF NOT EXISTS ws_paper_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    placed_ts TEXT NOT NULL,
+    ticker TEXT NOT NULL,
+    event_ticker TEXT NOT NULL UNIQUE,
+    series TEXT,
+    odds_event_id TEXT,
+    commence_time TEXT,
+    maker_price REAL NOT NULL,
+    bid_at_place REAL,
+    ask_at_place REAL,
+    fair_at_place REAL NOT NULL,
+    edge_at_place REAL NOT NULL,
+    odds_age_s REAL,
+    bid_depth REAL,
+    ask_depth REAL,
+    status TEXT NOT NULL,
+    filled_ts TEXT
+);
 """
 
 

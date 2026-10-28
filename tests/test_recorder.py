@@ -170,3 +170,22 @@ def test_ws_book_reciprocal_math():
     assert b.best_yes_bid() == (0.69, 5.0)
     assert maker_price(0.68, 0.71) == 0.69           # improve bid by 1c
     assert maker_price(0.69, 0.70) == 0.69           # 1c spread: join at ask - 1c
+
+
+def test_ingame_paper_buy90_stop85(tmp_path):
+    from src.recorder import store
+    from src.recorder.ingame_paper import InGamePaper, report, taker_fee
+    conn = store.connect(tmp_path / "t.sqlite")
+    g = InGamePaper(conn)
+    meta = {"event_ticker": "EV1", "series": "KXNBAGAME", "commence_time": "2020-01-01T00:00:00Z"}
+    g.on_book("EV1-A", meta, 0.86, 0.87)   # ask 87c: inside 88 band only (86-88)
+    g.on_book("EV1-A", meta, 0.89, 0.90)   # ask 90c: buy90 variants enter (+ buy92 band 90-92)
+    g.on_book("EV1-A", meta, 0.85, 0.86)   # bid 85c: buy90_stop85 stops; buy88_stop83 holds
+    rows = {r["variant"]: dict(r) for r in conn.execute("SELECT * FROM ingame_paper_trades")}
+    assert rows["buy88_stop83"]["entry_price"] == 0.87 and rows["buy88_stop83"]["status"] == "OPEN"
+    assert rows["buy90_stop85"]["status"] == "STOPPED" and rows["buy90_stop85"]["exit_price"] == 0.85
+    assert rows["buy90_hold"]["status"] == "OPEN"
+    assert rows["buy92_stop87"]["status"] == "STOPPED"
+    store.upsert_result(conn, "EV1-A", "yes", "settled", "x"); conn.commit()
+    out = report(conn)
+    assert "buy90_hold" in out and taker_fee(0.90) == 0.07

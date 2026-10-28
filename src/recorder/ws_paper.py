@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 import websockets
 
 from src.recorder.analysis import _fair_prob
+from src.recorder.ingame_paper import InGamePaper
 
 WS_URL = "wss://api.elections.kalshi.com/trade-api/ws/v2"
 WS_PATH = "/trade-api/ws/v2"
@@ -25,6 +26,7 @@ MIN_EDGE = 0.02
 PRICE_MIN, PRICE_MAX = 0.20, 0.90
 WINDOW_BEFORE_H = 6.0
 MIN_LEAD_MIN = 10
+INGAME_LOOKBACK_H = 4.0     # keep streaming games that started up to 4h ago (in-game paper tester)
 EVAL_THROTTLE_S = 2.0        # evaluate each ticker at most every 2s
 FAIR_CACHE_S = 60.0          # re-read Pinnacle fair from DB at most every 60s per ticker
 RESUB_EVERY_S = 60.0         # pick up newly matched markets
@@ -100,13 +102,14 @@ class WsPaperBook:
         self.msgs = 0
         self.signals = 0
         self.fills = 0
+        self.ingame = InGamePaper(conn)
 
     # ---------- universe ----------
     def wanted(self) -> dict[str, dict]:
         now = datetime.now(timezone.utc)
         rows = self.conn.execute(
             "SELECT * FROM market_map WHERE commence_time>? AND commence_time<=?",
-            (_iso(now + timedelta(minutes=MIN_LEAD_MIN)), _iso(now + timedelta(hours=WINDOW_BEFORE_H))),
+            (_iso(now - timedelta(hours=INGAME_LOOKBACK_H)), _iso(now + timedelta(hours=WINDOW_BEFORE_H))),
         ).fetchall()
         out = {r["ticker"]: dict(r) for r in rows}
         # keep tracking tickers with resting ws paper orders until tip-off (for fill detection)
@@ -206,6 +209,12 @@ class WsPaperBook:
             return
         self.msgs += 1
         self.evaluate(tk)
+        m, book = self.meta.get(tk), self.books.get(tk)
+        if m and book:
+            try:
+                self.ingame.on_book(tk, m, book.best_yes_bid()[0], book.best_yes_ask()[0])
+            except Exception:
+                log.exception("in-game paper tester failed on %s", tk)
 
     async def run_once(self) -> None:
         hdr = self.headers_fn("GET", WS_PATH)
@@ -232,8 +241,9 @@ class WsPaperBook:
                         log.info("WS subscribed +%d markets (%d total)", len(new), len(self.subscribed))
                     next_resub = now + RESUB_EVERY_S
                 if now >= next_stats:
-                    log.info("WS stats: %d book updates, %d markets, %d signals, %d fills",
-                             self.msgs, len(self.books), self.signals, self.fills)
+                    log.info("WS stats: %d book updates, %d markets, %d signals, %d fills | in-game: %d entries, %d stops",
+                             self.msgs, len(self.books), self.signals, self.fills,
+                             self.ingame.entries, self.ingame.stops)
                     next_stats = now + STATS_EVERY_S
                 try:
                     raw = await asyncio.wait_for(ws.recv(), timeout=10)

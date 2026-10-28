@@ -2918,21 +2918,21 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 pos_conf_score = int(educator.memory.get("last_conf_scores", {}).get(ticker, 83) or 83)
                 # Stage-1 is ONLY banked when >=40% of contracts have ACTUALLY filled & cashed out (never on an unfilled touch!)
                 stage1_banked = (max_orig_cnt >= 6 and whole_pos <= int(max_orig_cnt * 0.58))
-                # TRUE BROKEN-THESIS STOP-LOSS (Restored from Yesterday's 23W-9L / 14-2 Formula):
-                # - Never use a hair-trigger -8c/-2c stop that panic-sells a 1-goal hockey blip (NJ, NYI2, VANANA-8) right before our team wins!
-                # - Only trigger stop-loss if price drops -14c (<= 66c-69c) AND stays down for >=2 consecutive ticks,
-                #   or if ESPN confirms our scoreboard cushion is still intact (`sb_still_valid`), hold down to 58c!
-                max_stop_dist = 14
+                # TWO-TIER SCOREBOARD-PROTECTED STOP-LOSS ($7.50 - $10.50 Max Loss Cap Per Trade):
+                # - Tier 1 (Scoreboard Cushion BROKEN on ESPN, `sb_still_valid == False`): Cut fast at `-10c` (~$7.50 max loss on 75x)
+                # - Tier 2 (Scoreboard Cushion INTACT on ESPN, `sb_still_valid == True`): Hold down to `-14c` (`66c` floor, ~$10.50 max loss)
+                #   so a 1-goal blip never shakes us out of a winning ticket, while NEVER risking a big loss!
+                max_stop_dist = 10
                 if stage1_banked:
                     stop_floor_c = max(68, avg_entry_cents)
                 else:
-                    stop_floor_c = max(64, avg_entry_cents - max_stop_dist)
+                    stop_floor_c = max(68, avg_entry_cents - max_stop_dist)
                 raw_breach = (0 < cur_bid <= stop_floor_c) and (cur_ask <= stop_floor_c + 4)
                 thesis_broken_guillotine = False
                 if raw_breach:
                     stop_breach_counts[ticker] = stop_breach_counts.get(ticker, 0) + 1
                     sb_still_valid = False
-                    if cur_bid >= 58:
+                    if cur_bid >= 64:
                         try:
                             sb_tag = (
                                 f"[PLUS-SPREAD-NO] {ticker}"
@@ -2944,11 +2944,11 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             )
                         except Exception:
                             sb_still_valid = False
-                    if sb_still_valid and cur_bid >= 58:
-                        eff_floor_c = 58
+                    if sb_still_valid and cur_bid >= 64:
+                        eff_floor_c = max(65, avg_entry_cents - 14)
                     else:
                         eff_floor_c = stop_floor_c
-                    if cur_bid <= 54 or (cur_bid <= eff_floor_c and stop_breach_counts[ticker] >= 2):
+                    if cur_bid <= 62 or (cur_bid <= eff_floor_c and stop_breach_counts[ticker] >= 2):
                         thesis_broken_guillotine = True
                     else:
                         logger.info(

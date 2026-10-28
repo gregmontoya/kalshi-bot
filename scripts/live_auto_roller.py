@@ -1570,9 +1570,22 @@ class PreTradeEducator:
                             if margin < req_fb_p_cush:
                                 return False, f"VETO [Football {period_tag} Cushion]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} (+{margin:.0f} < +{req_fb_p_cush} pt min{st_tag_w})"
                         elif series.startswith(("KXNBA", "KXNCAAMB", "KXNCAAWB")):
-                            req_bb_p_cush = (6 if p_clk_m < 5.0 else 8) + (3 if st_edge_w <= -0.10 else 0)
+                            # Never let a routine 4-5 point NBA run wipe out a Quarter/Half bet!
+                            # - For 1H (in P1) or 2H (in P3): require >= +16 pt blowout!
+                            # - With > 5:00 left in the Quarter/Half: require >= +13 pts (5 possessions!)
+                            # - With 2:30 to 5:00 left: require >= +9 pts (3+ possessions!)
+                            # - Inside final <= 2:30: require >= +6 pts
+                            if ("1H" in series and live_period == 1 and not series.startswith("KXNCAAMB")) or ("2H" in series and live_period == 3):
+                                base_bb_cush = 16
+                            elif p_clk_m > 5.0:
+                                base_bb_cush = 13
+                            elif p_clk_m > 2.5:
+                                base_bb_cush = 9
+                            else:
+                                base_bb_cush = 6
+                            req_bb_p_cush = base_bb_cush + (3 if st_edge_w <= -0.10 else 0)
                             if margin < req_bb_p_cush:
-                                return False, f"VETO [Basketball {period_tag} Cushion]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} (+{margin:.0f} < +{req_bb_p_cush} pt min with {clock_disp} left{st_tag_w})"
+                                return False, f"VETO [Basketball {period_tag} Cushion]: {suffix} only up {my_pts:.0f}-{opp_pts:.0f} (+{margin:.0f} < +{req_bb_p_cush} pt min in P{live_period} {clock_disp}{st_tag_w})"
                         lock_tag = (" | PROP-LOCK" if margin >= 8 or (is_soccer and margin >= 2) or st_edge_w >= 0.12 else "") + st_tag_w
                         return True, f"ESPN {period_tag} Leader Verified ({suffix} leading {my_pts:.0f}-{opp_pts:.0f}{lock_tag} | P{live_period} {clock_disp})"
 
@@ -2530,6 +2543,7 @@ async def run_autonomous_loop(duration_seconds: int = 0):
     cold_series_until: dict[str, float] = {}
     series_markets_cache: dict[str, tuple[float, list]] = {}
     veto_cooldown_until: dict[str, float] = {}
+    stop_breach_counts: dict[str, int] = {}
 
     def _entity_key(tk: str) -> str:
         pts = tk.split("-")
@@ -2833,7 +2847,31 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     stop_floor_c = max(64, avg_entry_cents - min(6, max_stop_dist - 2))
                 else:
                     stop_floor_c = max(62, avg_entry_cents - max_stop_dist)
-                thesis_broken_guillotine = (0 < cur_bid <= stop_floor_c) and (cur_ask <= stop_floor_c + 4)
+                raw_breach = (0 < cur_bid <= stop_floor_c) and (cur_ask <= stop_floor_c + 4)
+                thesis_broken_guillotine = False
+                if raw_breach:
+                    # Vegas / Live Scoreboard-Confirmed Guillotine + 2-Tick Anti-Flash-Wick Shield (GEMINI.md Law / Pod 1):
+                    # Never panic-sell the bottom of a 5-second market-maker bid pull (like NJ 81c -> 68c -> 84c!)
+                    # if our team STILL holds its scoreboard cushion on ESPN!
+                    stop_breach_counts[ticker] = stop_breach_counts.get(ticker, 0) + 1
+                    sb_still_valid = False
+                    if cur_bid >= 60:
+                        try:
+                            sb_still_valid, _ = await educator.verify_external_research(
+                                client, ticker, f"[UNDER-NO] {ticker}" if is_no_pos else ticker
+                            )
+                        except Exception:
+                            sb_still_valid = False
+                    eff_floor_c = (stop_floor_c - 4) if sb_still_valid else stop_floor_c
+                    if cur_bid <= 56 or (cur_bid <= eff_floor_c and stop_breach_counts[ticker] >= 2):
+                        thesis_broken_guillotine = True
+                    else:
+                        logger.info(
+                            f"🛡️ Anti-Wick / Scoreboard Hold on {ticker}: bid={cur_bid}c dipped to floor={stop_floor_c}c "
+                            f"(tick {stop_breach_counts[ticker]}/2, ScoreboardValid={sb_still_valid}, eff_floor={eff_floor_c}c) — holding through temporary flash wick!"
+                        )
+                else:
+                    stop_breach_counts[ticker] = 0
                 if thesis_broken_guillotine:
                     logger.warning(
                         f"TIGHT -10c STOP-LOSS / STAGE-1 SHIELD TRIGGERED on {ticker} ({'NO-UNDER' if is_no_pos else 'YES'}, cur_bid={cur_bid}c, ask={cur_ask}c, floor={stop_floor_c}c). Exiting cleanly!"

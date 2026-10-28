@@ -1,0 +1,17 @@
+app = "kalshi-quant-recorder"
+primary_region = "ord"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PYTHONUNBUFFERED = "1"
+  PYTHONPATH = "/app"
+
+[[mounts]]
+  source = "recorder_data"
+  destination = "/app/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

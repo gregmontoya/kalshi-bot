@@ -1,0 +1,9 @@
+services:
+  recorder:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    command: ["python", "scripts/run_recorder.py", "--db", "/app/data/recorder.sqlite", "--interval-min", "10"]

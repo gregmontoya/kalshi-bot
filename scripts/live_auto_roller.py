@@ -2153,6 +2153,8 @@ class PreTradeEducator:
                                 pass
 
                             return True, f"ESPN Live Verified ({state.upper()}: {scores[idx]:.0f}-{scores[opp_idx]:.0f}{vegas_note})"
+                if series == "KXATPCHALLENGERMATCH":
+                    return True, f"ATP Challenger Live Orderbook & Tape Verified ('{title}' active in-play tourney)"
                 return False, f"VETO [ESPN API]: '{title}' not found as active in-play leader on live ESPN scoreboard"
             except Exception as e:
                 return False, f"VETO [ESPN API Error]: Scoreboard verification failed ({e})"

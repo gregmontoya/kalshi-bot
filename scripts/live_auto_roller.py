@@ -641,21 +641,21 @@ class PreTradeEducator:
             scout_c = min(3200, max(2200, int(equity_cents * 0.065)))
             return scout_c, f"🎯 TIER-C SCOUT SCALP ($28 Cap, Conf={conf_sc}/100 -> +$2-$3 Target)", 0.0
 
-        if w_strk >= 4 and hm_pool_dlr >= 30.0:
-            base_c = min(19500, int(equity_cents * 0.36), int(equity_cents * 0.22) + int(hm_pool_cents * 0.85))
+        if w_strk >= 4 and hm_pool_dlr >= 25.0:
+            base_c = min(19500, int(equity_cents * 0.36), int(equity_cents * 0.24) + int(hm_pool_cents * 0.85))
             gear_lbl = f"🚀 GEAR-4 HEATER ({w_strk}W, Pool=+${hm_pool_dlr:.2f})"
-        elif w_strk >= 2 and hm_pool_dlr >= 5.0:
-            base_c = min(13000, int(equity_cents * 0.28), int(equity_cents * 0.19) + int(hm_pool_cents * 0.75))
+        elif w_strk >= 2 and hm_pool_dlr >= 4.0:
+            base_c = min(13500, int(equity_cents * 0.28), int(equity_cents * 0.20) + int(hm_pool_cents * 0.75))
             gear_lbl = f"🔥 GEAR-3 HOUSE-MONEY ({w_strk}W, Pool=+${hm_pool_dlr:.2f})"
-        elif w_strk == 1 and hm_pool_dlr > 0.0:
-            base_c = min(8800, int(equity_cents * 0.19))
-            gear_lbl = f"⚖️ GEAR-2 BUILDER (1W, Pool=+${hm_pool_dlr:.2f})"
+        elif w_strk >= 1:
+            base_c = min(9200, int(equity_cents * 0.20))
+            gear_lbl = f"⚖️ GEAR-2 BUILDER ({w_strk}W, Pool=+${hm_pool_dlr:.2f})"
         else:
-            base_c = min(5800, max(3200, int(equity_cents * 0.13)))
-            gear_lbl = f"🛡️ GEAR-1 DEFENSE ({l_strk}L)"
+            base_c = min(6800, max(4800, int(equity_cents * 0.16)))
+            gear_lbl = f"🛡️ GEAR-1 RECOVERY ({l_strk}L)"
 
         if conf_sc <= 82:
-            builder_c = max(4200, int(base_c * 0.78))
+            builder_c = max(4800, int(base_c * 0.85))
             return builder_c, f"⚡ TIER-B BUILDER [{gear_lbl}, Conf={conf_sc}/100]", 0.10
         return base_c, f"💎 TIER-A SNIPER [{gear_lbl}, Conf={conf_sc}/100]", 0.0
 
@@ -2395,13 +2395,14 @@ class PreTradeEducator:
         if "CLOCK-FROZEN" in ext_reason or "LATE-CLOCK" in ext_reason or is_under_no:
             conf_score += 4
         conf_score = max(10, min(99, conf_score))
-        if conf_score < 70:
+        min_conf_req = 74 if ("ENDGAME-SNIPE" in ext_reason or is_under_no) else 76
+        if conf_score < min_conf_req:
             self.memory["vetoed_plays"] = self.memory.get("vetoed_plays", 0) + 1
             self.save_memory()
             return False, (
-                f"VETO [Low Team Pedigree / Confidence Score: {conf_score}/100 < 70 min]: Shaky team quality or matchup ({ext_reason})"
+                f"VETO [Low Team Pedigree / Confidence Score: {conf_score}/100 < {min_conf_req} min]: Shaky team quality or matchup ({ext_reason})"
             ), 0.0
-        is_scout_play = is_depth_scout or ("SCOUT-TIER" in ext_reason) or (conf_score <= 75)
+        is_scout_play = is_depth_scout or ("SCOUT-TIER" in ext_reason) or (conf_score <= 78)
         self.memory.setdefault("last_conf_scores", {})[ticker] = conf_score
         self.memory.setdefault("last_scout_flags", {})[ticker] = is_scout_play
         tier_tag = "TIER-C SCOUT($28)" if is_scout_play else ("TIER-B BUILDER" if conf_score <= 82 else "TIER-A SNIPER")
@@ -2696,6 +2697,9 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                         "max_stake": max_s,
                         "stage1_alerted": stage1_alerted,
                         "is_no": (raw_cnt < 0),
+                        "entry_ts": float(prev_tr.get("entry_ts") or time.time()),
+                        "scratch_requeued": bool(prev_tr.get("scratch_requeued", False)),
+                        "stage2_ratcheted": bool(prev_tr.get("stage2_ratcheted", False)),
                     }
                     educator.save_memory()
                 elif cnt < 1.0 and t in tracked_open_positions:
@@ -2854,11 +2858,15 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                 # - Elite Powerhouse Teams (`pos_conf_score >= 85/100`): full `-10c` stop-loss buffer so a 1-play blip never shakes us out!
                 # - Medium-Confidence Teams (`pos_conf_score < 82/100`): tighter `-8c` leash + 70% Stage-1 early profit lock!
                 max_stop_dist = 10 if pos_conf_score >= 82 else 8
-                if stage1_banked or peaked >= avg_entry_cents + 5:
-                    # Wall Street Anti-Round-Trip Ratchet: once Stage-1 banks OR trade touches +5c profit, tighten stop floor to -3c!
-                    stop_floor_c = max(65, avg_entry_cents - 3)
+                if stage1_banked:
+                    # STRICT ZERO-GIVEBACK BREAKEVEN RATCHET:
+                    # Once Stage-1 (60%) has filled at +5c/+6c, NEVER allow the 40% runner to fall below avg_entry_cents!
+                    stop_floor_c = max(68, avg_entry_cents)
+                elif peaked >= avg_entry_cents + 5:
+                    # Wall Street Anti-Round-Trip Ratchet: if trade touched +5c profit, tighten stop floor to -2c!
+                    stop_floor_c = max(66, avg_entry_cents - 2)
                 elif peaked >= avg_entry_cents + 3:
-                    stop_floor_c = max(64, avg_entry_cents - min(6, max_stop_dist - 2))
+                    stop_floor_c = max(64, avg_entry_cents - min(5, max_stop_dist - 3))
                 else:
                     stop_floor_c = max(62, avg_entry_cents - max_stop_dist)
                 raw_breach = (0 < cur_bid <= stop_floor_c) and (cur_ask <= stop_floor_c + 4)
@@ -2952,16 +2960,98 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                     )
                     continue
 
+                # 12-MINUTE STAGNATION SCRATCH RULE + STAGE-2 RUNNER DYNAMIC TAKE-PROFIT RATCHET:
+                pos_meta = tracked_open_positions.get(ticker, {})
+                pos_age_mins = (time.time() - float(pos_meta.get("entry_ts") or time.time())) / 60.0
+                existing_sells = resting_sell_orders.get(ticker, [])
+                # A) If position has sat >= 11.5 mins without banking Stage-1 (`not stage1_banked`), and price is near entry,
+                #    cancel the +5c/+6c target and re-queue at `avg_entry_cents + 1` (Scratch +1c) so we exit BEFORE a game run!
+                if (
+                    not stage1_banked
+                    and pos_age_mins >= 11.5
+                    and not pos_meta.get("scratch_requeued", False)
+                    and (avg_entry_cents - 2) <= cur_bid <= (avg_entry_cents + 3)
+                ):
+                    logger.info(
+                        f"⏱️ 12-Min Stagnation Scratch Rule on {ticker} (open {pos_age_mins:.1f}m without Stage-1): "
+                        f"Re-pegging resting sell to Scratch+{1}c ({max(cur_bid + 1, avg_entry_cents + 1)}c) to avoid game-run exposure!"
+                    )
+                    pos_meta["scratch_requeued"] = True
+                    if existing_sells:
+                        try:
+                            await client.request(
+                                "DELETE",
+                                "/portfolio/events/orders/batched",
+                                json_data={
+                                    "orders": [
+                                        {
+                                            "order_id": so["order_id"],
+                                            "market_ticker": ticker,
+                                            "exchange_index": so.get("exchange_index", 0),
+                                            "subaccount": so.get("subaccount_number", 0),
+                                        }
+                                        for so in existing_sells
+                                    ]
+                                },
+                                authenticated=True,
+                            )
+                            resting_sell_orders[ticker] = []
+                            resting_sell_counts[ticker] = 0.0
+                        except Exception:
+                            pass
+                # B) If Stage-1 IS banked (`stage1_banked`) and position has been open >= 14.0 mins (like SAS16 at 93c/94c),
+                #    ratchet Stage-2 from +9c/+10c down to `max(cur_bid + 1, avg_entry_cents + 6)` so we cash out the runner now!
+                elif (
+                    stage1_banked
+                    and pos_age_mins >= 14.0
+                    and not pos_meta.get("stage2_ratcheted", False)
+                    and cur_bid >= avg_entry_cents + 4
+                ):
+                    logger.info(
+                        f"🎯 Stage-2 Runner Profit Lock on {ticker} (open {pos_age_mins:.1f}m, bid={cur_bid}c): "
+                        f"Ratcheting Stage-2 runner from 97c/98c down to {max(cur_bid + 1, avg_entry_cents + 6)}c for fast cash-out!"
+                    )
+                    pos_meta["stage2_ratcheted"] = True
+                    if existing_sells:
+                        try:
+                            await client.request(
+                                "DELETE",
+                                "/portfolio/events/orders/batched",
+                                json_data={
+                                    "orders": [
+                                        {
+                                            "order_id": so["order_id"],
+                                            "market_ticker": ticker,
+                                            "exchange_index": so.get("exchange_index", 0),
+                                            "subaccount": so.get("subaccount_number", 0),
+                                        }
+                                        for so in existing_sells
+                                    ]
+                                },
+                                authenticated=True,
+                            )
+                            resting_sell_orders[ticker] = []
+                            resting_sell_counts[ticker] = 0.0
+                        except Exception:
+                            pass
+
                 # Ensure Strategy A (60/40 Fast-Flip + Wave-Rider Split) & Strategy B (Front-of-Queue Ask Undercut)
                 whole_covered = int(resting_sell_counts.get(ticker, 0.0))
                 uncovered = whole_pos - whole_covered
                 if uncovered >= 1:
                     undercut_ask = max(cur_bid + 1, cur_ask - 1)
-                    if undercut_ask >= avg_entry_cents + 6:
-                        fast_tp = min(96, avg_entry_cents + 7, undercut_ask)
-                    else:
+                    if pos_meta.get("scratch_requeued", False) and not stage1_banked:
+                        fast_tp = max(cur_bid + 1, avg_entry_cents + 1)
+                        wave_tp = max(fast_tp + 1, avg_entry_cents + 3)
+                    elif pos_meta.get("stage2_ratcheted", False) and stage1_banked:
                         fast_tp = max(cur_bid + 1, min(95, avg_entry_cents + 6))
-                    wave_tp = max(fast_tp + 2, min(98, avg_entry_cents + 10))
+                        wave_tp = fast_tp
+                    elif undercut_ask >= avg_entry_cents + 5:
+                        fast_tp = min(95, avg_entry_cents + 6, undercut_ask)
+                        wave_tp = max(fast_tp + 3, min(97, avg_entry_cents + 9))
+                    else:
+                        fast_tp = max(cur_bid + 1, min(94, avg_entry_cents + 5))
+                        wave_tp = max(fast_tp + 3, min(97, avg_entry_cents + 9))
 
                     # Whale Ask-Wall Front-Runner (Reciprocal Orderbook Inspection):
                     # An Ask Wall on our side at price `P` is a Bid Wall on the opposing side at `100 - P`.
@@ -3270,11 +3360,16 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             import re as _re
                             _m_strike = _re.search(r"(\d+(?:\.\d+)?)$", t.split("-")[-1])
                             strike_num = float(_m_strike.group(1)) if _m_strike else 0.0
-                            # For Late-Clock Unders, prefer HIGHER strike numbers (e.g. Under 4.5 before Under 3.5) for maximum goal cushion!
-                            alt_line_safety_tiebreaker = (-strike_num * 0.04) if is_under_candidate else (strike_num * 0.04)
+                            # BUYING POINTS / ALT-LINE SAFETY TIEBREAKER:
+                            # - For Late-Clock Unders (`is_under_candidate`): prefer HIGHER strike numbers (e.g. Under 4.5 before Under 3.5 -> buying UP points!).
+                            # - For Spreads / Team Totals / Player Props: prefer LOWER strike numbers (e.g. -2.5 before -6.5, or 20+ pts before 25+ pts -> buying DOWN points!).
+                            alt_line_safety_tiebreaker = (-strike_num * 0.45) if is_under_candidate else (strike_num * 0.45)
+                            # Sweet-Spot Price Bonus: 79c-84c is the optimal risk/reward + fill-velocity zone (-8.0 priority boost!)
+                            eff_ask_c = no_ask_c if is_under_candidate else ask_c
+                            sweet_spot_bonus = -8.0 if (79 <= eff_ask_c <= 84) else 0.0
                             # Treat 1c and 2c spreads as equal Tier-1 priority (since a 2c spread lets us step +1c to #1 in the queue!):
                             spread_pen = 20.0 if spread_c <= 2 else 55.0
-                            vel_score = spread_pen + eff_mins + quarter_king_bonus + ratchet_bonus + alt_line_safety_tiebreaker
+                            vel_score = spread_pen + eff_mins + quarter_king_bonus + ratchet_bonus + alt_line_safety_tiebreaker + sweet_spot_bonus
                             candidates.append((vel_score, mins_to_exp, t, clean_title, shard_key))
                         if not has_near_active and not is_crypto_s and not is_index_s:
                             cold_series_until[series] = time.time() + 240.0

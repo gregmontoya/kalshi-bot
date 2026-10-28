@@ -31,7 +31,7 @@ MAX_BANKROLL_DOLLARS = 50.00     # Total max committed across the $50 sandbox
 MAX_PER_GAME_DOLLARS = 10.00     # Max $10 per game (up to 5 games)
 MIN_MAKER_EDGE = 0.020           # Require >= 2.0c Maker edge over de-vigged Pinnacle
 MIN_PRICE = 0.35                 # Avoid low-liquidity tail longshots
-MAX_PRICE = 0.88                 # Cap max price at 88c
+MAX_PRICE = 0.80                 # Cap max price at 80c (better payoff shape per unit of edge)
 CANCEL_BEFORE_START_S = 120      # Exchange-enforced expiration 2 minutes before tip-off
 
 log = logging.getLogger("live_maker")

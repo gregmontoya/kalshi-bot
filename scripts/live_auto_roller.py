@@ -3262,9 +3262,35 @@ async def run_autonomous_loop(duration_seconds: int = 0):
             logger.info(
                 f"Heartbeat [{tier['name']}] | Cash: ${total_cents/100:.2f} | Portfolio: ${port_cents/100:.2f} | Total Equity: ${equity_cents/100:.2f} (Floor=${daily_floor_c/100:.2f}) | Daily Quota: {quota_st['completed_bets']}/{quota_st['target_bets']} ({quota_st['wins']}W-{quota_st['losses']}L, Pace={quota_st['expected_by_now']})"
             )
-            # Emit silent Mac Primary Engine pulse every 90s so GitHub Cloud 24/7 Failover knows when Mac is awake vs. shut down
+            # Poll 24/7 Two-Way Commands (Telegram Bot & ntfy.sh lock-screen buttons — works even when Mac is OFF!)
+            await poll_two_way_commands(client, educator, total_cents, port_cents, equity_cents, positions, open_orders)
+
+            # macOS Closed-Lid (`AppleClamshellState`) & DarkWake Shield:
+            # When the MacBook lid is closed, macOS wakes for 10s every 45-90m (DarkWake).
+            # Never broadcast `mac-online` or place new buy orders during a closed-lid DarkWake so GitHub 24/7 Cloud Failover runs uninterrupted!
             if sys.platform == "darwin" and duration_seconds == 0:
                 now_hb = time.time()
+                prev_tick = getattr(educator, "_last_loop_tick_ts", now_hb)
+                educator._last_loop_tick_ts = now_hb
+                if (now_hb - prev_tick) > 45.0:
+                    educator._awake_tick_streak = 0
+                else:
+                    educator._awake_tick_streak = getattr(educator, "_awake_tick_streak", 0) + 1
+                lid_closed = False
+                try:
+                    import subprocess as _sp
+                    _cl_out = _sp.check_output(["ioreg", "-r", "-k", "AppleClamshellState", "-d", "4"], timeout=1.5).decode("utf-8", "ignore")
+                    if '"AppleClamshellState" = Yes' in _cl_out:
+                        lid_closed = True
+                except Exception:
+                    pass
+                if lid_closed or getattr(educator, "_awake_tick_streak", 0) < 5:
+                    logger.info(
+                        f"💤 macOS Closed-Lid / DarkWake Shield (lid_closed={lid_closed}, awake_ticks={getattr(educator, '_awake_tick_streak', 0)}/5) "
+                        "— suppressing mac-online heartbeat & yielding new entries to 24/7 GitHub Cloud Trader!"
+                    )
+                    await asyncio.sleep(5.0)
+                    continue
                 if now_hb - getattr(educator, "_last_cloud_hb_ts", 0.0) >= 90.0:
                     educator._last_cloud_hb_ts = now_hb
                     try:
@@ -3288,9 +3314,6 @@ async def run_autonomous_loop(duration_seconds: int = 0):
                             break
                     except Exception:
                         pass
-
-            # Poll 24/7 Two-Way Commands (Telegram Bot & ntfy.sh lock-screen buttons — works even when Mac is OFF!)
-            await poll_two_way_commands(client, educator, total_cents, port_cents, equity_cents, positions, open_orders)
 
             unshielded_open_count = sum(
                 1
